@@ -102,10 +102,10 @@ impl<'a, 'b> fmt::Display for AttributeDisplay<'a, 'b> {
                 writeln!(f, "code")?;
                 writeln!(f, "  max_stack: {}", max_stack)?;
                 writeln!(f, "  max_locals: {}", max_locals)?;
-                writeln!(f, "  opcodes:")?;
+                writeln!(f, "  instructions:")?;
                 let mut code = Cursor::new(code.as_slice());
-                while let Ok(opc) = Instruction::read_from(&mut code) {
-                    writeln!(f, "    {:?}", opc)?;
+                while let Ok(inst) = Instruction::read_from(&mut code) {
+                    writeln!(f, "    {}", inst.display(self.class_file))?;
                 }
                 if exceptions.len() > 0 {
                     writeln!(f, "  exceptions: {} records (bodies TODO)", exceptions.len())?;
