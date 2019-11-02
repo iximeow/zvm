@@ -163,13 +163,8 @@ impl<R: Read> FromReader<R> for Constant {
                 MethodHandleBehavior::read_from(data)?,
                 ConstantIdx::read_from(data)?,
             ),
-            16 => {
-                Constant::MethodType(ConstantIdx::read_from(data)?, ConstantIdx::read_from(data)?)
-            }
-            18 => Constant::InvokeDynamic(
-                ConstantIdx::read_from(data)?,
-                ConstantIdx::read_from(data)?,
-            ),
+            16 => Constant::MethodType(ConstantIdx::read_from(data)?),
+            18 => Constant::InvokeDynamic(u16::read_from(data)?, ConstantIdx::read_from(data)?),
             _ => {
                 return Err(Error::Str("Invalid constant pool entry tag"));
             }

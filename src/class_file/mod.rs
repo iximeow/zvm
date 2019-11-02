@@ -1,6 +1,6 @@
-pub mod read;
 pub mod attribute;
 pub mod instruction;
+pub mod read;
 
 use read::FromReader;
 
@@ -98,7 +98,9 @@ pub struct AttributeInfo {
 impl AttributeInfo {
     pub fn materialize(&self, class_file: &ClassFile) -> Result<Attribute, Error> {
         match class_file.get_raw_str(self.name_index) {
-            Some(b"ConstantValue") => Ok(Attribute::ConstantValue(ConstantIdx::read_from(&mut self.data.as_slice())?)),
+            Some(b"ConstantValue") => Ok(Attribute::ConstantValue(ConstantIdx::read_from(
+                &mut self.data.as_slice(),
+            )?)),
             Some(b"Code") => {
                 let data = &mut self.data.as_slice();
                 let max_stack = u16::read_from(data)?;
@@ -118,7 +120,9 @@ impl AttributeInfo {
                 for _ in 0..attr_length {
                     attrs.push(AttributeInfo::read_from(data)?);
                 }
-                Ok(Attribute::Code(max_stack, max_locals, code, exceptions, attrs))
+                Ok(Attribute::Code(
+                    max_stack, max_locals, code, exceptions, attrs,
+                ))
             }
             Some(b"LineNumberTable") => {
                 let data = &mut self.data.as_slice();
@@ -130,7 +134,9 @@ impl AttributeInfo {
                 Ok(Attribute::LineNumberTable(entries))
             }
             Some(_) => Err(Error::Unsupported("unsupported attribute type")),
-            None => Err(Error::ClassFileError("bad constant pool index - not a utf8")),
+            None => Err(Error::ClassFileError(
+                "bad constant pool index - not a utf8",
+            )),
         }
     }
 }
@@ -172,6 +178,20 @@ struct MethodInfo {
 }
 
 #[derive(Debug)]
+pub enum MethodHandleBehavior {
+    GetField,
+    GetStatic,
+    PutField,
+    PutStatic,
+    InvokeVirtual,
+    InvokeStatic,
+    InvokeSpecial,
+    NewInvokeSpecial,
+    InvokeInterface,
+    Other(u8),
+}
+
+#[derive(Debug)]
 pub enum Constant {
     Utf8(Vec<u8>),
     Integer(u32),
@@ -185,14 +205,146 @@ pub enum Constant {
     InterfaceMethodref(ConstantIdx, ConstantIdx),
     NameAndType(ConstantIdx, ConstantIdx),
     MethodHandle(MethodHandleBehavior, ConstantIdx),
-    MethodType(ConstantIdx, ConstantIdx),
-    InvokeDynamic(ConstantIdx, ConstantIdx),
+    MethodType(ConstantIdx),
+    InvokeDynamic(u16, ConstantIdx),
 }
 
-#[allow(dead_code)]
-#[derive(Debug)]
-pub enum MethodHandleBehavior {
-    TODO,
+impl Constant {
+    fn display<'a, 'b>(&'a self, class_file: &'b ClassFile) -> ConstantDisplay<'a, 'b> {
+        ConstantDisplay {
+            constant: self,
+            class_file,
+        }
+    }
+}
+
+struct ConstantDisplay<'a, 'b> {
+    constant: &'a Constant,
+    class_file: &'b ClassFile,
+}
+
+impl<'a, 'b> fmt::Display for ConstantDisplay<'a, 'b> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.constant {
+            Constant::Utf8(data) => {
+                if let Some(s) = std::str::from_utf8(data).ok() {
+                    write!(f, "{}", s)
+                } else {
+                    write!(f, "malformed string: {:?}", data)
+                }
+            }
+            Constant::Integer(value) => write!(f, "{}", value),
+            Constant::Float(value) => write!(f, "{}", value),
+            Constant::Long(value) => write!(f, "{}", value),
+            Constant::Double(value) => write!(f, "{}", value),
+            Constant::Class(idx) => write!(
+                f,
+                "class {}",
+                self.class_file
+                    .get_const(*idx)
+                    .unwrap()
+                    .display(self.class_file)
+            ),
+            Constant::String(idx) => write!(
+                f,
+                "{}",
+                self.class_file
+                    .get_const(*idx)
+                    .unwrap()
+                    .display(self.class_file)
+            ),
+            Constant::Fieldref(class_index, name_and_type_index) => write!(
+                f,
+                "field {}.{}",
+                self.class_file
+                    .get_const(*class_index)
+                    .unwrap()
+                    .display(self.class_file),
+                self.class_file
+                    .get_const(*name_and_type_index)
+                    .unwrap()
+                    .display(self.class_file),
+            ),
+            Constant::Methodref(class_index, name_and_type_index) => write!(
+                f,
+                "method {}.{}",
+                self.class_file
+                    .get_const(*class_index)
+                    .unwrap()
+                    .display(self.class_file),
+                self.class_file
+                    .get_const(*name_and_type_index)
+                    .unwrap()
+                    .display(self.class_file),
+            ),
+            Constant::InterfaceMethodref(class_index, name_and_type_index) => write!(
+                f,
+                "interfacemethod {}.{}",
+                self.class_file
+                    .get_const(*class_index)
+                    .unwrap()
+                    .display(self.class_file),
+                self.class_file
+                    .get_const(*name_and_type_index)
+                    .unwrap()
+                    .display(self.class_file),
+            ),
+            Constant::NameAndType(name_index, descriptor_index) => write!(
+                f,
+                "{} {}",
+                self.class_file
+                    .get_const(*name_index)
+                    .unwrap()
+                    .display(self.class_file),
+                self.class_file
+                    .get_const(*descriptor_index)
+                    .unwrap()
+                    .display(self.class_file),
+            ),
+            Constant::MethodHandle(behavior, idx) => {
+                match behavior {
+                    MethodHandleBehavior::GetField => write!(f, "REF_getField"),
+                    MethodHandleBehavior::GetStatic => write!(f, "REF_getStatic"),
+                    MethodHandleBehavior::PutField => write!(f, "REF_putField"),
+                    MethodHandleBehavior::PutStatic => write!(f, "REF_putStatic"),
+                    MethodHandleBehavior::InvokeVirtual => write!(f, "REF_invokeVirtual"),
+                    MethodHandleBehavior::InvokeStatic => write!(f, "REF_invokeStatic"),
+                    MethodHandleBehavior::InvokeSpecial => write!(f, "REF_invokeSpecial"),
+                    MethodHandleBehavior::NewInvokeSpecial => write!(f, "REF_newInvokeSpecial"),
+                    MethodHandleBehavior::InvokeInterface => write!(f, "REF_invokeInterface"),
+                    MethodHandleBehavior::Other(other) => {
+                        write!(f, "invalid behavior: {}", *other as u16)
+                    }
+                }?;
+
+                write!(
+                    f,
+                    " {}",
+                    self.class_file
+                        .get_const(*idx)
+                        .unwrap()
+                        .display(self.class_file),
+                )
+            }
+            Constant::MethodType(descriptor_index) => write!(
+                f,
+                "{}",
+                self.class_file
+                    .get_const(*descriptor_index)
+                    .unwrap()
+                    .display(self.class_file),
+            ),
+            Constant::InvokeDynamic(bootstrap_index, name_and_type_index) => write!(
+                f,
+                "{} {}",
+                bootstrap_index,
+                self.class_file
+                    .get_const(*name_and_type_index)
+                    .unwrap()
+                    .display(self.class_file),
+            ),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -217,6 +369,12 @@ impl From<std::io::Error> for Error {
 pub struct ConstantIdx {
     /// In a just world, this would be `NonZero<u16>`.
     idx: u16,
+}
+
+impl ConstantIdx {
+    fn inner(&self) -> u16 {
+        self.idx
+    }
 }
 
 /// As cute as a zero-copy class file parse would be, I really don't want to think about DSTs,
@@ -290,7 +448,11 @@ impl fmt::Display for ClassFile {
                 if let Ok(attr) = attr.materialize(self) {
                     writeln!(f, "    method attr {}", attr.display(self))?;
                 } else {
-                    writeln!(f, "    method attr (failed to materialize) {}", attr.display(self))?;
+                    writeln!(
+                        f,
+                        "    method attr (failed to materialize) {}",
+                        attr.display(self)
+                    )?;
                 }
             }
         }

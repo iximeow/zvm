@@ -1,7 +1,373 @@
 use crate::class_file::read::FromReader;
-use crate::class_file::Error;
+use crate::class_file::ClassFile;
 use crate::class_file::ConstantIdx;
+use crate::class_file::Error;
+use std::fmt;
 use std::io::{Read, Seek, SeekFrom};
+
+pub struct InstructionDisplay<'a, 'b> {
+    instruction: &'a Instruction,
+    class_file: &'b ClassFile,
+}
+
+impl<'a, 'b> fmt::Display for InstructionDisplay<'a, 'b> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.instruction {
+            Instruction::Nop => write!(f, "nop"),
+            Instruction::AConstNull => write!(f, "aconstnull"),
+            Instruction::IConstM1 => write!(f, "iconstm1"),
+            Instruction::IConst0 => write!(f, "iconst0"),
+            Instruction::IConst1 => write!(f, "iconst1"),
+            Instruction::IConst2 => write!(f, "iconst2"),
+            Instruction::IConst3 => write!(f, "iconst3"),
+            Instruction::IConst4 => write!(f, "iconst4"),
+            Instruction::IConst5 => write!(f, "iconst5"),
+            Instruction::LConst0 => write!(f, "lconst0"),
+            Instruction::LConst1 => write!(f, "lconst1"),
+            Instruction::FConst0 => write!(f, "fconst0"),
+            Instruction::FConst1 => write!(f, "fconst1"),
+            Instruction::FConst2 => write!(f, "fconst2"),
+            Instruction::DConst0 => write!(f, "dconst0"),
+            Instruction::DConst1 => write!(f, "dconst1"),
+            Instruction::BIPush => write!(f, "bipush"),
+            Instruction::SIPush => write!(f, "sipush"),
+            Instruction::Ldc(idx) => write!(
+                f,
+                "ldc {} (const {})",
+                self.class_file
+                    .get_const(*idx)
+                    .unwrap()
+                    .display(self.class_file),
+                idx.inner()
+            ),
+            Instruction::LdcW(idx) => write!(
+                f,
+                "ldcw {} (const {})",
+                self.class_file
+                    .get_const(*idx)
+                    .unwrap()
+                    .display(self.class_file),
+                idx.inner()
+            ),
+            Instruction::Ldc2W(idx) => write!(
+                f,
+                "ldc2w {} (const {})",
+                self.class_file
+                    .get_const(*idx)
+                    .unwrap()
+                    .display(self.class_file),
+                idx.inner()
+            ),
+            Instruction::ILoad(idx) => write!(f, "iload {}", idx),
+            Instruction::LLoad(idx) => write!(f, "lload {}", idx),
+            Instruction::FLoad(idx) => write!(f, "fload {}", idx),
+            Instruction::DLoad(idx) => write!(f, "dload {}", idx),
+            Instruction::ALoad => write!(f, "aload"),
+            Instruction::ILoad0 => write!(f, "iload0"),
+            Instruction::ILoad1 => write!(f, "iload1"),
+            Instruction::ILoad2 => write!(f, "iload2"),
+            Instruction::ILoad3 => write!(f, "iload3"),
+            Instruction::LLoad0 => write!(f, "lload0"),
+            Instruction::LLoad1 => write!(f, "lload1"),
+            Instruction::LLoad2 => write!(f, "lload2"),
+            Instruction::LLoad3 => write!(f, "lload3"),
+            Instruction::FLoad0 => write!(f, "fload0"),
+            Instruction::FLoad1 => write!(f, "fload1"),
+            Instruction::FLoad2 => write!(f, "fload2"),
+            Instruction::FLoad3 => write!(f, "fload3"),
+            Instruction::DLoad0 => write!(f, "dload0"),
+            Instruction::DLoad1 => write!(f, "dload1"),
+            Instruction::DLoad2 => write!(f, "dload2"),
+            Instruction::DLoad3 => write!(f, "dload3"),
+            Instruction::ALoad0 => write!(f, "aload0"),
+            Instruction::ALoad1 => write!(f, "aload1"),
+            Instruction::ALoad2 => write!(f, "aload2"),
+            Instruction::ALoad3 => write!(f, "aload3"),
+            Instruction::IAStore => write!(f, "iastore"),
+            Instruction::IALoad => write!(f, "iaload"),
+            Instruction::FALoad => write!(f, "faload"),
+            Instruction::DALoad => write!(f, "daload"),
+            Instruction::AALoad => write!(f, "aaload"),
+            Instruction::BALoad => write!(f, "baload"),
+            Instruction::CALoad => write!(f, "caload"),
+            Instruction::SALoad => write!(f, "saload"),
+            Instruction::IStore(idx) => write!(f, "istore {}", idx),
+            Instruction::LStore(idx) => write!(f, "lstore {}", idx),
+            Instruction::FStore(idx) => write!(f, "fstore {}", idx),
+            Instruction::DStore(idx) => write!(f, "dstore {}", idx),
+            Instruction::AStore => write!(f, "astore"),
+            Instruction::IStore0 => write!(f, "istore0"),
+            Instruction::IStore1 => write!(f, "istore1"),
+            Instruction::IStore2 => write!(f, "istore2"),
+            Instruction::IStore3 => write!(f, "istore3"),
+            Instruction::LStore0 => write!(f, "lstore0"),
+            Instruction::LStore1 => write!(f, "lstore1"),
+            Instruction::LStore2 => write!(f, "lstore2"),
+            Instruction::LStore3 => write!(f, "lstore3"),
+            Instruction::FStore0 => write!(f, "fstore0"),
+            Instruction::FStore1 => write!(f, "fstore1"),
+            Instruction::FStore2 => write!(f, "fstore2"),
+            Instruction::FStore3 => write!(f, "fstore3"),
+            Instruction::DStore0 => write!(f, "dstore0"),
+            Instruction::DStore1 => write!(f, "dstore1"),
+            Instruction::DStore2 => write!(f, "dstore2"),
+            Instruction::DStore3 => write!(f, "dstore3"),
+            Instruction::AStore0 => write!(f, "astore0"),
+            Instruction::AStore1 => write!(f, "astore1"),
+            Instruction::AStore2 => write!(f, "astore2"),
+            Instruction::AStore3 => write!(f, "astore3"),
+            Instruction::LAStore => write!(f, "lastore"),
+            Instruction::FAStore => write!(f, "fastore"),
+            Instruction::DAStore => write!(f, "dastore"),
+            Instruction::AAStore => write!(f, "aastore"),
+            Instruction::BAStore => write!(f, "bastore"),
+            Instruction::CAStore => write!(f, "castore"),
+            Instruction::SAStore => write!(f, "sastore"),
+            Instruction::Pop => write!(f, "pop"),
+            Instruction::Pop2 => write!(f, "pop2"),
+            Instruction::Dup => write!(f, "dup"),
+            Instruction::DupX1 => write!(f, "dupx1"),
+            Instruction::DupX2 => write!(f, "dupx2"),
+            Instruction::Dup2 => write!(f, "dup2"),
+            Instruction::Dup2X1 => write!(f, "dup2x1"),
+            Instruction::Dup2X2 => write!(f, "dup2x2"),
+            Instruction::Swap => write!(f, "swap"),
+            Instruction::IAdd => write!(f, "iadd"),
+            Instruction::FAdd => write!(f, "fadd"),
+            Instruction::DAdd => write!(f, "dadd"),
+            Instruction::ISub => write!(f, "isub"),
+            Instruction::LSub => write!(f, "lsub"),
+            Instruction::FSub => write!(f, "fsub"),
+            Instruction::DSub => write!(f, "dsub"),
+            Instruction::IMul => write!(f, "imul"),
+            Instruction::LMul => write!(f, "lmul"),
+            Instruction::FMul => write!(f, "fmul"),
+            Instruction::DMul => write!(f, "dmul"),
+            Instruction::IDiv => write!(f, "idiv"),
+            Instruction::LDiv => write!(f, "ldiv"),
+            Instruction::FDiv => write!(f, "fdiv"),
+            Instruction::DDiv => write!(f, "ddiv"),
+            Instruction::IRem => write!(f, "irem"),
+            Instruction::LRem => write!(f, "lrem"),
+            Instruction::FRem => write!(f, "frem"),
+            Instruction::DRem => write!(f, "drem"),
+            Instruction::INeg => write!(f, "ineg"),
+            Instruction::LNeg => write!(f, "lneg"),
+            Instruction::FNeg => write!(f, "fneg"),
+            Instruction::DNeg => write!(f, "dneg"),
+            Instruction::IShl => write!(f, "ishl"),
+            Instruction::LShl => write!(f, "lshl"),
+            Instruction::IShr => write!(f, "ishr"),
+            Instruction::LShr => write!(f, "lshr"),
+            Instruction::IUshr => write!(f, "iushr"),
+            Instruction::LUshr => write!(f, "lushr"),
+            Instruction::IAnd => write!(f, "iand"),
+            Instruction::LAnd => write!(f, "land"),
+            Instruction::IOr => write!(f, "ior"),
+            Instruction::LOr => write!(f, "lor"),
+            Instruction::IXor => write!(f, "ixor"),
+            Instruction::LXor => write!(f, "lxor"),
+            Instruction::IInc(idx, inc) => write!(f, "iinc {}, {}", idx, inc),
+            Instruction::I2L => write!(f, "i2l"),
+            Instruction::I2F => write!(f, "i2f"),
+            Instruction::I2D => write!(f, "i2d"),
+            Instruction::L2I => write!(f, "l2i"),
+            Instruction::L2F => write!(f, "l2f"),
+            Instruction::L2D => write!(f, "l2d"),
+            Instruction::F2I => write!(f, "f2i"),
+            Instruction::F2L => write!(f, "f2l"),
+            Instruction::F2D => write!(f, "f2d"),
+            Instruction::D2I => write!(f, "d2i"),
+            Instruction::D2L => write!(f, "d2l"),
+            Instruction::D2F => write!(f, "d2f"),
+            Instruction::I2B => write!(f, "i2b"),
+            Instruction::I2C => write!(f, "i2c"),
+            Instruction::I2S => write!(f, "i2s"),
+            Instruction::ICmp => write!(f, "icmp"),
+            Instruction::FCmpL => write!(f, "fcmpl"),
+            Instruction::FCmpG => write!(f, "fcmpg"),
+            Instruction::DCmpL => write!(f, "dcmpl"),
+            Instruction::DCmpG => write!(f, "dcmpg"),
+            Instruction::IfEq(offset) => write!(f, "ifeq {}", offset),
+            Instruction::IfNe(offset) => write!(f, "ifne {}", offset),
+            Instruction::IfLt(offset) => write!(f, "iflt {}", offset),
+            Instruction::IfGe(offset) => write!(f, "ifge {}", offset),
+            Instruction::IfGt(offset) => write!(f, "ifgt {}", offset),
+            Instruction::IfLe(offset) => write!(f, "ifle {}", offset),
+            Instruction::IfIcmpEq(offset) => write!(f, "ificmpeq {}", offset),
+            Instruction::IfIcmpNe(offset) => write!(f, "ificmpne {}", offset),
+            Instruction::IfIcmpLt(offset) => write!(f, "ificmplt {}", offset),
+            Instruction::IfIcmpGe(offset) => write!(f, "ificmpge {}", offset),
+            Instruction::IfIcmpGt(offset) => write!(f, "ificmpgt {}", offset),
+            Instruction::IfIcmpLe(offset) => write!(f, "ificmple {}", offset),
+            Instruction::IfAcmpEq(offset) => write!(f, "ifacmpeq {}", offset),
+            Instruction::IfAcmpNe(offset) => write!(f, "ifacmpne {}", offset),
+            Instruction::Goto(offset) => write!(f, "goto {}", offset),
+            Instruction::Jsr(offset) => write!(f, "jsr {}", offset),
+            Instruction::Ret(idx) => write!(f, "ret {}", idx),
+            Instruction::TableSwitch(default, low, high, entries) => write!(
+                f,
+                "tableswitch {} {}..{}, {:?}",
+                default, low, high, entries
+            ),
+            Instruction::LookupSwitch(default, entries) => {
+                write!(f, "lookupswitch {} {:?}", default, entries)
+            }
+            Instruction::IReturn => write!(f, "ireturn"),
+            Instruction::LReturn => write!(f, "lreturn"),
+            Instruction::FReturn => write!(f, "freturn"),
+            Instruction::DReturn => write!(f, "dreturn"),
+            Instruction::AReturn => write!(f, "areturn"),
+            Instruction::Return => write!(f, "return"),
+            Instruction::GetStatic(idx) => write!(
+                f,
+                "getstatic {} (const {})",
+                self.class_file
+                    .get_const(*idx)
+                    .unwrap()
+                    .display(self.class_file),
+                idx.inner()
+            ),
+            Instruction::PutStatic(idx) => write!(
+                f,
+                "putstatic {} (const {})",
+                self.class_file
+                    .get_const(*idx)
+                    .unwrap()
+                    .display(self.class_file),
+                idx.inner()
+            ),
+            Instruction::GetField(idx) => write!(
+                f,
+                "getfield {} (const {})",
+                self.class_file
+                    .get_const(*idx)
+                    .unwrap()
+                    .display(self.class_file),
+                idx.inner()
+            ),
+            Instruction::PutField(idx) => write!(
+                f,
+                "putfield {} (const {})",
+                self.class_file
+                    .get_const(*idx)
+                    .unwrap()
+                    .display(self.class_file),
+                idx.inner()
+            ),
+            Instruction::InvokeVirtual(idx) => write!(
+                f,
+                "invokevirtual {} (const {})",
+                self.class_file
+                    .get_const(*idx)
+                    .unwrap()
+                    .display(self.class_file),
+                idx.inner()
+            ),
+            Instruction::InvokeSpecial(idx) => write!(
+                f,
+                "invokespecial {} (const {})",
+                self.class_file
+                    .get_const(*idx)
+                    .unwrap()
+                    .display(self.class_file),
+                idx.inner()
+            ),
+            Instruction::InvokeStatic(idx) => write!(
+                f,
+                "invokestatic {} (const {})",
+                self.class_file
+                    .get_const(*idx)
+                    .unwrap()
+                    .display(self.class_file),
+                idx.inner()
+            ),
+            Instruction::InvokeInterface(idx, count) => write!(
+                f,
+                "invokeinterface {} (const {}), {}",
+                self.class_file
+                    .get_const(*idx)
+                    .unwrap()
+                    .display(self.class_file),
+                idx.inner(),
+                count
+            ),
+            Instruction::InvokeDynamic(idx) => write!(
+                f,
+                "invokedynamic {} (const {})",
+                self.class_file
+                    .get_const(*idx)
+                    .unwrap()
+                    .display(self.class_file),
+                idx.inner()
+            ),
+            Instruction::New(idx) => write!(
+                f,
+                "new {} (const {})",
+                self.class_file
+                    .get_const(*idx)
+                    .unwrap()
+                    .display(self.class_file),
+                idx.inner()
+            ),
+            Instruction::NewArray(idx) => write!(
+                f,
+                "newarray {} (const {})",
+                self.class_file
+                    .get_const(*idx)
+                    .unwrap()
+                    .display(self.class_file),
+                idx.inner()
+            ),
+            Instruction::ANewArray => write!(f, "anewarray"),
+            Instruction::ArrayLength => write!(f, "arraylength"),
+            Instruction::AThrow => write!(f, "athrow"),
+            Instruction::CheckCast(idx) => write!(
+                f,
+                "checkcast {} (const {})",
+                self.class_file
+                    .get_const(*idx)
+                    .unwrap()
+                    .display(self.class_file),
+                idx.inner()
+            ),
+            Instruction::InstanceOf(idx) => write!(
+                f,
+                "instanceof {} (const {})",
+                self.class_file
+                    .get_const(*idx)
+                    .unwrap()
+                    .display(self.class_file),
+                idx.inner()
+            ),
+            Instruction::MonitorEnter => write!(f, "monitorenter"),
+            Instruction::MonitorExit => write!(f, "monitorexit"),
+            Instruction::MultiANewArray(idx, dimensions) => write!(
+                f,
+                "multianewarray {} (const {}), {}",
+                self.class_file
+                    .get_const(*idx)
+                    .unwrap()
+                    .display(self.class_file),
+                idx.inner(),
+                dimensions
+            ),
+            Instruction::IfNull(offset) => write!(f, "ifnull {}", offset),
+            Instruction::IfNonNull(offset) => write!(f, "ifnonnull {}", offset),
+            Instruction::GotoW(offset) => write!(f, "gotow {}", offset),
+            Instruction::JsrW(offset) => write!(f, "jsrw {}", offset),
+        }
+    }
+}
+
+impl Instruction {
+    pub fn display<'a, 'b>(&'a self, class_file: &'b ClassFile) -> InstructionDisplay<'a, 'b> {
+        InstructionDisplay {
+            instruction: self,
+            class_file,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum Instruction {
@@ -202,13 +568,17 @@ pub enum Instruction {
     MultiANewArray(ConstantIdx, u8),
     IfNull(i16),
     IfNonNull(i16),
-    GotoW(u32),
+    GotoW(i32),
     JsrW(i32),
 }
 
 impl<R: Read + Seek> FromReader<R> for Instruction {
     fn read_from(data: &mut R) -> Result<Self, Error> {
-        fn read_instruction<R: Read + Seek>(data: &mut R, opc: u8, wide: bool) -> Result<Instruction, Error> {
+        fn read_instruction<R: Read + Seek>(
+            data: &mut R,
+            opc: u8,
+            wide: bool,
+        ) -> Result<Instruction, Error> {
             fn read_idx<R: Read>(data: &mut R, wide: bool) -> Result<u16, Error> {
                 if wide {
                     u16::read_from(data)
@@ -398,7 +768,7 @@ impl<R: Read + Seek> FromReader<R> for Instruction {
                         entries.push(i32::read_from(data)?);
                     }
                     Instruction::TableSwitch(default, low, high, entries)
-                },
+                }
                 0xab => {
                     while data.seek(SeekFrom::Current(0))? % 4 != 0 {
                         let _ = u8::read_from(data)?;
@@ -427,7 +797,10 @@ impl<R: Read + Seek> FromReader<R> for Instruction {
                 0xb6 => Instruction::InvokeVirtual(ConstantIdx::read_from(data)?),
                 0xb7 => Instruction::InvokeSpecial(ConstantIdx::read_from(data)?),
                 0xb8 => Instruction::InvokeStatic(ConstantIdx::read_from(data)?),
-                0xb9 => Instruction::InvokeInterface(ConstantIdx::read_from(data)?, u8::read_from(data)?),
+                0xb9 => Instruction::InvokeInterface(
+                    ConstantIdx::read_from(data)?,
+                    u8::read_from(data)?,
+                ),
                 0xba => Instruction::InvokeDynamic(ConstantIdx::read_from(data)?),
                 0xbb => Instruction::New(ConstantIdx::read_from(data)?),
                 0xbc => Instruction::NewArray(ConstantIdx::read_from(data)?),
@@ -438,13 +811,19 @@ impl<R: Read + Seek> FromReader<R> for Instruction {
                 0xc1 => Instruction::InstanceOf(ConstantIdx::read_from(data)?),
                 0xc2 => Instruction::MonitorEnter,
                 0xc3 => Instruction::MonitorExit,
-                0xc4 => { return Err(Error::BadInstruction(0xc4, wide)); },
-                0xc5 => Instruction::MultiANewArray(ConstantIdx::read_from(data)?, u8::read_from(data)?),
+                0xc4 => {
+                    return Err(Error::BadInstruction(0xc4, wide));
+                }
+                0xc5 => {
+                    Instruction::MultiANewArray(ConstantIdx::read_from(data)?, u8::read_from(data)?)
+                }
                 0xc6 => Instruction::IfNull(i16::read_from(data)?),
                 0xc7 => Instruction::IfNonNull(i16::read_from(data)?),
-                0xc8 => Instruction::GotoW(u32::read_from(data)?),
+                0xc8 => Instruction::GotoW(i32::read_from(data)?),
                 0xc9 => Instruction::JsrW(i32::read_from(data)?),
-                other => { return Err(Error::BadInstruction(other, wide)); }
+                other => {
+                    return Err(Error::BadInstruction(other, wide));
+                }
             };
             Ok(opc)
         };

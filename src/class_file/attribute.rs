@@ -1,13 +1,13 @@
-use crate::class_file::AttributeInfo;
-use crate::class_file::ConstantIdx;
-use crate::class_file::ClassFile;
-use crate::class_file::Error;
 use crate::class_file::instruction::Instruction;
+use crate::class_file::AttributeInfo;
+use crate::class_file::ClassFile;
+use crate::class_file::ConstantIdx;
+use crate::class_file::Error;
 
 use crate::class_file::read::FromReader;
 
-use std::io::{Cursor, Read};
 use std::fmt;
+use std::io::{Cursor, Read};
 
 #[allow(dead_code)]
 pub struct ExceptionTableRecord {
@@ -71,8 +71,14 @@ pub enum StackMapFrame {
 pub enum Attribute {
     // constantvalue_index
     ConstantValue(ConstantIdx),
-    Code(u16, u16, Vec<u8>, Vec<ExceptionTableRecord>, Vec<AttributeInfo>),
-#[allow(dead_code)]
+    Code(
+        u16,
+        u16,
+        Vec<u8>,
+        Vec<ExceptionTableRecord>,
+        Vec<AttributeInfo>,
+    ),
+    #[allow(dead_code)]
     StackMapTable(Vec<StackMapFrame>),
     LineNumberTable(Vec<LineNumberEntry>),
 }
@@ -81,7 +87,7 @@ impl Attribute {
     pub fn display<'a, 'b>(&'a self, class_file: &'b ClassFile) -> AttributeDisplay<'a, 'b> {
         AttributeDisplay {
             attribute: self,
-            class_file
+            class_file,
         }
     }
 }
@@ -97,7 +103,7 @@ impl<'a, 'b> fmt::Display for AttributeDisplay<'a, 'b> {
             Attribute::ConstantValue(idx) => {
                 // TODO: .. not debug
                 writeln!(f, "constant {:?}", self.class_file.get_const(*idx).unwrap())
-            },
+            }
             Attribute::Code(max_stack, max_locals, code, exceptions, attributes) => {
                 writeln!(f, "code")?;
                 writeln!(f, "  max_stack: {}", max_stack)?;
@@ -108,7 +114,11 @@ impl<'a, 'b> fmt::Display for AttributeDisplay<'a, 'b> {
                     writeln!(f, "    {}", inst.display(self.class_file))?;
                 }
                 if exceptions.len() > 0 {
-                    writeln!(f, "  exceptions: {} records (bodies TODO)", exceptions.len())?;
+                    writeln!(
+                        f,
+                        "  exceptions: {} records (bodies TODO)",
+                        exceptions.len()
+                    )?;
                 }
                 if attributes.len() > 0 {
                     writeln!(f, "  attributes:")?;
@@ -116,7 +126,11 @@ impl<'a, 'b> fmt::Display for AttributeDisplay<'a, 'b> {
                         if let Ok(attr) = attr.materialize(self.class_file) {
                             writeln!(f, "    {}", attr.display(self.class_file))?;
                         } else {
-                            writeln!(f, "    (attr failed to materialize) {}", attr.display(self.class_file))?;
+                            writeln!(
+                                f,
+                                "    (attr failed to materialize) {}",
+                                attr.display(self.class_file)
+                            )?;
                         }
                     }
                 }
