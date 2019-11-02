@@ -1,4 +1,12 @@
 pub mod read;
+pub mod attribute;
+pub mod instruction;
+
+use read::FromReader;
+
+use crate::class_file::attribute::Attribute;
+use crate::class_file::attribute::ExceptionTableRecord;
+use crate::class_file::attribute::LineNumberEntry;
 
 use std::fmt;
 
@@ -82,18 +90,58 @@ impl AccessFlags {
 }
 
 #[derive(Debug)]
-struct AttributeInfo {
+pub struct AttributeInfo {
     name_index: ConstantIdx,
     data: Vec<u8>,
 }
 
-struct AttributeInfoDisplay<'a, 'b> {
+impl AttributeInfo {
+    pub fn materialize(&self, class_file: &ClassFile) -> Result<Attribute, Error> {
+        match class_file.get_raw_str(self.name_index) {
+            Some(b"ConstantValue") => Ok(Attribute::ConstantValue(ConstantIdx::read_from(&mut self.data.as_slice())?)),
+            Some(b"Code") => {
+                let data = &mut self.data.as_slice();
+                let max_stack = u16::read_from(data)?;
+                let max_locals = u16::read_from(data)?;
+                let code_length = u32::read_from(data)?;
+                let mut code: Vec<u8> = Vec::new();
+                for _ in 0..code_length {
+                    code.push(u8::read_from(data)?);
+                }
+                let exceptions_length = u16::read_from(data)?;
+                let mut exceptions: Vec<ExceptionTableRecord> = Vec::new();
+                for _ in 0..exceptions_length {
+                    exceptions.push(ExceptionTableRecord::read_from(data)?);
+                }
+                let attr_length = u16::read_from(data)?;
+                let mut attrs: Vec<AttributeInfo> = Vec::new();
+                for _ in 0..attr_length {
+                    attrs.push(AttributeInfo::read_from(data)?);
+                }
+                Ok(Attribute::Code(max_stack, max_locals, code, exceptions, attrs))
+            }
+            Some(b"LineNumberTable") => {
+                let data = &mut self.data.as_slice();
+                let lineno_length = u16::read_from(data)?;
+                let mut entries: Vec<LineNumberEntry> = Vec::new();
+                for _ in 0..lineno_length {
+                    entries.push(LineNumberEntry::read_from(data)?);
+                }
+                Ok(Attribute::LineNumberTable(entries))
+            }
+            Some(_) => Err(Error::Unsupported("unsupported attribute type")),
+            None => Err(Error::ClassFileError("bad constant pool index - not a utf8")),
+        }
+    }
+}
+
+pub struct AttributeInfoDisplay<'a, 'b> {
     attribute: &'a AttributeInfo,
     class_file: &'b ClassFile,
 }
 
 impl AttributeInfo {
-    fn display<'a, 'b>(&'a self, class_file: &'b ClassFile) -> AttributeInfoDisplay<'a, 'b> {
+    pub fn display<'a, 'b>(&'a self, class_file: &'b ClassFile) -> AttributeInfoDisplay<'a, 'b> {
         AttributeInfoDisplay {
             attribute: self,
             class_file,
@@ -151,9 +199,9 @@ pub enum MethodHandleBehavior {
 pub enum Error {
     BadMagic,
     BadIndex,
-    #[allow(dead_code)] // shhh bad class files aren't rejected yet
-    ClassFileError,
+    ClassFileError(&'static str),
     EOF,
+    BadInstruction(u8, bool),
     Str(&'static str),
     Unsupported(&'static str),
 }
@@ -196,6 +244,18 @@ impl ClassFile {
         }
     }
 
+    fn get_raw_str(&self, idx: ConstantIdx) -> Option<&[u8]> {
+        if let Some(Constant::Utf8(bytes)) = self.constant_pool.get((idx.idx - 1) as usize) {
+            Some(bytes)
+        } else {
+            None
+        }
+    }
+
+    fn get_const(&self, idx: ConstantIdx) -> Option<&Constant> {
+        self.constant_pool.get((idx.idx - 1) as usize)
+    }
+
     fn display_const(&self, idx: ConstantIdx) -> String {
         match self.constant_pool[(idx.idx - 1) as usize] {
             Constant::Class(idx) => format!("class {}", self.get_str(idx).unwrap()),
@@ -227,7 +287,11 @@ impl fmt::Display for ClassFile {
                 self.get_str(method.name_index).unwrap()
             )?;
             for attr in method.attributes.iter() {
-                writeln!(f, "    method attr {}", attr.display(self))?;
+                if let Ok(attr) = attr.materialize(self) {
+                    writeln!(f, "    method attr {}", attr.display(self))?;
+                } else {
+                    writeln!(f, "    method attr (failed to materialize) {}", attr.display(self))?;
+                }
             }
         }
         for attribute in self.attributes.iter() {

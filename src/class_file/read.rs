@@ -14,7 +14,7 @@ use std::io::Read;
 
 const CLASS_MAGIC: u32 = 0xcafebabe;
 
-trait FromReader<R>: Sized {
+pub trait FromReader<R>: Sized {
     fn read_from(data: &mut R) -> Result<Self, Error>;
 }
 
@@ -32,9 +32,27 @@ impl<R: Read> FromReader<R> for MethodAccessFlags {
     }
 }
 
+impl<R: Read> FromReader<R> for u16 {
+    fn read_from(data: &mut R) -> Result<Self, Error> {
+        Ok(data.read_u16::<BigEndian>()?)
+    }
+}
+
+impl<R: Read> FromReader<R> for i16 {
+    fn read_from(data: &mut R) -> Result<Self, Error> {
+        Ok(data.read_i16::<BigEndian>()?)
+    }
+}
+
 impl<R: Read> FromReader<R> for u32 {
     fn read_from(data: &mut R) -> Result<Self, Error> {
         Ok(data.read_u32::<BigEndian>()?)
+    }
+}
+
+impl<R: Read> FromReader<R> for i32 {
+    fn read_from(data: &mut R) -> Result<Self, Error> {
+        Ok(data.read_i32::<BigEndian>()?)
     }
 }
 
