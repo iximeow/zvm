@@ -10,6 +10,7 @@ use std::fmt;
 use std::io::{Cursor, Read};
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub struct ExceptionTableRecord {
     start_pc: u16,
     end_pc: u16,
@@ -45,6 +46,7 @@ impl<R: Read> FromReader<R> for LineNumberEntry {
 }
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub enum VerificationTypeInfo {
     Top,
     Integer,
@@ -58,6 +60,7 @@ pub enum VerificationTypeInfo {
 }
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub enum StackMapFrame {
     SameFrame,
     SameLocals1StackItemFrame(VerificationTypeInfo),
@@ -68,6 +71,7 @@ pub enum StackMapFrame {
     FullFrame(u16, Vec<VerificationTypeInfo>, Vec<VerificationTypeInfo>),
 }
 
+#[derive(Debug)]
 pub enum Attribute {
     // constantvalue_index
     ConstantValue(ConstantIdx),

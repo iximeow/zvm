@@ -9,9 +9,10 @@ use crate::class_file::attribute::ExceptionTableRecord;
 use crate::class_file::attribute::LineNumberEntry;
 
 use std::fmt;
+use std::rc::Rc;
 
 // TODO: helper to consistency check flags
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct MethodAccessFlags {
     flags: u16,
 }
@@ -175,6 +176,31 @@ struct MethodInfo {
     name_index: ConstantIdx,
     descriptor_index: ConstantIdx,
     attributes: Vec<AttributeInfo>,
+}
+
+#[derive(Debug)]
+pub struct MethodHandle {
+    access_flags: MethodAccessFlags,
+    name: String,
+    descriptor: String,
+    attributes: Vec<Rc<Attribute>>,
+}
+
+impl MethodHandle {
+    pub fn access(&self) -> &MethodAccessFlags {
+        &self.access_flags
+    }
+
+    pub fn body(&self) -> Option<Rc<Attribute>> {
+        for attr in self.attributes.iter() {
+            let attr_ref: &Attribute = &*attr;
+            if let Attribute::Code(_, _, _, _, _) = attr_ref {
+                return Some(Rc::clone(&attr));
+            }
+        }
+
+        None
+    }
 }
 
 #[derive(Debug)]
@@ -421,6 +447,26 @@ impl ClassFile {
                 unimplemented!("display_const");
             }
         }
+    }
+
+    pub fn get_method(&self, name: &str) -> Result<Rc<MethodHandle>, Error> {
+        for method in self.methods.iter() {
+            let method_name = self.get_str(method.name_index).unwrap();
+            if method_name == name {
+                let handle = MethodHandle {
+                    access_flags: method.access_flags,
+                    name: method_name.to_string(),
+                    descriptor: self.get_str(method.descriptor_index).unwrap().to_string(),
+                    attributes: method.attributes.iter().map(|attr| {
+                        Rc::new(attr.materialize(self).unwrap())
+                    }).collect()
+                };
+
+                return Ok(Rc::new(handle));
+            }
+        }
+
+        Err(Error::Str("Failed to look up method"))
     }
 }
 
