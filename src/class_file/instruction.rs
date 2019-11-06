@@ -312,12 +312,8 @@ impl<'a, 'b> fmt::Display for InstructionDisplay<'a, 'b> {
             ),
             Instruction::NewArray(idx) => write!(
                 f,
-                "newarray {} (const {})",
-                self.class_file
-                    .get_const(*idx)
-                    .unwrap()
-                    .display(self.class_file),
-                idx.inner()
+                "newarray (const {})",
+                idx,
             ),
             Instruction::ANewArray => write!(f, "anewarray"),
             Instruction::ArrayLength => write!(f, "arraylength"),
@@ -557,7 +553,7 @@ pub enum Instruction {
     InvokeInterface(ConstantIdx, u8),
     InvokeDynamic(ConstantIdx),
     New(ConstantIdx),
-    NewArray(ConstantIdx),
+    NewArray(u8),
     ANewArray,
     ArrayLength,
     AThrow,
@@ -605,7 +601,7 @@ impl<R: Read + Seek> FromReader<R> for Instruction {
                 0x0f => Instruction::DConst1,
                 0x10 => Instruction::BIPush,
                 0x11 => Instruction::SIPush,
-                0x12 => Instruction::Ldc(ConstantIdx::read_from(data)?),
+                0x12 => Instruction::Ldc(ConstantIdx::new(u8::read_from(data)? as u16).unwrap()),
                 0x13 => Instruction::LdcW(ConstantIdx::read_from(data)?),
                 0x14 => Instruction::Ldc2W(ConstantIdx::read_from(data)?),
                 0x15 => Instruction::ILoad(read_idx(data, wide)?),
@@ -803,7 +799,7 @@ impl<R: Read + Seek> FromReader<R> for Instruction {
                 ),
                 0xba => Instruction::InvokeDynamic(ConstantIdx::read_from(data)?),
                 0xbb => Instruction::New(ConstantIdx::read_from(data)?),
-                0xbc => Instruction::NewArray(ConstantIdx::read_from(data)?),
+                0xbc => Instruction::NewArray(u8::read_from(data)?),
                 0xbd => Instruction::ANewArray,
                 0xbe => Instruction::ArrayLength,
                 0xbf => Instruction::AThrow,
