@@ -8,13 +8,19 @@ use crate::class_file::attribute::Attribute;
 use crate::class_file::attribute::ExceptionTableRecord;
 use crate::class_file::attribute::LineNumberEntry;
 
+use crate::vm::VMError;
+use crate::vm::VMState;
+use crate::vm::VirtualMachine;
+
 use std::fmt;
 use std::rc::Rc;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
 // TODO: helper to consistency check flags
 #[derive(Debug, Clone, Copy)]
 pub struct MethodAccessFlags {
-    flags: u16,
+    pub flags: u16,
 }
 
 #[allow(dead_code)]
@@ -59,7 +65,7 @@ impl MethodAccessFlags {
 
 #[derive(Debug)]
 pub struct AccessFlags {
-    flags: u16,
+    pub(crate) flags: u16,
 }
 
 #[allow(dead_code)]
@@ -168,22 +174,25 @@ impl<'a, 'b> fmt::Display for AttributeInfoDisplay<'a, 'b> {
 }
 
 #[derive(Debug)]
-struct FieldInfo {}
+pub struct FieldInfo {
+    pub(crate) is_static: bool,
+    pub(crate) name_index: ConstantIdx,
+}
 
 #[derive(Debug)]
-struct MethodInfo {
-    access_flags: MethodAccessFlags,
-    name_index: ConstantIdx,
-    descriptor_index: ConstantIdx,
-    attributes: Vec<AttributeInfo>,
+pub struct MethodInfo {
+    pub access_flags: MethodAccessFlags,
+    pub name_index: ConstantIdx,
+    pub descriptor_index: ConstantIdx,
+    pub attributes: Vec<AttributeInfo>,
 }
 
 #[derive(Debug)]
 pub struct MethodHandle {
-    access_flags: MethodAccessFlags,
-    name: String,
-    descriptor: String,
-    attributes: Vec<Rc<Attribute>>,
+    pub access_flags: MethodAccessFlags,
+    pub name: String,
+    pub descriptor: String,
+    pub attributes: Vec<Rc<Attribute>>,
 }
 
 impl MethodHandle {
@@ -401,26 +410,78 @@ impl ConstantIdx {
     fn inner(&self) -> u16 {
         self.idx
     }
+
+    pub fn new(idx: u16) -> Option<ConstantIdx> {
+        if idx == 0 {
+            None
+        } else {
+            Some(ConstantIdx { idx })
+        }
+    }
 }
 
 /// As cute as a zero-copy class file parse would be, I really don't want to think about DSTs,
 /// which are all over the place.
-#[derive(Debug)]
 pub struct ClassFile {
-    minor_version: u16,
-    major_version: u16,
-    constant_pool: Vec<Constant>,
-    access_flags: AccessFlags,
-    this_class: ConstantIdx,
-    super_class: Option<ConstantIdx>,
-    interfaces: Vec<ConstantIdx>,
-    fields: Vec<FieldInfo>,
-    methods: Vec<MethodInfo>,
-    attributes: Vec<AttributeInfo>,
+    pub(crate) minor_version: u16,
+    pub(crate) major_version: u16,
+    pub(crate) constant_pool: Vec<Constant>,
+    pub(crate) access_flags: AccessFlags,
+    pub(crate) this_class: ConstantIdx,
+    pub(crate) super_class: Option<ConstantIdx>,
+    pub(crate) interfaces: Vec<ConstantIdx>,
+    pub(crate) fields: Vec<FieldInfo>,
+    pub(crate) methods: Vec<MethodInfo>,
+    pub(crate) attributes: Vec<AttributeInfo>,
+    pub(crate) native_methods: HashMap<String, fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>>,
+}
+
+impl fmt::Debug for ClassFile {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "ClassFile {{ major: {}, minor: {}, constants: {:?}, access_flags: {:?}, this_class: {:?}, super_class: {:?}, interfaces: {:?}, fields: {:?}, methods: {:?}, attributes: {:?}, native_methods: {:?} }}",
+           self.minor_version,
+           self.major_version,
+           self.constant_pool,
+           self.access_flags,
+           self.this_class,
+           self.super_class,
+           self.interfaces,
+           self.fields,
+           self.methods,
+           self.attributes,
+           self.native_methods.keys()
+        )
+    }
+}
+
+pub(crate) struct ClassFileRef(Rc<ClassFile>);
+
+impl ClassFileRef {
+    pub fn of(reference: &Rc<ClassFile>) -> Self {
+        ClassFileRef(Rc::clone(reference))
+    }
+}
+
+impl Hash for ClassFileRef {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        unsafe {
+            let ptr = Rc::into_raw(Rc::clone(&self.0));
+            ptr.hash(state);
+            Rc::from_raw(ptr);
+        }
+    }
+}
+
+impl Eq for ClassFileRef { }
+
+impl PartialEq for ClassFileRef {
+    fn eq(&self, other: &ClassFileRef) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
 }
 
 impl ClassFile {
-    fn get_str(&self, idx: ConstantIdx) -> Option<&str> {
+    pub fn get_str(&self, idx: ConstantIdx) -> Option<&str> {
         if let Some(Constant::Utf8(bytes)) = self.constant_pool.get((idx.idx - 1) as usize) {
             std::str::from_utf8(bytes).ok()
         } else {
@@ -428,7 +489,7 @@ impl ClassFile {
         }
     }
 
-    fn get_raw_str(&self, idx: ConstantIdx) -> Option<&[u8]> {
+    pub fn get_raw_str(&self, idx: ConstantIdx) -> Option<&[u8]> {
         if let Some(Constant::Utf8(bytes)) = self.constant_pool.get((idx.idx - 1) as usize) {
             Some(bytes)
         } else {
@@ -436,7 +497,7 @@ impl ClassFile {
         }
     }
 
-    fn get_const(&self, idx: ConstantIdx) -> Option<&Constant> {
+    pub fn get_const(&self, idx: ConstantIdx) -> Option<&Constant> {
         self.constant_pool.get((idx.idx - 1) as usize)
     }
 
@@ -468,6 +529,18 @@ impl ClassFile {
 
         Err(Error::Str("Failed to look up method"))
     }
+
+    pub fn has_static_field(&self, name: &str) -> bool {
+        for field in self.fields.iter() {
+            if field.is_static {
+                if self.get_str(field.name_index) == Some(name) {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
 }
 
 impl fmt::Display for ClassFile {
@@ -482,6 +555,14 @@ impl fmt::Display for ClassFile {
         writeln!(f, "  {:?}", self.access_flags)?;
         writeln!(f, "  {:?}", self.interfaces)?;
         writeln!(f, "  {:?}", self.fields)?;
+        for c in self.constant_pool.iter() {
+            writeln!(
+                f,
+                "  const {:?} {}",
+                c,
+                c.display(self),
+            )?;
+        }
         for method in self.methods.iter() {
             writeln!(
                 f,

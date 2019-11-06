@@ -11,6 +11,7 @@ use crate::class_file::MethodInfo;
 
 use byteorder::{BigEndian, ReadBytesExt};
 use std::io::Read;
+use std::collections::HashMap;
 
 const CLASS_MAGIC: u32 = 0xcafebabe;
 
@@ -223,5 +224,8 @@ pub fn class_header<R: Read>(data: &mut R) -> Result<ClassFile, Error> {
         fields,
         methods,
         attributes,
+        // native methods don't come with associated native functions. if a method is native and
+        // loaded from an external class, we'll go through JNI resolution mechanisms to find it.
+        native_methods: HashMap::new(),
     })
 }
