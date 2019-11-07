@@ -99,6 +99,66 @@ impl VMState {
         self.call_stack.pop().expect("stack is non-empty");
     }
 
+    fn interpret_iload(&mut self, idx: u16) -> Result<Option<Rc<Value>>, VMError> {
+        let frame_mut = self.current_frame_mut();
+        let argument: Option<&Rc<Value>> = frame_mut.arguments.get(idx as usize);
+        let operand = match argument {
+            Some(argument) => match &**argument {
+                Value::Integer(_) => Rc::clone(argument),
+                _ => { return Err(VMError::BadClass("iload but not integer")); }
+            }
+            None => { return Err(VMError::BadClass("iload but insufficient arguments")); }
+        };
+
+        frame_mut.operand_stack.push(operand);
+        Ok(None)
+    }
+
+    fn interpret_lload(&mut self, idx: u16) -> Result<Option<Rc<Value>>, VMError> {
+        let frame_mut = self.current_frame_mut();
+        let argument: Option<&Rc<Value>> = frame_mut.arguments.get(idx as usize);
+        let operand = match argument {
+            Some(argument) => match &**argument {
+                Value::Long(_) => Rc::clone(argument),
+                _ => { return Err(VMError::BadClass("lload but not long")); }
+            }
+            None => { return Err(VMError::BadClass("lload but insufficient arguments")); }
+        };
+
+        frame_mut.operand_stack.push(operand);
+        Ok(None)
+    }
+
+    fn interpret_fload(&mut self, idx: u16) -> Result<Option<Rc<Value>>, VMError> {
+        let frame_mut = self.current_frame_mut();
+        let argument: Option<&Rc<Value>> = frame_mut.arguments.get(idx as usize);
+        let operand = match argument {
+            Some(argument) => match &**argument {
+                Value::Float(_) => Rc::clone(argument),
+                _ => { return Err(VMError::BadClass("fload but not float")); }
+            }
+            None => { return Err(VMError::BadClass("fload but insufficient arguments")); }
+        };
+
+        frame_mut.operand_stack.push(operand);
+        Ok(None)
+    }
+
+    fn interpret_dload(&mut self, idx: u16) -> Result<Option<Rc<Value>>, VMError> {
+        let frame_mut = self.current_frame_mut();
+        let argument: Option<&Rc<Value>> = frame_mut.arguments.get(idx as usize);
+        let operand = match argument {
+            Some(argument) => match &**argument {
+                Value::Double(_) => Rc::clone(argument),
+                _ => { return Err(VMError::BadClass("dload but not double")); }
+            }
+            None => { return Err(VMError::BadClass("dload but insufficient arguments")); }
+        };
+
+        frame_mut.operand_stack.push(operand);
+        Ok(None)
+    }
+
     fn execute(&mut self, instruction: &Instruction, vm: &mut VirtualMachine) -> Result<Option<Rc<Value>>, VMError> {
         match instruction {
             Instruction::InvokeVirtual(idx) => {
@@ -188,34 +248,26 @@ impl VMState {
                     Err(VMError::BadClass("getstatic constant pool idx does not index a Fieldref"))
                 }
             }
-            Instruction::ILoad0 => {
-                let frame_mut = self.current_frame_mut();
-                let argument: Option<&Rc<Value>> = frame_mut.arguments.get(0);
-                let operand = match argument {
-                    Some(argument) => match &**argument {
-                        Value::Integer(_) => Rc::clone(argument),
-                        _ => { return Err(VMError::BadClass("iload0 but not integer")); }
-                    }
-                    None => { return Err(VMError::BadClass("iload0 but insufficient arguments")); }
-                };
-
-                frame_mut.operand_stack.push(operand);
-                Ok(None)
-            }
-            Instruction::ILoad1 => {
-                let frame_mut = self.current_frame_mut();
-                let argument: Option<&Rc<Value>> = frame_mut.arguments.get(1);
-                let operand = match argument {
-                    Some(argument) => match &**argument {
-                        Value::Integer(_) => Rc::clone(argument),
-                        _ => { return Err(VMError::BadClass("iload1 but not integer")); }
-                    }
-                    None => { return Err(VMError::BadClass("iload1 but insufficient arguments")); }
-                };
-
-                frame_mut.operand_stack.push(operand);
-                Ok(None)
-            }
+            Instruction::ILoad0 => { self.interpret_iload(0) }
+            Instruction::ILoad1 => { self.interpret_iload(1) }
+            Instruction::ILoad2 => { self.interpret_iload(2) }
+            Instruction::ILoad3 => { self.interpret_iload(3) }
+            Instruction::ILoad(idx) => { self.interpret_iload(*idx) }
+            Instruction::LLoad0 => { self.interpret_lload(0) }
+            Instruction::LLoad1 => { self.interpret_lload(1) }
+            Instruction::LLoad2 => { self.interpret_lload(2) }
+            Instruction::LLoad3 => { self.interpret_lload(3) }
+            Instruction::LLoad(idx) => { self.interpret_lload(*idx) }
+            Instruction::FLoad0 => { self.interpret_fload(0) }
+            Instruction::FLoad1 => { self.interpret_fload(1) }
+            Instruction::FLoad2 => { self.interpret_fload(2) }
+            Instruction::FLoad3 => { self.interpret_fload(3) }
+            Instruction::FLoad(idx) => { self.interpret_fload(*idx) }
+            Instruction::DLoad0 => { self.interpret_dload(0) }
+            Instruction::DLoad1 => { self.interpret_dload(1) }
+            Instruction::DLoad2 => { self.interpret_dload(2) }
+            Instruction::DLoad3 => { self.interpret_dload(3) }
+            Instruction::DLoad(idx) => { self.interpret_dload(*idx) }
             Instruction::IAdd => {
                 let frame_mut = self.current_frame_mut();
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
