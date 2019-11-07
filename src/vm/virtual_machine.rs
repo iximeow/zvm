@@ -309,6 +309,24 @@ impl VMState {
                     }
                 }
             }
+            Instruction::I2C => {
+                let frame_mut = self.current_frame_mut();
+                let value = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+
+                match (&*value) {
+                    (Value::Integer(l)) => {
+                        frame_mut.operand_stack.push(Rc::new(Value::Integer((*l) as i16 as u16 as i32)));
+                        Ok(None)
+                    }
+                    _ => {
+                        Err(VMError::BadClass("iadd but invalid operand types"))
+                    }
+                }
+            }
             Instruction::IReturn => {
                 let frame_mut = self.current_frame_mut();
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
