@@ -25,7 +25,11 @@ fn main() {
     let class_name = class_file_path.file_stem().unwrap().to_str().unwrap();
     let class_ref = vm.register(class_name.to_string(), class_file).unwrap();
     let entrypoint = vm.get_method(&class_ref, methodname).unwrap();
-    vm.execute(entrypoint, &class_ref, values).unwrap();
+    if let Some(value) = vm.execute(entrypoint, &class_ref, values).unwrap() {
+        println!("> {:?}", value);
+    } else {
+        // normal completion
+    }
 }
 
 // the string is because i don't want to think right now

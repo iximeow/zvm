@@ -99,7 +99,7 @@ impl VMState {
         self.call_stack.pop().expect("stack is non-empty");
     }
 
-    fn execute(&mut self, instruction: &Instruction, vm: &mut VirtualMachine) -> Result<(), VMError> {
+    fn execute(&mut self, instruction: &Instruction, vm: &mut VirtualMachine) -> Result<Option<Rc<Value>>, VMError> {
         match instruction {
             Instruction::InvokeVirtual(idx) => {
                 if let Some(Constant::Methodref(class_idx, name_and_type_idx)) = self.current_frame().enclosing_class.get_const(*idx) {
@@ -117,12 +117,14 @@ impl VMState {
                         // get method by name `method_name`
                         if method.access_flags.is_native() {
                             if let Some(native_method) = target_class.native_methods.get(&method_name) {
-                                native_method(self, vm)
+                                native_method(self, vm)?;
+                                Ok(None)
                             } else {
                                 panic!("attempted to call native method with no implementation: {} - note, JNI resolution is not yet supported.", method_name);
                             }
                         } else {
-                            interpreted_method_call(self, vm, method, target_class, &method_type)
+                            interpreted_method_call(self, vm, method, target_class, &method_type)?;
+                            Ok(None)
                         }
                     } else {
                         Err(VMError::BadClass("fieldref name_and_type does not index a NameAndType"))
@@ -147,12 +149,14 @@ impl VMState {
                         // get method by name `method_name`
                         if method.access_flags.is_native() {
                             if let Some(native_method) = target_class.native_methods.get(&method_name) {
-                                native_method(self, vm)
+                                native_method(self, vm)?;
+                                Ok(None)
                             } else {
                                 panic!("attempted to call native method with no implementation: {} - note, JNI resolution is not yet supported.", method_name);
                             }
                         } else {
-                            interpreted_method_call(self, vm, method, target_class, &method_type)
+                            interpreted_method_call(self, vm, method, target_class, &method_type)?;
+                            Ok(None)
                         }
                     } else {
                         Err(VMError::BadClass("fieldref name_and_type does not index a NameAndType"))
@@ -176,12 +180,99 @@ impl VMState {
                         let referent_type = self.current_frame().enclosing_class.get_str(*type_idx).unwrap().to_string();
                         let value = self.get_field(&target_class, &referent_name, &referent_type).unwrap();
                         self.current_frame_mut().operand_stack.push(value);
-                        Ok(())
+                        Ok(None)
                     } else {
                         Err(VMError::BadClass("fieldref name_and_type does not index a NameAndType"))
                     }
                 } else {
                     Err(VMError::BadClass("getstatic constant pool idx does not index a Fieldref"))
+                }
+            }
+            Instruction::ILoad0 => {
+                let frame_mut = self.current_frame_mut();
+                let argument: Option<&Rc<Value>> = frame_mut.arguments.get(0);
+                let operand = match argument {
+                    Some(argument) => match &**argument {
+                        Value::Integer(_) => Rc::clone(argument),
+                        _ => { return Err(VMError::BadClass("iload0 but not integer")); }
+                    }
+                    None => { return Err(VMError::BadClass("iload0 but insufficient arguments")); }
+                };
+
+                frame_mut.operand_stack.push(operand);
+                Ok(None)
+            }
+            Instruction::ILoad1 => {
+                let frame_mut = self.current_frame_mut();
+                let argument: Option<&Rc<Value>> = frame_mut.arguments.get(1);
+                let operand = match argument {
+                    Some(argument) => match &**argument {
+                        Value::Integer(_) => Rc::clone(argument),
+                        _ => { return Err(VMError::BadClass("iload1 but not integer")); }
+                    }
+                    None => { return Err(VMError::BadClass("iload1 but insufficient arguments")); }
+                };
+
+                frame_mut.operand_stack.push(operand);
+                Ok(None)
+            }
+            Instruction::IAdd => {
+                let frame_mut = self.current_frame_mut();
+                let left = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+                let right = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+
+                match (&*left, &*right) {
+                    (Value::Integer(l), Value::Integer(r)) => {
+                        frame_mut.operand_stack.push(Rc::new(Value::Integer(l.wrapping_add(*r))));
+                        Ok(None)
+                    }
+                    _ => {
+                        Err(VMError::BadClass("iadd but invalid operand types"))
+                    }
+                }
+            }
+            Instruction::I2B => {
+                let frame_mut = self.current_frame_mut();
+                let value = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+
+                match (&*value) {
+                    (Value::Integer(l)) => {
+                        frame_mut.operand_stack.push(Rc::new(Value::Integer((*l) as i8 as i32)));
+                        Ok(None)
+                    }
+                    _ => {
+                        Err(VMError::BadClass("iadd but invalid operand types"))
+                    }
+                }
+            }
+            Instruction::IReturn => {
+                let frame_mut = self.current_frame_mut();
+                let value = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("ireturn but insufficient arguments"));
+                };
+
+                match (&*value) {
+                    (Value::Integer(_)) => {
+                        self.leave();
+                        Ok(Some(value))
+                    }
+                    _ => {
+                        Err(VMError::BadClass("ireturn but invalid operand types"))
+                    }
                 }
             }
             Instruction::Ldc(idx) => {
@@ -205,11 +296,11 @@ impl VMState {
                 };
 
                 self.current_frame_mut().operand_stack.push(value);
-                Ok(())
+                Ok(None)
             }
             Instruction::Return => {
                 self.leave();
-                Ok(())
+                Ok(None)
             }
             _ => {
                 unimplemented!();
@@ -241,7 +332,7 @@ impl Value {
         }
 
         if let Ok(v) = i64::from_str(s) {
-            return Some(Value::Long(v));
+            return Some(Value::Integer(v as i32));
         }
 
         if let Ok(v) = f64::from_str(s) {
@@ -361,7 +452,7 @@ impl VirtualMachine {
         class_ref.get_method(method).map_err(|_| VMError::NameResolutionError)
     }
 
-    pub fn execute(&mut self, method: Rc<MethodHandle>, class_ref: &Rc<ClassFile>, args: Vec<Rc<Value>>) -> Result<Option<Value>, VMError> {
+    pub fn execute(&mut self, method: Rc<MethodHandle>, class_ref: &Rc<ClassFile>, args: Vec<Rc<Value>>) -> Result<Option<Rc<Value>>, VMError> {
         if !method.access().is_static() {
             return Err(VMError::AccessError("attempted to call an instance method without an instance"));
         }
@@ -378,7 +469,7 @@ impl VirtualMachine {
         self.interpret(&mut state)
     }
 
-    fn interpret(&mut self, state: &mut VMState) -> Result<Option<Value>, VMError> {
+    fn interpret(&mut self, state: &mut VMState) -> Result<Option<Rc<Value>>, VMError> {
         // magic incantation to awaken the machine
         println!("zoom zoom");
 
@@ -386,7 +477,17 @@ impl VirtualMachine {
 //            println!("Executing {:?}", instruction);
             let enc = &*state.current_frame().enclosing_class;
             println!("Executing {}", instruction.display(enc));
-            state.execute(&instruction, self)?;
+            if let Some(value) = state.execute(&instruction, self)? {
+                // TODO: type check the return value
+                if state.call_stack.len() == 0 {
+                    // this was a return from the first call frame, so it's the result of the
+                    // entire interpreter execution
+                    return Ok(Some(value));
+                } else {
+                    // this was an inner return, so push it onto the caller's operand stack
+                    state.current_frame_mut().operand_stack.push(value);
+                }
+            }
 //            println!("Complete!");
         }
 
