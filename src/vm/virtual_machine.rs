@@ -1,4 +1,5 @@
 use std::rc::Rc;
+use std::str::FromStr;
 use std::io::Cursor;
 use std::collections::HashMap;
 
@@ -17,15 +18,17 @@ use crate::class_file::instruction::Instruction;
 
 struct CallFrame {
     offset: u32,
+    arguments: Vec<Rc<Value>>,
     body: Rc<Attribute>,
     enclosing_class: Rc<ClassFile>,
     operand_stack: Vec<Rc<Value>>,
 }
 
 impl CallFrame {
-    pub fn new(body: Rc<Attribute>, enclosing_class: Rc<ClassFile>) -> Self {
+    pub fn new(body: Rc<Attribute>, enclosing_class: Rc<ClassFile>, arguments:  Vec<Rc<Value>>) -> Self {
         CallFrame {
             offset:0 ,
+            arguments,
             body,
             enclosing_class,
             operand_stack: Vec::new()
@@ -40,12 +43,12 @@ pub struct VMState {
 }
 
 impl VMState {
-    pub fn new(code: Rc<Attribute>, method_class: Rc<ClassFile>) -> Self {
+    pub fn new(code: Rc<Attribute>, method_class: Rc<ClassFile>, initial_args: Vec<Rc<Value>>) -> Self {
         let mut state = VMState {
             call_stack: Vec::new(),
             static_instances: HashMap::new(),
         };
-        state.call_stack.push(CallFrame::new(code, method_class));
+        state.call_stack.push(CallFrame::new(code, method_class, initial_args));
         state
     }
 
@@ -88,8 +91,8 @@ impl VMState {
         }
     }
 
-    pub fn enter(&mut self, body: Rc<Attribute>, enclosing_class: Rc<ClassFile>) {
-        self.call_stack.push(CallFrame::new(body, enclosing_class));
+    pub fn enter(&mut self, body: Rc<Attribute>, enclosing_class: Rc<ClassFile>, arguments: Vec<Rc<Value>>) {
+        self.call_stack.push(CallFrame::new(body, enclosing_class, arguments));
     }
 
     pub fn leave(&mut self) {
@@ -127,6 +130,37 @@ impl VMState {
                 } else {
                     Err(VMError::BadClass("getstatic constant pool idx does not index a Fieldref"))
                 }
+            }
+            Instruction::InvokeStatic(idx) => {
+                if let Some(Constant::Methodref(class_idx, name_and_type_idx)) = self.current_frame().enclosing_class.get_const(*idx) {
+                    let method_class = self.current_frame().enclosing_class.get_const(*class_idx).unwrap();
+                    let method_class_name = if let Constant::Class(class_name_idx) = method_class {
+                        self.current_frame().enclosing_class.get_str(*class_name_idx).unwrap()
+                    } else {
+                        panic!("method's class is not a class?");
+                    };
+                    let target_class = vm.resolve_class(method_class_name).unwrap();
+                    if let Some(Constant::NameAndType(name_idx, type_idx)) = self.current_frame().enclosing_class.get_const(*name_and_type_idx) {
+                        let method_name = self.current_frame().enclosing_class.get_str(*name_idx).unwrap().to_string();
+                        let method_type = self.current_frame().enclosing_class.get_str(*type_idx).unwrap().to_string();
+                        let method = target_class.get_method(&method_name).expect("method exists");
+                        // get method by name `method_name`
+                        if method.access_flags.is_native() {
+                            if let Some(native_method) = target_class.native_methods.get(&method_name) {
+                                native_method(self, vm)
+                            } else {
+                                panic!("attempted to call native method with no implementation: {} - note, JNI resolution is not yet supported.", method_name);
+                            }
+                        } else {
+                            interpreted_method_call(self, vm, method, target_class, &method_type)
+                        }
+                    } else {
+                        Err(VMError::BadClass("fieldref name_and_type does not index a NameAndType"))
+                    }
+                } else {
+                    Err(VMError::BadClass("getstatic constant pool idx does not index a Fieldref"))
+                }
+
             }
             Instruction::GetStatic(idx) => {
                 if let Some(Constant::Fieldref(class_idx, name_and_type_idx)) = self.current_frame().enclosing_class.get_const(*idx) {
@@ -198,6 +232,28 @@ pub enum Value {
     Double(f64),
     String(Vec<u8>),
     Null(String), // Null, of type `String`
+}
+
+impl Value {
+    pub fn parse_from(s: &str) -> Option<Value> {
+        if s == "null" {
+            return Some(Value::Null("Object".to_string()));
+        }
+
+        if let Ok(v) = i64::from_str(s) {
+            return Some(Value::Long(v));
+        }
+
+        if let Ok(v) = f64::from_str(s) {
+            return Some(Value::Double(v));
+        }
+
+        if s.len() >= 2 && s.starts_with("\"") && s.ends_with("\"") {
+            return Some(Value::String(s[1..][..s.len() - 2].bytes().collect()));
+        }
+
+        return None;
+    }
 }
 
 pub struct VirtualMachine {
@@ -284,13 +340,18 @@ impl VirtualMachine {
                 Ok(Rc::new(synthetic_class))
 
             },
-            _ => {
-                Err(VMError::BadClass("unknown class, cannot dynamically "))
+            class_name => {
+                println!("Looking up class {}", class_name);
+                match self.classes.get(class_name) {
+                    Some(class_ref) => Ok(Rc::clone(class_ref)),
+                    None => Err(VMError::BadClass("unknown class, cannot dynamically "))
+                }
             }
         }
     }
 
     pub fn register(&mut self, class_name: String, class_file: ClassFile) -> Result<Rc<ClassFile>, VMError> {
+        println!("Registering class {}", class_name);;
         let rc = Rc::new(class_file);
         self.classes.insert(class_name, Rc::clone(&rc));
         Ok(rc)
@@ -300,7 +361,7 @@ impl VirtualMachine {
         class_ref.get_method(method).map_err(|_| VMError::NameResolutionError)
     }
 
-    pub fn execute(&mut self, method: Rc<MethodHandle>, class_ref: &Rc<ClassFile>) -> Result<Option<Value>, VMError> {
+    pub fn execute(&mut self, method: Rc<MethodHandle>, class_ref: &Rc<ClassFile>, args: Vec<Rc<Value>>) -> Result<Option<Value>, VMError> {
         if !method.access().is_static() {
             return Err(VMError::AccessError("attempted to call an instance method without an instance"));
         }
@@ -313,7 +374,7 @@ impl VirtualMachine {
 
         // TODO: verify arguments? verify that `method` does not take arguments??
 
-        let mut state = VMState::new(code, Rc::clone(class_ref));
+        let mut state = VMState::new(code, Rc::clone(class_ref), args);
         self.interpret(&mut state)
     }
 
@@ -322,9 +383,9 @@ impl VirtualMachine {
         println!("zoom zoom");
 
         while let Some(instruction) = state.next_instruction() {
-//            let enc = &*state.current_frame().enclosing_class;
 //            println!("Executing {:?}", instruction);
-//            println!("Executing {}", instruction.display(enc));
+            let enc = &*state.current_frame().enclosing_class;
+            println!("Executing {}", instruction.display(enc));
             state.execute(&instruction, self)?;
 //            println!("Complete!");
         }
@@ -339,7 +400,7 @@ fn interpreted_method_call(state: &mut VMState, _vm: &mut VirtualMachine, method
     //
     // today: [...], do the call
 
-    state.enter(method.body().expect("method has a body"), method_class);
+    state.enter(method.body().expect("method has a body"), method_class, vec![]);
     Ok(())
 }
 

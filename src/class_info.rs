@@ -1,4 +1,5 @@
 mod class_file;
+mod vm;
 
 use crate::class_file::read;
 
