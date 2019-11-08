@@ -72,10 +72,24 @@ impl VMState {
             Some(Rc::clone(
                 fields
                     .entry(name.to_string())
-                    .or_insert_with(|| Rc::new(Value::Null(ty.to_owned()))),
+                    .or_insert_with(|| Rc::new(Value::default_of(ty))),
             ))
         } else {
             None
+        }
+    }
+
+    fn put_field(&mut self, class_ref: &Rc<ClassFile>, name: &str, ty: &str, value: Rc<Value>) {
+        let fields = self
+            .static_instances
+            .entry(ClassFileRef::of(class_ref))
+            .or_insert_with(|| HashMap::new());
+        if class_ref.has_static_field(name) {
+            if !fields.contains_key(name) {
+                panic!("class does not have static field {}", name);
+            }
+
+            fields.insert(name.to_owned(), value);
         }
     }
 
@@ -383,6 +397,63 @@ impl VMState {
                     ))
                 }
             }
+            Instruction::PutStatic(idx) => {
+                if let Some(Constant::Fieldref(class_idx, name_and_type_idx)) =
+                    self.current_frame().enclosing_class.get_const(*idx)
+                {
+                    let referent_class = self
+                        .current_frame()
+                        .enclosing_class
+                        .get_const(*class_idx)
+                        .unwrap();
+                    let referent_class_name =
+                        if let Constant::Class(class_name_idx) = referent_class {
+                            self.current_frame()
+                                .enclosing_class
+                                .get_str(*class_name_idx)
+                                .unwrap()
+                        } else {
+                            panic!("referent class is not a class?");
+                        };
+                    let target_class = vm.resolve_class(referent_class_name).unwrap();
+                    if let Some(Constant::NameAndType(name_idx, type_idx)) = self
+                        .current_frame()
+                        .enclosing_class
+                        .get_const(*name_and_type_idx)
+                    {
+                        let referent_name = self
+                            .current_frame()
+                            .enclosing_class
+                            .get_str(*name_idx)
+                            .unwrap()
+                            .to_string();
+                        let referent_type = self
+                            .current_frame()
+                            .enclosing_class
+                            .get_str(*type_idx)
+                            .unwrap()
+                            .to_string();
+
+                        let value = if let Some(value) = self.current_frame_mut().operand_stack.pop() {
+                            value
+                        } else {
+                            return Err(VMError::BadClass("iadd but insufficient arguments"));
+                        };
+
+                        self
+                            .put_field(&target_class, &referent_name, &referent_type, value);
+                        Ok(None)
+                    } else {
+                        Err(VMError::BadClass(
+                            "fieldref name_and_type does not index a NameAndType",
+                        ))
+                    }
+                } else {
+                    Err(VMError::BadClass(
+                        "getstatic constant pool idx does not index a Fieldref",
+                    ))
+                }
+            }
             Instruction::IConst0 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut.operand_stack.push(Rc::new(Value::Integer(0)));
@@ -610,6 +681,29 @@ pub enum Value {
 }
 
 impl Value {
+    pub fn default_of(s: &str) -> Value {
+        match s {
+            "J" => {
+                Value::Long(0)
+            }
+            "B" | "C" | "S" | "Z" | "I" => {
+                Value::Integer(0)
+            },
+            "F" => {
+                Value::Float(0.0)
+            },
+            "D" => {
+                Value::Double(0.0)
+            },
+            // Lasdf;   reference type
+            // [        array
+            // [[Lasdf; asdf[][]
+            other => {
+                Value::Null(other.to_string())
+            }
+        }
+    }
+
     pub fn parse_from(s: &str) -> Option<Value> {
         if s == "null" {
             return Some(Value::Null("Object".to_string()));
