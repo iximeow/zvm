@@ -1,20 +1,20 @@
+use std::collections::HashMap;
+use std::io::Cursor;
 use std::rc::Rc;
 use std::str::FromStr;
-use std::io::Cursor;
-use std::collections::HashMap;
 
+use crate::class_file::attribute::Attribute;
+use crate::class_file::instruction::Instruction;
+use crate::class_file::read::FromReader;
 use crate::class_file::AccessFlags;
-use crate::class_file::Constant;
-use crate::class_file::ConstantIdx;
 use crate::class_file::ClassFile;
 use crate::class_file::ClassFileRef;
+use crate::class_file::Constant;
+use crate::class_file::ConstantIdx;
 use crate::class_file::FieldInfo;
 use crate::class_file::MethodAccessFlags;
 use crate::class_file::MethodHandle;
 use crate::class_file::MethodInfo;
-use crate::class_file::read::FromReader;
-use crate::class_file::attribute::Attribute;
-use crate::class_file::instruction::Instruction;
 
 struct CallFrame {
     offset: u32,
@@ -25,13 +25,17 @@ struct CallFrame {
 }
 
 impl CallFrame {
-    pub fn new(body: Rc<Attribute>, enclosing_class: Rc<ClassFile>, arguments:  Vec<Rc<Value>>) -> Self {
+    pub fn new(
+        body: Rc<Attribute>,
+        enclosing_class: Rc<ClassFile>,
+        arguments: Vec<Rc<Value>>,
+    ) -> Self {
         CallFrame {
-            offset:0 ,
+            offset: 0,
             arguments,
             body,
             enclosing_class,
-            operand_stack: Vec::new()
+            operand_stack: Vec::new(),
         }
     }
 }
@@ -43,19 +47,32 @@ pub struct VMState {
 }
 
 impl VMState {
-    pub fn new(code: Rc<Attribute>, method_class: Rc<ClassFile>, initial_args: Vec<Rc<Value>>) -> Self {
+    pub fn new(
+        code: Rc<Attribute>,
+        method_class: Rc<ClassFile>,
+        initial_args: Vec<Rc<Value>>,
+    ) -> Self {
         let mut state = VMState {
             call_stack: Vec::new(),
             static_instances: HashMap::new(),
         };
-        state.call_stack.push(CallFrame::new(code, method_class, initial_args));
+        state
+            .call_stack
+            .push(CallFrame::new(code, method_class, initial_args));
         state
     }
 
     fn get_field(&mut self, class_ref: &Rc<ClassFile>, name: &str, ty: &str) -> Option<Rc<Value>> {
-        let fields = self.static_instances.entry(ClassFileRef::of(class_ref)).or_insert_with(|| HashMap::new());
+        let fields = self
+            .static_instances
+            .entry(ClassFileRef::of(class_ref))
+            .or_insert_with(|| HashMap::new());
         if class_ref.has_static_field(name) {
-            Some(Rc::clone(fields.entry(name.to_string()).or_insert_with(|| Rc::new(Value::Null(ty.to_owned())))))
+            Some(Rc::clone(
+                fields
+                    .entry(name.to_string())
+                    .or_insert_with(|| Rc::new(Value::Null(ty.to_owned()))),
+            ))
         } else {
             None
         }
@@ -91,8 +108,14 @@ impl VMState {
         }
     }
 
-    pub fn enter(&mut self, body: Rc<Attribute>, enclosing_class: Rc<ClassFile>, arguments: Vec<Rc<Value>>) {
-        self.call_stack.push(CallFrame::new(body, enclosing_class, arguments));
+    pub fn enter(
+        &mut self,
+        body: Rc<Attribute>,
+        enclosing_class: Rc<ClassFile>,
+        arguments: Vec<Rc<Value>>,
+    ) {
+        self.call_stack
+            .push(CallFrame::new(body, enclosing_class, arguments));
     }
 
     pub fn leave(&mut self) {
@@ -105,9 +128,13 @@ impl VMState {
         let operand = match argument {
             Some(argument) => match &**argument {
                 Value::Integer(_) => Rc::clone(argument),
-                _ => { return Err(VMError::BadClass("iload but not integer")); }
+                _ => {
+                    return Err(VMError::BadClass("iload but not integer"));
+                }
+            },
+            None => {
+                return Err(VMError::BadClass("iload but insufficient arguments"));
             }
-            None => { return Err(VMError::BadClass("iload but insufficient arguments")); }
         };
 
         frame_mut.operand_stack.push(operand);
@@ -120,9 +147,13 @@ impl VMState {
         let operand = match argument {
             Some(argument) => match &**argument {
                 Value::Long(_) => Rc::clone(argument),
-                _ => { return Err(VMError::BadClass("lload but not long")); }
+                _ => {
+                    return Err(VMError::BadClass("lload but not long"));
+                }
+            },
+            None => {
+                return Err(VMError::BadClass("lload but insufficient arguments"));
             }
-            None => { return Err(VMError::BadClass("lload but insufficient arguments")); }
         };
 
         frame_mut.operand_stack.push(operand);
@@ -135,9 +166,13 @@ impl VMState {
         let operand = match argument {
             Some(argument) => match &**argument {
                 Value::Float(_) => Rc::clone(argument),
-                _ => { return Err(VMError::BadClass("fload but not float")); }
+                _ => {
+                    return Err(VMError::BadClass("fload but not float"));
+                }
+            },
+            None => {
+                return Err(VMError::BadClass("fload but insufficient arguments"));
             }
-            None => { return Err(VMError::BadClass("fload but insufficient arguments")); }
         };
 
         frame_mut.operand_stack.push(operand);
@@ -150,33 +185,68 @@ impl VMState {
         let operand = match argument {
             Some(argument) => match &**argument {
                 Value::Double(_) => Rc::clone(argument),
-                _ => { return Err(VMError::BadClass("dload but not double")); }
+                _ => {
+                    return Err(VMError::BadClass("dload but not double"));
+                }
+            },
+            None => {
+                return Err(VMError::BadClass("dload but insufficient arguments"));
             }
-            None => { return Err(VMError::BadClass("dload but insufficient arguments")); }
         };
 
         frame_mut.operand_stack.push(operand);
         Ok(None)
     }
 
-    fn execute(&mut self, instruction: &Instruction, vm: &mut VirtualMachine) -> Result<Option<Rc<Value>>, VMError> {
+    fn execute(
+        &mut self,
+        instruction: &Instruction,
+        vm: &mut VirtualMachine,
+    ) -> Result<Option<Rc<Value>>, VMError> {
         match instruction {
             Instruction::InvokeVirtual(idx) => {
-                if let Some(Constant::Methodref(class_idx, name_and_type_idx)) = self.current_frame().enclosing_class.get_const(*idx) {
-                    let method_class = self.current_frame().enclosing_class.get_const(*class_idx).unwrap();
+                if let Some(Constant::Methodref(class_idx, name_and_type_idx)) =
+                    self.current_frame().enclosing_class.get_const(*idx)
+                {
+                    let method_class = self
+                        .current_frame()
+                        .enclosing_class
+                        .get_const(*class_idx)
+                        .unwrap();
                     let method_class_name = if let Constant::Class(class_name_idx) = method_class {
-                        self.current_frame().enclosing_class.get_str(*class_name_idx).unwrap()
+                        self.current_frame()
+                            .enclosing_class
+                            .get_str(*class_name_idx)
+                            .unwrap()
                     } else {
                         panic!("method's class is not a class?");
                     };
                     let target_class = vm.resolve_class(method_class_name).unwrap();
-                    if let Some(Constant::NameAndType(name_idx, type_idx)) = self.current_frame().enclosing_class.get_const(*name_and_type_idx) {
-                        let method_name = self.current_frame().enclosing_class.get_str(*name_idx).unwrap().to_string();
-                        let method_type = self.current_frame().enclosing_class.get_str(*type_idx).unwrap().to_string();
-                        let method = target_class.get_method(&method_name).expect("method exists");
+                    if let Some(Constant::NameAndType(name_idx, type_idx)) = self
+                        .current_frame()
+                        .enclosing_class
+                        .get_const(*name_and_type_idx)
+                    {
+                        let method_name = self
+                            .current_frame()
+                            .enclosing_class
+                            .get_str(*name_idx)
+                            .unwrap()
+                            .to_string();
+                        let method_type = self
+                            .current_frame()
+                            .enclosing_class
+                            .get_str(*type_idx)
+                            .unwrap()
+                            .to_string();
+                        let method = target_class
+                            .get_method(&method_name)
+                            .expect("method exists");
                         // get method by name `method_name`
                         if method.access_flags.is_native() {
-                            if let Some(native_method) = target_class.native_methods.get(&method_name) {
+                            if let Some(native_method) =
+                                target_class.native_methods.get(&method_name)
+                            {
                                 native_method(self, vm)?;
                                 Ok(None)
                             } else {
@@ -187,28 +257,59 @@ impl VMState {
                             Ok(None)
                         }
                     } else {
-                        Err(VMError::BadClass("fieldref name_and_type does not index a NameAndType"))
+                        Err(VMError::BadClass(
+                            "fieldref name_and_type does not index a NameAndType",
+                        ))
                     }
                 } else {
-                    Err(VMError::BadClass("getstatic constant pool idx does not index a Fieldref"))
+                    Err(VMError::BadClass(
+                        "getstatic constant pool idx does not index a Fieldref",
+                    ))
                 }
             }
             Instruction::InvokeStatic(idx) => {
-                if let Some(Constant::Methodref(class_idx, name_and_type_idx)) = self.current_frame().enclosing_class.get_const(*idx) {
-                    let method_class = self.current_frame().enclosing_class.get_const(*class_idx).unwrap();
+                if let Some(Constant::Methodref(class_idx, name_and_type_idx)) =
+                    self.current_frame().enclosing_class.get_const(*idx)
+                {
+                    let method_class = self
+                        .current_frame()
+                        .enclosing_class
+                        .get_const(*class_idx)
+                        .unwrap();
                     let method_class_name = if let Constant::Class(class_name_idx) = method_class {
-                        self.current_frame().enclosing_class.get_str(*class_name_idx).unwrap()
+                        self.current_frame()
+                            .enclosing_class
+                            .get_str(*class_name_idx)
+                            .unwrap()
                     } else {
                         panic!("method's class is not a class?");
                     };
                     let target_class = vm.resolve_class(method_class_name).unwrap();
-                    if let Some(Constant::NameAndType(name_idx, type_idx)) = self.current_frame().enclosing_class.get_const(*name_and_type_idx) {
-                        let method_name = self.current_frame().enclosing_class.get_str(*name_idx).unwrap().to_string();
-                        let method_type = self.current_frame().enclosing_class.get_str(*type_idx).unwrap().to_string();
-                        let method = target_class.get_method(&method_name).expect("method exists");
+                    if let Some(Constant::NameAndType(name_idx, type_idx)) = self
+                        .current_frame()
+                        .enclosing_class
+                        .get_const(*name_and_type_idx)
+                    {
+                        let method_name = self
+                            .current_frame()
+                            .enclosing_class
+                            .get_str(*name_idx)
+                            .unwrap()
+                            .to_string();
+                        let method_type = self
+                            .current_frame()
+                            .enclosing_class
+                            .get_str(*type_idx)
+                            .unwrap()
+                            .to_string();
+                        let method = target_class
+                            .get_method(&method_name)
+                            .expect("method exists");
                         // get method by name `method_name`
                         if method.access_flags.is_native() {
-                            if let Some(native_method) = target_class.native_methods.get(&method_name) {
+                            if let Some(native_method) =
+                                target_class.native_methods.get(&method_name)
+                            {
                                 native_method(self, vm)?;
                                 Ok(None)
                             } else {
@@ -219,33 +320,66 @@ impl VMState {
                             Ok(None)
                         }
                     } else {
-                        Err(VMError::BadClass("fieldref name_and_type does not index a NameAndType"))
+                        Err(VMError::BadClass(
+                            "fieldref name_and_type does not index a NameAndType",
+                        ))
                     }
                 } else {
-                    Err(VMError::BadClass("getstatic constant pool idx does not index a Fieldref"))
+                    Err(VMError::BadClass(
+                        "getstatic constant pool idx does not index a Fieldref",
+                    ))
                 }
-
             }
             Instruction::GetStatic(idx) => {
-                if let Some(Constant::Fieldref(class_idx, name_and_type_idx)) = self.current_frame().enclosing_class.get_const(*idx) {
-                    let referent_class = self.current_frame().enclosing_class.get_const(*class_idx).unwrap();
-                    let referent_class_name = if let Constant::Class(class_name_idx) = referent_class {
-                        self.current_frame().enclosing_class.get_str(*class_name_idx).unwrap()
-                    } else {
-                        panic!("referent class is not a class?");
-                    };
+                if let Some(Constant::Fieldref(class_idx, name_and_type_idx)) =
+                    self.current_frame().enclosing_class.get_const(*idx)
+                {
+                    let referent_class = self
+                        .current_frame()
+                        .enclosing_class
+                        .get_const(*class_idx)
+                        .unwrap();
+                    let referent_class_name =
+                        if let Constant::Class(class_name_idx) = referent_class {
+                            self.current_frame()
+                                .enclosing_class
+                                .get_str(*class_name_idx)
+                                .unwrap()
+                        } else {
+                            panic!("referent class is not a class?");
+                        };
                     let target_class = vm.resolve_class(referent_class_name).unwrap();
-                    if let Some(Constant::NameAndType(name_idx, type_idx)) = self.current_frame().enclosing_class.get_const(*name_and_type_idx) {
-                        let referent_name = self.current_frame().enclosing_class.get_str(*name_idx).unwrap().to_string();
-                        let referent_type = self.current_frame().enclosing_class.get_str(*type_idx).unwrap().to_string();
-                        let value = self.get_field(&target_class, &referent_name, &referent_type).unwrap();
+                    if let Some(Constant::NameAndType(name_idx, type_idx)) = self
+                        .current_frame()
+                        .enclosing_class
+                        .get_const(*name_and_type_idx)
+                    {
+                        let referent_name = self
+                            .current_frame()
+                            .enclosing_class
+                            .get_str(*name_idx)
+                            .unwrap()
+                            .to_string();
+                        let referent_type = self
+                            .current_frame()
+                            .enclosing_class
+                            .get_str(*type_idx)
+                            .unwrap()
+                            .to_string();
+                        let value = self
+                            .get_field(&target_class, &referent_name, &referent_type)
+                            .unwrap();
                         self.current_frame_mut().operand_stack.push(value);
                         Ok(None)
                     } else {
-                        Err(VMError::BadClass("fieldref name_and_type does not index a NameAndType"))
+                        Err(VMError::BadClass(
+                            "fieldref name_and_type does not index a NameAndType",
+                        ))
                     }
                 } else {
-                    Err(VMError::BadClass("getstatic constant pool idx does not index a Fieldref"))
+                    Err(VMError::BadClass(
+                        "getstatic constant pool idx does not index a Fieldref",
+                    ))
                 }
             }
             Instruction::IConst0 => {
@@ -280,9 +414,7 @@ impl VMState {
                             Ok(None)
                         }
                     }
-                    _ => {
-                        Err(VMError::BadClass("iadd but invalid operand types"))
-                    }
+                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
                 }
             }
             Instruction::IfIcmpNe(offset) => {
@@ -298,7 +430,6 @@ impl VMState {
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-
                 match (&*left, &*right) {
                     (Value::Integer(l), Value::Integer(r)) => {
                         if *l != *r {
@@ -308,31 +439,29 @@ impl VMState {
                             Ok(None)
                         }
                     }
-                    _ => {
-                        Err(VMError::BadClass("iadd but invalid operand types"))
-                    }
+                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
                 }
             }
-            Instruction::ILoad0 => { self.interpret_iload(0) }
-            Instruction::ILoad1 => { self.interpret_iload(1) }
-            Instruction::ILoad2 => { self.interpret_iload(2) }
-            Instruction::ILoad3 => { self.interpret_iload(3) }
-            Instruction::ILoad(idx) => { self.interpret_iload(*idx) }
-            Instruction::LLoad0 => { self.interpret_lload(0) }
-            Instruction::LLoad1 => { self.interpret_lload(1) }
-            Instruction::LLoad2 => { self.interpret_lload(2) }
-            Instruction::LLoad3 => { self.interpret_lload(3) }
-            Instruction::LLoad(idx) => { self.interpret_lload(*idx) }
-            Instruction::FLoad0 => { self.interpret_fload(0) }
-            Instruction::FLoad1 => { self.interpret_fload(1) }
-            Instruction::FLoad2 => { self.interpret_fload(2) }
-            Instruction::FLoad3 => { self.interpret_fload(3) }
-            Instruction::FLoad(idx) => { self.interpret_fload(*idx) }
-            Instruction::DLoad0 => { self.interpret_dload(0) }
-            Instruction::DLoad1 => { self.interpret_dload(1) }
-            Instruction::DLoad2 => { self.interpret_dload(2) }
-            Instruction::DLoad3 => { self.interpret_dload(3) }
-            Instruction::DLoad(idx) => { self.interpret_dload(*idx) }
+            Instruction::ILoad0 => self.interpret_iload(0),
+            Instruction::ILoad1 => self.interpret_iload(1),
+            Instruction::ILoad2 => self.interpret_iload(2),
+            Instruction::ILoad3 => self.interpret_iload(3),
+            Instruction::ILoad(idx) => self.interpret_iload(*idx),
+            Instruction::LLoad0 => self.interpret_lload(0),
+            Instruction::LLoad1 => self.interpret_lload(1),
+            Instruction::LLoad2 => self.interpret_lload(2),
+            Instruction::LLoad3 => self.interpret_lload(3),
+            Instruction::LLoad(idx) => self.interpret_lload(*idx),
+            Instruction::FLoad0 => self.interpret_fload(0),
+            Instruction::FLoad1 => self.interpret_fload(1),
+            Instruction::FLoad2 => self.interpret_fload(2),
+            Instruction::FLoad3 => self.interpret_fload(3),
+            Instruction::FLoad(idx) => self.interpret_fload(*idx),
+            Instruction::DLoad0 => self.interpret_dload(0),
+            Instruction::DLoad1 => self.interpret_dload(1),
+            Instruction::DLoad2 => self.interpret_dload(2),
+            Instruction::DLoad3 => self.interpret_dload(3),
+            Instruction::DLoad(idx) => self.interpret_dload(*idx),
             Instruction::IAdd => {
                 let frame_mut = self.current_frame_mut();
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
@@ -348,12 +477,12 @@ impl VMState {
 
                 match (&*left, &*right) {
                     (Value::Integer(l), Value::Integer(r)) => {
-                        frame_mut.operand_stack.push(Rc::new(Value::Integer(l.wrapping_add(*r))));
+                        frame_mut
+                            .operand_stack
+                            .push(Rc::new(Value::Integer(l.wrapping_add(*r))));
                         Ok(None)
                     }
-                    _ => {
-                        Err(VMError::BadClass("iadd but invalid operand types"))
-                    }
+                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
                 }
             }
             Instruction::ISub => {
@@ -371,12 +500,12 @@ impl VMState {
 
                 match (&*left, &*right) {
                     (Value::Integer(l), Value::Integer(r)) => {
-                        frame_mut.operand_stack.push(Rc::new(Value::Integer(l.wrapping_sub(*r))));
+                        frame_mut
+                            .operand_stack
+                            .push(Rc::new(Value::Integer(l.wrapping_sub(*r))));
                         Ok(None)
                     }
-                    _ => {
-                        Err(VMError::BadClass("iadd but invalid operand types"))
-                    }
+                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
                 }
             }
             Instruction::I2B => {
@@ -389,12 +518,12 @@ impl VMState {
 
                 match &*value {
                     Value::Integer(l) => {
-                        frame_mut.operand_stack.push(Rc::new(Value::Integer((*l) as i8 as i32)));
+                        frame_mut
+                            .operand_stack
+                            .push(Rc::new(Value::Integer((*l) as i8 as i32)));
                         Ok(None)
                     }
-                    _ => {
-                        Err(VMError::BadClass("iadd but invalid operand types"))
-                    }
+                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
                 }
             }
             Instruction::I2C => {
@@ -407,12 +536,12 @@ impl VMState {
 
                 match &*value {
                     Value::Integer(l) => {
-                        frame_mut.operand_stack.push(Rc::new(Value::Integer((*l) as i16 as u16 as i32)));
+                        frame_mut
+                            .operand_stack
+                            .push(Rc::new(Value::Integer((*l) as i16 as u16 as i32)));
                         Ok(None)
                     }
-                    _ => {
-                        Err(VMError::BadClass("iadd but invalid operand types"))
-                    }
+                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
                 }
             }
             Instruction::IReturn => {
@@ -428,21 +557,17 @@ impl VMState {
                         self.leave();
                         Ok(Some(value))
                     }
-                    _ => {
-                        Err(VMError::BadClass("ireturn but invalid operand types"))
-                    }
+                    _ => Err(VMError::BadClass("ireturn but invalid operand types")),
                 }
             }
             Instruction::Ldc(idx) => {
                 let value = match self.current_frame().enclosing_class.get_const(*idx) {
-                    Some(Constant::Integer(i)) => {
-                        Rc::new(Value::Integer(*i as i32))
-                    },
-                    Some(Constant::Long(l)) => {
-                        Rc::new(Value::Long(*l as i64))
-                    }
+                    Some(Constant::Integer(i)) => Rc::new(Value::Integer(*i as i32)),
+                    Some(Constant::Long(l)) => Rc::new(Value::Long(*l as i64)),
                     Some(Constant::String(idx)) => {
-                        if let Some(Constant::Utf8(data)) = self.current_frame().enclosing_class.get_const(*idx) {
+                        if let Some(Constant::Utf8(data)) =
+                            self.current_frame().enclosing_class.get_const(*idx)
+                        {
                             Rc::new(Value::String(data.clone()))
                         } else {
                             return Err(VMError::BadClass("string ref is not utf8 data"));
@@ -506,7 +631,7 @@ impl Value {
 }
 
 pub struct VirtualMachine {
-    classes: HashMap<String, Rc<ClassFile>>
+    classes: HashMap<String, Rc<ClassFile>>,
 }
 
 #[derive(Debug)]
@@ -522,7 +647,7 @@ pub enum VMError {
 impl VirtualMachine {
     pub fn new() -> Self {
         VirtualMachine {
-            classes: HashMap::new()
+            classes: HashMap::new(),
         }
     }
 
@@ -542,12 +667,10 @@ impl VirtualMachine {
                     this_class: ConstantIdx::new(1).unwrap(),
                     super_class: None,
                     interfaces: Vec::new(),
-                    fields: vec![
-                        FieldInfo {
-                            is_static: true,
-                            name_index: ConstantIdx::new(2).unwrap(),
-                        },
-                    ],
+                    fields: vec![FieldInfo {
+                        is_static: true,
+                        name_index: ConstantIdx::new(2).unwrap(),
+                    }],
                     methods: vec![],
                     attributes: vec![],
                     native_methods: HashMap::new(),
@@ -562,7 +685,10 @@ impl VirtualMachine {
                     Constant::Utf8(b"Ljava/io/PrintStream;".to_vec()),
                 ];
 
-                let mut native_methods: HashMap<String, fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>> = HashMap::new();
+                let mut native_methods: HashMap<
+                    String,
+                    fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>,
+                > = HashMap::new();
                 native_methods.insert("println".to_string(), system_out_println);
 
                 let synthetic_class = ClassFile {
@@ -574,52 +700,70 @@ impl VirtualMachine {
                     super_class: None,
                     interfaces: Vec::new(),
                     fields: vec![],
-                    methods: vec![
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(2).unwrap(),
-                            descriptor_index: ConstantIdx::new(3).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                    ],
+                    methods: vec![MethodInfo {
+                        access_flags: MethodAccessFlags { flags: 0x0101 },
+                        name_index: ConstantIdx::new(2).unwrap(),
+                        descriptor_index: ConstantIdx::new(3).unwrap(),
+                        attributes: Vec::new(),
+                    }],
                     attributes: vec![],
                     native_methods,
                 };
 
                 Ok(Rc::new(synthetic_class))
-
-            },
+            }
             class_name => {
-                println!("Looking up class {}", class_name);
+                //                println!("Looking up class {}", class_name);
                 match self.classes.get(class_name) {
                     Some(class_ref) => Ok(Rc::clone(class_ref)),
-                    None => Err(VMError::BadClass("unknown class, cannot dynamically "))
+                    None => Err(VMError::BadClass("unknown class, cannot dynamically ")),
                 }
             }
         }
     }
 
-    pub fn register(&mut self, class_name: String, class_file: ClassFile) -> Result<Rc<ClassFile>, VMError> {
-        println!("Registering class {}", class_name);;
+    pub fn register(
+        &mut self,
+        class_name: String,
+        class_file: ClassFile,
+    ) -> Result<Rc<ClassFile>, VMError> {
+        //        println!("Registering class {}", class_name);;
         let rc = Rc::new(class_file);
         self.classes.insert(class_name, Rc::clone(&rc));
         Ok(rc)
     }
 
-    pub fn get_method(&self, class_ref: &Rc<ClassFile>, method: &str) -> Result<Rc<MethodHandle>, VMError> {
-        class_ref.get_method(method).map_err(|_| VMError::NameResolutionError)
+    pub fn get_method(
+        &self,
+        class_ref: &Rc<ClassFile>,
+        method: &str,
+    ) -> Result<Rc<MethodHandle>, VMError> {
+        class_ref
+            .get_method(method)
+            .map_err(|_| VMError::NameResolutionError)
     }
 
-    pub fn execute(&mut self, method: Rc<MethodHandle>, class_ref: &Rc<ClassFile>, args: Vec<Rc<Value>>) -> Result<Option<Rc<Value>>, VMError> {
+    pub fn execute(
+        &mut self,
+        method: Rc<MethodHandle>,
+        class_ref: &Rc<ClassFile>,
+        args: Vec<Rc<Value>>,
+    ) -> Result<Option<Rc<Value>>, VMError> {
         if !method.access().is_static() {
-            return Err(VMError::AccessError("attempted to call an instance method without an instance"));
+            return Err(VMError::AccessError(
+                "attempted to call an instance method without an instance",
+            ));
         }
 
         if !method.access().is_public() {
-            return Err(VMError::AccessError("attempted to initiate VM with non-public function"))
+            return Err(VMError::AccessError(
+                "attempted to initiate VM with non-public function",
+            ));
         }
 
-        let code = method.body().ok_or(VMError::AccessError("attempted to initiate VM with function that has no body"))?;
+        let code = method.body().ok_or(VMError::AccessError(
+            "attempted to initiate VM with function that has no body",
+        ))?;
 
         // TODO: verify arguments? verify that `method` does not take arguments??
 
@@ -632,9 +776,9 @@ impl VirtualMachine {
         println!("zoom zoom");
 
         while let Some(instruction) = state.next_instruction() {
-//            println!("Executing {:?}", instruction);
-            let enc = &*state.current_frame().enclosing_class;
-            println!("Executing {}", instruction.display(enc));
+            //            println!("Executing {:?}", instruction);
+            //            let enc = &*state.current_frame().enclosing_class;
+            //            println!("Executing {}", instruction.display(enc));
             if let Some(value) = state.execute(&instruction, self)? {
                 // TODO: type check the return value
                 if state.call_stack.len() == 0 {
@@ -646,15 +790,21 @@ impl VirtualMachine {
                     state.current_frame_mut().operand_stack.push(value);
                 }
             }
-//            println!("Complete!");
+            //            println!("Complete!");
         }
 
         Ok(None)
-//        Ok(state.return_value())
+        //        Ok(state.return_value())
     }
 }
 
-fn interpreted_method_call(state: &mut VMState, _vm: &mut VirtualMachine, method: Rc<MethodHandle>, method_class: Rc<ClassFile>, method_type: &str) -> Result<(), VMError> {
+fn interpreted_method_call(
+    state: &mut VMState,
+    _vm: &mut VirtualMachine,
+    method: Rc<MethodHandle>,
+    method_class: Rc<ClassFile>,
+    method_type: &str,
+) -> Result<(), VMError> {
     // TODO: parse out arguments from method type, check against available operands, do the call
     //
     // today: [...], do the call
@@ -662,16 +812,32 @@ fn interpreted_method_call(state: &mut VMState, _vm: &mut VirtualMachine, method
     if method_type == "(I)I" {
         let frame = state.current_frame_mut();
         let arg = frame.operand_stack.pop().expect("argument is present");
-        state.enter(method.body().expect("method has a body"), method_class, vec![arg]);
+        state.enter(
+            method.body().expect("method has a body"),
+            method_class,
+            vec![arg],
+        );
     } else {
-        state.enter(method.body().expect("method has a body"), method_class, vec![]);
+        state.enter(
+            method.body().expect("method has a body"),
+            method_class,
+            vec![],
+        );
     }
     Ok(())
 }
 
 fn system_out_println(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
-    let argument = state.current_frame_mut().operand_stack.pop().expect("argument available");
-    let _receiver = state.current_frame_mut().operand_stack.pop().expect("argument available");
+    let argument = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    let _receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
     if let Value::String(data) = &*argument {
         if let Ok(string) = std::str::from_utf8(data) {
             println!("{}", string);

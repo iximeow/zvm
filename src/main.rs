@@ -6,8 +6,8 @@ use crate::vm::Value;
 use crate::vm::VirtualMachine;
 
 use std::fs::File;
-use std::rc::Rc;
 use std::path::Path;
+use std::rc::Rc;
 
 fn main() {
     let env = std::env::args().collect::<Vec<_>>();

@@ -12,10 +12,10 @@ use crate::vm::VMError;
 use crate::vm::VMState;
 use crate::vm::VirtualMachine;
 
-use std::fmt;
-use std::rc::Rc;
 use std::collections::HashMap;
+use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::rc::Rc;
 
 // TODO: helper to consistency check flags
 #[derive(Debug, Clone, Copy)]
@@ -433,7 +433,8 @@ pub struct ClassFile {
     pub(crate) fields: Vec<FieldInfo>,
     pub(crate) methods: Vec<MethodInfo>,
     pub(crate) attributes: Vec<AttributeInfo>,
-    pub(crate) native_methods: HashMap<String, fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>>,
+    pub(crate) native_methods:
+        HashMap<String, fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>>,
 }
 
 impl fmt::Debug for ClassFile {
@@ -472,7 +473,7 @@ impl Hash for ClassFileRef {
     }
 }
 
-impl Eq for ClassFileRef { }
+impl Eq for ClassFileRef {}
 
 impl PartialEq for ClassFileRef {
     fn eq(&self, other: &ClassFileRef) -> bool {
@@ -518,9 +519,11 @@ impl ClassFile {
                     access_flags: method.access_flags,
                     name: method_name.to_string(),
                     descriptor: self.get_str(method.descriptor_index).unwrap().to_string(),
-                    attributes: method.attributes.iter().map(|attr| {
-                        Rc::new(attr.materialize(self).unwrap())
-                    }).collect()
+                    attributes: method
+                        .attributes
+                        .iter()
+                        .map(|attr| Rc::new(attr.materialize(self).unwrap()))
+                        .collect(),
                 };
 
                 return Ok(Rc::new(handle));
@@ -556,12 +559,7 @@ impl fmt::Display for ClassFile {
         writeln!(f, "  {:?}", self.interfaces)?;
         writeln!(f, "  {:?}", self.fields)?;
         for c in self.constant_pool.iter() {
-            writeln!(
-                f,
-                "  const {:?} {}",
-                c,
-                c.display(self),
-            )?;
+            writeln!(f, "  const {:?} {}", c, c.display(self),)?;
         }
         for method in self.methods.iter() {
             writeln!(

@@ -10,8 +10,8 @@ use crate::class_file::MethodHandleBehavior;
 use crate::class_file::MethodInfo;
 
 use byteorder::{BigEndian, ReadBytesExt};
-use std::io::Read;
 use std::collections::HashMap;
+use std::io::Read;
 
 const CLASS_MAGIC: u32 = 0xcafebabe;
 
