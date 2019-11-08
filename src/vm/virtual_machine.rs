@@ -454,6 +454,16 @@ impl VMState {
                     ))
                 }
             }
+            Instruction::LConst0 => {
+                let frame_mut = self.current_frame_mut();
+                frame_mut.operand_stack.push(Rc::new(Value::Long(0)));
+                Ok(None)
+            }
+            Instruction::LConst1 => {
+                let frame_mut = self.current_frame_mut();
+                frame_mut.operand_stack.push(Rc::new(Value::Long(1)));
+                Ok(None)
+            }
             Instruction::IConst0 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut.operand_stack.push(Rc::new(Value::Integer(0)));
@@ -467,6 +477,26 @@ impl VMState {
             Instruction::IConst2 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut.operand_stack.push(Rc::new(Value::Integer(2)));
+                Ok(None)
+            }
+            Instruction::IConst3 => {
+                let frame_mut = self.current_frame_mut();
+                frame_mut.operand_stack.push(Rc::new(Value::Integer(3)));
+                Ok(None)
+            }
+            Instruction::IConst4 => {
+                let frame_mut = self.current_frame_mut();
+                frame_mut.operand_stack.push(Rc::new(Value::Integer(4)));
+                Ok(None)
+            }
+            Instruction::IConst5 => {
+                let frame_mut = self.current_frame_mut();
+                frame_mut.operand_stack.push(Rc::new(Value::Integer(5)));
+                Ok(None)
+            }
+            Instruction::IConstM1 => {
+                let frame_mut = self.current_frame_mut();
+                frame_mut.operand_stack.push(Rc::new(Value::Integer(-1)));
                 Ok(None)
             }
             Instruction::IfNe(offset) => {
@@ -555,6 +585,32 @@ impl VMState {
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                }
+            }
+            Instruction::LAdd => {
+                let frame_mut = self.current_frame_mut();
+                let left = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("ladd but insufficient arguments"));
+                };
+                let right = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("ladd but insufficient arguments"));
+                };
+
+                match (&*left, &*right) {
+                    (Value::Long(l), Value::Long(r)) => {
+                        frame_mut
+                            .operand_stack
+                            .push(Rc::new(Value::Long(l.wrapping_add(*r))));
+                        Ok(None)
+                    }
+                    _ => {
+                        println!("bad types: {:?}, {:?}", left, right);
+                        Err(VMError::BadClass("ladd but invalid operand types"))
+                    }
                 }
             }
             Instruction::ISub => {
