@@ -11,6 +11,7 @@ use crate::class_file::ClassFile;
 use crate::class_file::ClassFileRef;
 use crate::class_file::Constant;
 use crate::class_file::ConstantIdx;
+use crate::class_file::FieldAccessFlags;
 use crate::class_file::FieldInfo;
 use crate::class_file::MethodAccessFlags;
 use crate::class_file::MethodHandle;
@@ -657,6 +658,7 @@ impl VirtualMachine {
                 let constants = vec![
                     Constant::Utf8(b"java/lang/System".to_vec()),
                     Constant::Utf8(b"out".to_vec()),
+                    Constant::Utf8(b"();".to_vec()),
                 ];
 
                 let synthetic_class = ClassFile {
@@ -668,8 +670,10 @@ impl VirtualMachine {
                     super_class: None,
                     interfaces: Vec::new(),
                     fields: vec![FieldInfo {
-                        is_static: true,
+                        access_flags: FieldAccessFlags { flags: 0x0001 },
                         name_index: ConstantIdx::new(2).unwrap(),
+                        descriptor_index: ConstantIdx::new(3).unwrap(),
+                        attributes: Vec::new(),
                     }],
                     methods: vec![],
                     attributes: vec![],

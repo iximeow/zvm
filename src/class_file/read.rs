@@ -4,6 +4,7 @@ use crate::class_file::ClassFile;
 use crate::class_file::Constant;
 use crate::class_file::ConstantIdx;
 use crate::class_file::Error;
+use crate::class_file::FieldAccessFlags;
 use crate::class_file::FieldInfo;
 use crate::class_file::MethodAccessFlags;
 use crate::class_file::MethodHandleBehavior;
@@ -22,6 +23,14 @@ pub trait FromReader<R>: Sized {
 impl<R: Read> FromReader<R> for u8 {
     fn read_from(data: &mut R) -> Result<Self, Error> {
         Ok(data.read_u8()?)
+    }
+}
+
+impl<R: Read> FromReader<R> for FieldAccessFlags {
+    fn read_from(data: &mut R) -> Result<Self, Error> {
+        Ok(FieldAccessFlags {
+            flags: data.read_u16::<BigEndian>()?,
+        })
     }
 }
 
@@ -91,8 +100,17 @@ impl<R: Read> FromReader<R> for AttributeInfo {
 }
 
 impl<R: Read> FromReader<R> for FieldInfo {
-    fn read_from(_data: &mut R) -> Result<Self, Error> {
-        Err(Error::Unsupported("FieldInfo"))
+    fn read_from(data: &mut R) -> Result<Self, Error> {
+        let access_flags = FieldAccessFlags::read_from(data)?;
+        let name_index = ConstantIdx::read_from(data)?;
+        let descriptor_index = ConstantIdx::read_from(data)?;
+        let attributes = read_prefixed_array::<_, AttributeInfo>(0, data)?;
+        Ok(FieldInfo {
+            access_flags,
+            name_index,
+            descriptor_index,
+            attributes,
+        })
     }
 }
 
