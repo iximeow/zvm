@@ -271,8 +271,8 @@ impl VMState {
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match (&*value) {
-                    (Value::Integer(v)) => {
+                match &*value {
+                    Value::Integer(v) => {
                         if *v != 0 {
                             frame_mut.offset += *offset as i32 as u32 - 3;
                             Ok(None)
@@ -387,8 +387,8 @@ impl VMState {
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match (&*value) {
-                    (Value::Integer(l)) => {
+                match &*value {
+                    Value::Integer(l) => {
                         frame_mut.operand_stack.push(Rc::new(Value::Integer((*l) as i8 as i32)));
                         Ok(None)
                     }
@@ -405,8 +405,8 @@ impl VMState {
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match (&*value) {
-                    (Value::Integer(l)) => {
+                match &*value {
+                    Value::Integer(l) => {
                         frame_mut.operand_stack.push(Rc::new(Value::Integer((*l) as i16 as u16 as i32)));
                         Ok(None)
                     }
@@ -423,8 +423,8 @@ impl VMState {
                     return Err(VMError::BadClass("ireturn but insufficient arguments"));
                 };
 
-                match (&*value) {
-                    (Value::Integer(_)) => {
+                match &*value {
+                    Value::Integer(_) => {
                         self.leave();
                         Ok(Some(value))
                     }
