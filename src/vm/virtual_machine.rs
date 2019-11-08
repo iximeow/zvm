@@ -248,6 +248,71 @@ impl VMState {
                     Err(VMError::BadClass("getstatic constant pool idx does not index a Fieldref"))
                 }
             }
+            Instruction::IConst0 => {
+                let frame_mut = self.current_frame_mut();
+                frame_mut.operand_stack.push(Rc::new(Value::Integer(0)));
+                Ok(None)
+            }
+            Instruction::IConst1 => {
+                let frame_mut = self.current_frame_mut();
+                frame_mut.operand_stack.push(Rc::new(Value::Integer(1)));
+                Ok(None)
+            }
+            Instruction::IConst2 => {
+                let frame_mut = self.current_frame_mut();
+                frame_mut.operand_stack.push(Rc::new(Value::Integer(2)));
+                Ok(None)
+            }
+            Instruction::IfNe(offset) => {
+                let frame_mut = self.current_frame_mut();
+                let value = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+
+                match (&*value) {
+                    (Value::Integer(v)) => {
+                        if *v != 0 {
+                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            Ok(None)
+                        } else {
+                            Ok(None)
+                        }
+                    }
+                    _ => {
+                        Err(VMError::BadClass("iadd but invalid operand types"))
+                    }
+                }
+            }
+            Instruction::IfIcmpNe(offset) => {
+                let frame_mut = self.current_frame_mut();
+                let left = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+                let right = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+
+
+                match (&*left, &*right) {
+                    (Value::Integer(l), Value::Integer(r)) => {
+                        if *l != *r {
+                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            Ok(None)
+                        } else {
+                            Ok(None)
+                        }
+                    }
+                    _ => {
+                        Err(VMError::BadClass("iadd but invalid operand types"))
+                    }
+                }
+            }
             Instruction::ILoad0 => { self.interpret_iload(0) }
             Instruction::ILoad1 => { self.interpret_iload(1) }
             Instruction::ILoad2 => { self.interpret_iload(2) }
@@ -284,6 +349,29 @@ impl VMState {
                 match (&*left, &*right) {
                     (Value::Integer(l), Value::Integer(r)) => {
                         frame_mut.operand_stack.push(Rc::new(Value::Integer(l.wrapping_add(*r))));
+                        Ok(None)
+                    }
+                    _ => {
+                        Err(VMError::BadClass("iadd but invalid operand types"))
+                    }
+                }
+            }
+            Instruction::ISub => {
+                let frame_mut = self.current_frame_mut();
+                let right = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+                let left = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+
+                match (&*left, &*right) {
+                    (Value::Integer(l), Value::Integer(r)) => {
+                        frame_mut.operand_stack.push(Rc::new(Value::Integer(l.wrapping_sub(*r))));
                         Ok(None)
                     }
                     _ => {
@@ -566,12 +654,18 @@ impl VirtualMachine {
     }
 }
 
-fn interpreted_method_call(state: &mut VMState, _vm: &mut VirtualMachine, method: Rc<MethodHandle>, method_class: Rc<ClassFile>, _method_type: &str) -> Result<(), VMError> {
+fn interpreted_method_call(state: &mut VMState, _vm: &mut VirtualMachine, method: Rc<MethodHandle>, method_class: Rc<ClassFile>, method_type: &str) -> Result<(), VMError> {
     // TODO: parse out arguments from method type, check against available operands, do the call
     //
     // today: [...], do the call
 
-    state.enter(method.body().expect("method has a body"), method_class, vec![]);
+    if method_type == "(I)I" {
+        let frame = state.current_frame_mut();
+        let arg = frame.operand_stack.pop().expect("argument is present");
+        state.enter(method.body().expect("method has a body"), method_class, vec![arg]);
+    } else {
+        state.enter(method.body().expect("method has a body"), method_class, vec![]);
+    }
     Ok(())
 }
 
