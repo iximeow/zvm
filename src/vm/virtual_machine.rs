@@ -32,7 +32,7 @@ impl CallFrame {
         enclosing_class: Rc<ClassFile>,
         mut arguments: Vec<Rc<RefCell<Value>>>,
     ) -> Self {
-        if let Attribute::Code(max_stack, max_locals, _, _, _) = &*body {
+        if let Attribute::Code(_max_stack, max_locals, _, _, _) = &*body {
             while arguments.len() < (*max_locals as usize) {
                 arguments.push(Rc::new(RefCell::new(Value::Integer(0))));
             }
@@ -515,7 +515,7 @@ impl VMState {
                     ))
                 }
             }
-            Instruction::NewArray(tpe) => {
+            Instruction::NewArray(_tpe) => {
                 let top = self
                     .current_frame_mut()
                     .operand_stack
@@ -1420,9 +1420,9 @@ fn string_init_string(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(
         .operand_stack
         .pop()
         .expect("argument available");
-    if let Value::Integer(data) = &*argument.borrow() {
-        // replace `argument`? ... objects must be RefCell<Object>...
-        panic!("string constructors are not ... real ... yeah...");
+    if let (Value::Object(argument, _), Value::Object(receiver, _)) = (&*argument.borrow(), &mut *receiver.borrow_mut()) {
+        let new_value = Rc::clone(&argument["value"]);
+        receiver.insert("value".to_string(), new_value);
     } else {
         panic!("type error, expected string, got {:?}", argument);
     }
