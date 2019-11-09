@@ -247,6 +247,11 @@ impl VMState {
                             {
                                 native_method(self, vm)?;
                                 Ok(None)
+                            } else if let Some(native_method) =
+                                target_class.native_methods.get(&format!("{}{}", method_name, method_type))
+                            {
+                                native_method(self, vm)?;
+                                Ok(None)
                             } else {
                                 panic!("attempted to call native method with no implementation: {} - note, JNI resolution is not yet supported.", method_name);
                             }
@@ -307,6 +312,11 @@ impl VMState {
                         if method.access_flags.is_native() {
                             if let Some(native_method) =
                                 target_class.native_methods.get(&method_name)
+                            {
+                                native_method(self, vm)?;
+                                Ok(None)
+                            } else if let Some(native_method) =
+                                target_class.native_methods.get(&format!("{}{}", method_name, method_type))
                             {
                                 native_method(self, vm)?;
                                 Ok(None)
@@ -479,6 +489,11 @@ impl VMState {
                         if method.access_flags.is_native() {
                             if let Some(native_method) =
                                 target_class.native_methods.get(&method_name)
+                            {
+                                native_method(self, vm)?;
+                                Ok(None)
+                            } else if let Some(native_method) =
+                                target_class.native_methods.get(&format!("{}{}", method_name, method_type))
                             {
                                 native_method(self, vm)?;
                                 Ok(None)
