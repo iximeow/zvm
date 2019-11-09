@@ -161,6 +161,17 @@ impl VMState {
         Ok(None)
     }
 
+    fn interpret_lstore(&mut self, idx: u16) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
+        let frame_mut = self.current_frame_mut();
+        let value = frame_mut
+            .operand_stack
+            .pop()
+            .expect("operand stack has value");
+        frame_mut.arguments[idx as usize] = Rc::clone(&value);
+
+        Ok(None)
+    }
+
     fn interpret_fload(&mut self, idx: u16) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
         let frame_mut = self.current_frame_mut();
         let argument: Option<&Rc<RefCell<Value>>> = frame_mut.arguments.get(idx as usize);
@@ -180,6 +191,17 @@ impl VMState {
         Ok(None)
     }
 
+    fn interpret_fstore(&mut self, idx: u16) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
+        let frame_mut = self.current_frame_mut();
+        let value = frame_mut
+            .operand_stack
+            .pop()
+            .expect("operand stack has value");
+        frame_mut.arguments[idx as usize] = Rc::clone(&value);
+
+        Ok(None)
+    }
+
     fn interpret_dload(&mut self, idx: u16) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
         let frame_mut = self.current_frame_mut();
         let argument: Option<&Rc<RefCell<Value>>> = frame_mut.arguments.get(idx as usize);
@@ -196,6 +218,43 @@ impl VMState {
         };
 
         frame_mut.operand_stack.push(operand);
+        Ok(None)
+    }
+
+    fn interpret_dstore(&mut self, idx: u16) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
+        let frame_mut = self.current_frame_mut();
+        let value = frame_mut
+            .operand_stack
+            .pop()
+            .expect("operand stack has value");
+        frame_mut.arguments[idx as usize] = Rc::clone(&value);
+
+        Ok(None)
+    }
+
+    fn interpret_aload(&mut self, idx: u16) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
+        let frame_mut = self.current_frame_mut();
+        let argument: Option<&Rc<RefCell<Value>>> = frame_mut.arguments.get(idx as usize);
+        let operand = match argument {
+            // TODO: type check argument as an object?
+            Some(argument) => Rc::clone(argument),
+            None => {
+                return Err(VMError::BadClass("dload but insufficient arguments"));
+            }
+        };
+
+        frame_mut.operand_stack.push(operand);
+        Ok(None)
+    }
+
+    fn interpret_astore(&mut self, idx: u16) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
+        let frame_mut = self.current_frame_mut();
+        let value = frame_mut
+            .operand_stack
+            .pop()
+            .expect("operand stack has value");
+        frame_mut.arguments[idx as usize] = Rc::clone(&value);
+
         Ok(None)
     }
 
@@ -848,16 +907,41 @@ impl VMState {
             Instruction::LLoad2 => self.interpret_lload(2),
             Instruction::LLoad3 => self.interpret_lload(3),
             Instruction::LLoad(idx) => self.interpret_lload(*idx),
+            Instruction::LStore0 => self.interpret_lstore(0),
+            Instruction::LStore1 => self.interpret_lstore(1),
+            Instruction::LStore2 => self.interpret_lstore(2),
+            Instruction::LStore3 => self.interpret_lstore(3),
+            Instruction::LStore(idx) => self.interpret_lstore(*idx),
             Instruction::FLoad0 => self.interpret_fload(0),
             Instruction::FLoad1 => self.interpret_fload(1),
             Instruction::FLoad2 => self.interpret_fload(2),
             Instruction::FLoad3 => self.interpret_fload(3),
             Instruction::FLoad(idx) => self.interpret_fload(*idx),
+            Instruction::FStore0 => self.interpret_fstore(0),
+            Instruction::FStore1 => self.interpret_fstore(1),
+            Instruction::FStore2 => self.interpret_fstore(2),
+            Instruction::FStore3 => self.interpret_fstore(3),
+            Instruction::FStore(idx) => self.interpret_fstore(*idx),
             Instruction::DLoad0 => self.interpret_dload(0),
             Instruction::DLoad1 => self.interpret_dload(1),
             Instruction::DLoad2 => self.interpret_dload(2),
             Instruction::DLoad3 => self.interpret_dload(3),
             Instruction::DLoad(idx) => self.interpret_dload(*idx),
+            Instruction::DStore0 => self.interpret_dstore(0),
+            Instruction::DStore1 => self.interpret_dstore(1),
+            Instruction::DStore2 => self.interpret_dstore(2),
+            Instruction::DStore3 => self.interpret_dstore(3),
+            Instruction::DStore(idx) => self.interpret_dstore(*idx),
+            Instruction::ALoad0 => self.interpret_aload(0),
+            Instruction::ALoad1 => self.interpret_aload(1),
+            Instruction::ALoad2 => self.interpret_aload(2),
+            Instruction::ALoad3 => self.interpret_aload(3),
+            Instruction::ALoad(idx) => self.interpret_aload(*idx),
+            Instruction::AStore0 => self.interpret_astore(0),
+            Instruction::AStore1 => self.interpret_astore(1),
+            Instruction::AStore2 => self.interpret_astore(2),
+            Instruction::AStore3 => self.interpret_astore(3),
+            Instruction::AStore(idx) => self.interpret_astore(*idx),
             Instruction::IAdd => {
                 let frame_mut = self.current_frame_mut();
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
