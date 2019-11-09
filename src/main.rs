@@ -27,7 +27,10 @@ fn main() {
     let class_ref = vm.register(class_name.to_string(), class_file).unwrap();
     let entrypoint_methods = vm.get_methods(&class_ref, methodname).unwrap();
     if entrypoint_methods.len() != 1 {
-        println!("invalid number of methods matching entrypoint name: {:?}", entrypoint_methods.len());
+        println!(
+            "invalid number of methods matching entrypoint name: {:?}",
+            entrypoint_methods.len()
+        );
         return;
     }
     let entrypoint = Rc::clone(&entrypoint_methods[0]);

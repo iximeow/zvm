@@ -215,7 +215,7 @@ pub struct FieldInfo {
     pub(crate) access_flags: FieldAccessFlags,
     pub(crate) name_index: ConstantIdx,
     pub(crate) descriptor_index: ConstantIdx,
-    pub(crate) attributes: Vec<AttributeInfo>
+    pub(crate) attributes: Vec<AttributeInfo>,
 }
 
 #[derive(Debug)]
