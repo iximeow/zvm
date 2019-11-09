@@ -26,6 +26,12 @@ impl<R: Read> FromReader<R> for u8 {
     }
 }
 
+impl<R: Read> FromReader<R> for i8 {
+    fn read_from(data: &mut R) -> Result<Self, Error> {
+        Ok(data.read_i8()?)
+    }
+}
+
 impl<R: Read> FromReader<R> for FieldAccessFlags {
     fn read_from(data: &mut R) -> Result<Self, Error> {
         Ok(FieldAccessFlags {
