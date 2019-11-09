@@ -24,7 +24,12 @@ fn main() {
     let class_file_path = Path::new(filename);
     let class_name = class_file_path.file_stem().unwrap().to_str().unwrap();
     let class_ref = vm.register(class_name.to_string(), class_file).unwrap();
-    let entrypoint = vm.get_method(&class_ref, methodname).unwrap();
+    let entrypoint_methods = vm.get_methods(&class_ref, methodname).unwrap();
+    if entrypoint_methods.len() != 1 {
+        println!("invalid number of methods matching entrypoint name: {:?}", entrypoint_methods.len());
+        return;
+    }
+    let entrypoint = Rc::clone(&entrypoint_methods[0]);
     if let Some(value) = vm.execute(entrypoint, &class_ref, values).unwrap() {
         println!("> {:?}", value);
     } else {

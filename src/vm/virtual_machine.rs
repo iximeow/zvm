@@ -255,7 +255,7 @@ impl VMState {
                             .unwrap()
                             .to_string();
                         let method = target_class
-                            .get_method(&method_name)
+                            .get_method(&method_name, &method_type)
                             .expect("method exists");
                         // get method by name `method_name`
                         if method.access_flags.is_native() {
@@ -318,7 +318,7 @@ impl VMState {
                             .unwrap()
                             .to_string();
                         let method = target_class
-                            .get_method(&method_name)
+                            .get_method(&method_name, &method_type)
                             .expect("method exists");
                         // get method by name `method_name`
                         if method.access_flags.is_native() {
@@ -891,9 +891,20 @@ impl VirtualMachine {
         &self,
         class_ref: &Rc<ClassFile>,
         method: &str,
+        desc: &str,
     ) -> Result<Rc<MethodHandle>, VMError> {
         class_ref
-            .get_method(method)
+            .get_method(method, desc)
+            .map_err(|_| VMError::NameResolutionError)
+    }
+
+    pub fn get_methods(
+        &self,
+        class_ref: &Rc<ClassFile>,
+        method: &str,
+    ) -> Result<Vec<Rc<MethodHandle>>, VMError> {
+        class_ref
+            .get_methods(method)
             .map_err(|_| VMError::NameResolutionError)
     }
 

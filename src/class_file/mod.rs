@@ -550,14 +550,36 @@ impl ClassFile {
         }
     }
 
-    pub fn get_method(&self, name: &str) -> Result<Rc<MethodHandle>, Error> {
+    pub fn get_methods(&self, name: &str) -> Result<Vec<Rc<MethodHandle>>, Error> {
+        let mut methods = Vec::new();
         for method in self.methods.iter() {
             let method_name = self.get_str(method.name_index).unwrap();
             if method_name == name {
-                let handle = MethodHandle {
+                methods.push(Rc::new(MethodHandle {
                     access_flags: method.access_flags,
                     name: method_name.to_string(),
                     descriptor: self.get_str(method.descriptor_index).unwrap().to_string(),
+                    attributes: method
+                        .attributes
+                        .iter()
+                        .map(|attr| Rc::new(attr.materialize(self).unwrap()))
+                        .collect(),
+                }));
+            }
+        }
+
+        Ok(methods)
+    }
+
+    pub fn get_method(&self, name: &str, desc: &str) -> Result<Rc<MethodHandle>, Error> {
+        for method in self.methods.iter() {
+            let method_name = self.get_str(method.name_index).unwrap();
+            let method_desc = self.get_str(method.descriptor_index).unwrap();
+            if method_name == name && method_desc == desc {
+                let handle = MethodHandle {
+                    access_flags: method.access_flags,
+                    name: method_name.to_string(),
+                    descriptor: method_desc.to_string(),
                     attributes: method
                         .attributes
                         .iter()
