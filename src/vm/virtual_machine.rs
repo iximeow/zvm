@@ -32,6 +32,12 @@ impl CallFrame {
         enclosing_class: Rc<ClassFile>,
         mut arguments: Vec<Rc<RefCell<Value>>>,
     ) -> Self {
+        if let Attribute::Code(max_stack, max_locals, _, _, _) = &*body {
+            while arguments.len() < (*max_locals as usize) {
+                arguments.push(Rc::new(RefCell::new(Value::Integer(0))));
+            }
+        }
+
         CallFrame {
             offset: 0,
             arguments,
