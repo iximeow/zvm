@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::cell::RefCell;
 use std::io::Cursor;
 use std::rc::Rc;
 use std::str::FromStr;
@@ -19,17 +20,17 @@ use crate::class_file::MethodInfo;
 
 struct CallFrame {
     offset: u32,
-    arguments: Vec<Rc<Value>>,
+    arguments: Vec<Rc<RefCell<Value>>>,
     body: Rc<Attribute>,
     enclosing_class: Rc<ClassFile>,
-    operand_stack: Vec<Rc<Value>>,
+    operand_stack: Vec<Rc<RefCell<Value>>>,
 }
 
 impl CallFrame {
     pub fn new(
         body: Rc<Attribute>,
         enclosing_class: Rc<ClassFile>,
-        arguments: Vec<Rc<Value>>,
+        mut arguments: Vec<Rc<RefCell<Value>>>,
     ) -> Self {
         CallFrame {
             offset: 0,
@@ -44,53 +45,21 @@ impl CallFrame {
 pub struct VMState {
     // Attribute is actually a Code (anything else is an error)
     call_stack: Vec<CallFrame>,
-    static_instances: HashMap<ClassFileRef, HashMap<String, Rc<Value>>>,
 }
 
 impl VMState {
     pub fn new(
         code: Rc<Attribute>,
         method_class: Rc<ClassFile>,
-        initial_args: Vec<Rc<Value>>,
+        initial_args: Vec<Rc<RefCell<Value>>>,
     ) -> Self {
         let mut state = VMState {
             call_stack: Vec::new(),
-            static_instances: HashMap::new(),
         };
         state
             .call_stack
             .push(CallFrame::new(code, method_class, initial_args));
         state
-    }
-
-    fn get_field(&mut self, class_ref: &Rc<ClassFile>, name: &str, ty: &str) -> Option<Rc<Value>> {
-        let fields = self
-            .static_instances
-            .entry(ClassFileRef::of(class_ref))
-            .or_insert_with(|| HashMap::new());
-        if class_ref.has_static_field(name) {
-            Some(Rc::clone(
-                fields
-                    .entry(name.to_string())
-                    .or_insert_with(|| Rc::new(Value::default_of(ty))),
-            ))
-        } else {
-            None
-        }
-    }
-
-    fn put_field(&mut self, class_ref: &Rc<ClassFile>, name: &str, ty: &str, value: Rc<Value>) {
-        let fields = self
-            .static_instances
-            .entry(ClassFileRef::of(class_ref))
-            .or_insert_with(|| HashMap::new());
-        if class_ref.has_static_field(name) {
-            if !fields.contains_key(name) {
-                panic!("class does not have static field {}", name);
-            }
-
-            fields.insert(name.to_owned(), value);
-        }
     }
 
     fn current_frame(&self) -> &CallFrame {
@@ -127,7 +96,7 @@ impl VMState {
         &mut self,
         body: Rc<Attribute>,
         enclosing_class: Rc<ClassFile>,
-        arguments: Vec<Rc<Value>>,
+        arguments: Vec<Rc<RefCell<Value>>>,
     ) {
         self.call_stack
             .push(CallFrame::new(body, enclosing_class, arguments));
@@ -137,11 +106,11 @@ impl VMState {
         self.call_stack.pop().expect("stack is non-empty");
     }
 
-    fn interpret_iload(&mut self, idx: u16) -> Result<Option<Rc<Value>>, VMError> {
+    fn interpret_iload(&mut self, idx: u16) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
         let frame_mut = self.current_frame_mut();
-        let argument: Option<&Rc<Value>> = frame_mut.arguments.get(idx as usize);
+        let argument: Option<&Rc<RefCell<Value>>> = frame_mut.arguments.get(idx as usize);
         let operand = match argument {
-            Some(argument) => match &**argument {
+            Some(argument) => match &*argument.borrow() {
                 Value::Integer(_) => Rc::clone(argument),
                 _ => {
                     return Err(VMError::BadClass("iload but not integer"));
@@ -156,11 +125,19 @@ impl VMState {
         Ok(None)
     }
 
-    fn interpret_lload(&mut self, idx: u16) -> Result<Option<Rc<Value>>, VMError> {
+    fn interpret_istore(&mut self, idx: u16) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
         let frame_mut = self.current_frame_mut();
-        let argument: Option<&Rc<Value>> = frame_mut.arguments.get(idx as usize);
+        let value = frame_mut.operand_stack.pop().expect("operand stack has value");
+        frame_mut.arguments[idx as usize] = Rc::clone(&value);
+
+        Ok(None)
+    }
+
+    fn interpret_lload(&mut self, idx: u16) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
+        let frame_mut = self.current_frame_mut();
+        let argument: Option<&Rc<RefCell<Value>>> = frame_mut.arguments.get(idx as usize);
         let operand = match argument {
-            Some(argument) => match &**argument {
+            Some(argument) => match &*argument.borrow() {
                 Value::Long(_) => Rc::clone(argument),
                 _ => {
                     return Err(VMError::BadClass("lload but not long"));
@@ -175,11 +152,11 @@ impl VMState {
         Ok(None)
     }
 
-    fn interpret_fload(&mut self, idx: u16) -> Result<Option<Rc<Value>>, VMError> {
+    fn interpret_fload(&mut self, idx: u16) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
         let frame_mut = self.current_frame_mut();
-        let argument: Option<&Rc<Value>> = frame_mut.arguments.get(idx as usize);
+        let argument: Option<&Rc<RefCell<Value>>> = frame_mut.arguments.get(idx as usize);
         let operand = match argument {
-            Some(argument) => match &**argument {
+            Some(argument) => match &*argument.borrow() {
                 Value::Float(_) => Rc::clone(argument),
                 _ => {
                     return Err(VMError::BadClass("fload but not float"));
@@ -194,11 +171,11 @@ impl VMState {
         Ok(None)
     }
 
-    fn interpret_dload(&mut self, idx: u16) -> Result<Option<Rc<Value>>, VMError> {
+    fn interpret_dload(&mut self, idx: u16) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
         let frame_mut = self.current_frame_mut();
-        let argument: Option<&Rc<Value>> = frame_mut.arguments.get(idx as usize);
+        let argument: Option<&Rc<RefCell<Value>>> = frame_mut.arguments.get(idx as usize);
         let operand = match argument {
-            Some(argument) => match &**argument {
+            Some(argument) => match &*argument.borrow() {
                 Value::Double(_) => Rc::clone(argument),
                 _ => {
                     return Err(VMError::BadClass("dload but not double"));
@@ -217,7 +194,7 @@ impl VMState {
         &mut self,
         instruction: &Instruction,
         vm: &mut VirtualMachine,
-    ) -> Result<Option<Rc<Value>>, VMError> {
+    ) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
         match instruction {
             Instruction::InvokeVirtual(idx) => {
                 if let Some(Constant::Methodref(class_idx, name_and_type_idx)) =
@@ -381,8 +358,8 @@ impl VMState {
                             .get_str(*type_idx)
                             .unwrap()
                             .to_string();
-                        let value = self
-                            .get_field(&target_class, &referent_name, &referent_type)
+                        let value = vm
+                            .get_static_field(&target_class, &referent_name, &referent_type)
                             .unwrap();
                         self.current_frame_mut().operand_stack.push(value);
                         Ok(None)
@@ -440,8 +417,8 @@ impl VMState {
                             return Err(VMError::BadClass("iadd but insufficient arguments"));
                         };
 
-                        self
-                            .put_field(&target_class, &referent_name, &referent_type, value);
+                        vm
+                            .put_static_field(&target_class, &referent_name, &referent_type, value);
                         Ok(None)
                     } else {
                         Err(VMError::BadClass(
@@ -456,47 +433,47 @@ impl VMState {
             }
             Instruction::LConst0 => {
                 let frame_mut = self.current_frame_mut();
-                frame_mut.operand_stack.push(Rc::new(Value::Long(0)));
+                frame_mut.operand_stack.push(Rc::new(RefCell::new(Value::Long(0))));
                 Ok(None)
             }
             Instruction::LConst1 => {
                 let frame_mut = self.current_frame_mut();
-                frame_mut.operand_stack.push(Rc::new(Value::Long(1)));
+                frame_mut.operand_stack.push(Rc::new(RefCell::new(Value::Long(1))));
                 Ok(None)
             }
             Instruction::IConst0 => {
                 let frame_mut = self.current_frame_mut();
-                frame_mut.operand_stack.push(Rc::new(Value::Integer(0)));
+                frame_mut.operand_stack.push(Rc::new(RefCell::new(Value::Integer(0))));
                 Ok(None)
             }
             Instruction::IConst1 => {
                 let frame_mut = self.current_frame_mut();
-                frame_mut.operand_stack.push(Rc::new(Value::Integer(1)));
+                frame_mut.operand_stack.push(Rc::new(RefCell::new(Value::Integer(1))));
                 Ok(None)
             }
             Instruction::IConst2 => {
                 let frame_mut = self.current_frame_mut();
-                frame_mut.operand_stack.push(Rc::new(Value::Integer(2)));
+                frame_mut.operand_stack.push(Rc::new(RefCell::new(Value::Integer(2))));
                 Ok(None)
             }
             Instruction::IConst3 => {
                 let frame_mut = self.current_frame_mut();
-                frame_mut.operand_stack.push(Rc::new(Value::Integer(3)));
+                frame_mut.operand_stack.push(Rc::new(RefCell::new(Value::Integer(3))));
                 Ok(None)
             }
             Instruction::IConst4 => {
                 let frame_mut = self.current_frame_mut();
-                frame_mut.operand_stack.push(Rc::new(Value::Integer(4)));
+                frame_mut.operand_stack.push(Rc::new(RefCell::new(Value::Integer(4))));
                 Ok(None)
             }
             Instruction::IConst5 => {
                 let frame_mut = self.current_frame_mut();
-                frame_mut.operand_stack.push(Rc::new(Value::Integer(5)));
+                frame_mut.operand_stack.push(Rc::new(RefCell::new(Value::Integer(5))));
                 Ok(None)
             }
             Instruction::IConstM1 => {
                 let frame_mut = self.current_frame_mut();
-                frame_mut.operand_stack.push(Rc::new(Value::Integer(-1)));
+                frame_mut.operand_stack.push(Rc::new(RefCell::new(Value::Integer(-1))));
                 Ok(None)
             }
             Instruction::IfNe(offset) => {
@@ -507,7 +484,7 @@ impl VMState {
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match &*value {
+                match &*Rc::clone(&value).borrow() {
                     Value::Integer(v) => {
                         if *v != 0 {
                             frame_mut.offset += *offset as i32 as u32 - 3;
@@ -532,7 +509,7 @@ impl VMState {
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match (&*left, &*right) {
+                match (&*Rc::clone(&left).borrow(), &*Rc::clone(&right).borrow()) {
                     (Value::Integer(l), Value::Integer(r)) => {
                         if *l != *r {
                             frame_mut.offset += *offset as i32 as u32 - 3;
@@ -577,11 +554,11 @@ impl VMState {
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match (&*left, &*right) {
+                match (&*Rc::clone(&left).borrow(), &*Rc::clone(&right).borrow()) {
                     (Value::Integer(l), Value::Integer(r)) => {
                         frame_mut
                             .operand_stack
-                            .push(Rc::new(Value::Integer(l.wrapping_add(*r))));
+                            .push(Rc::new(RefCell::new(Value::Integer(l.wrapping_add(*r)))));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
@@ -600,11 +577,11 @@ impl VMState {
                     return Err(VMError::BadClass("ladd but insufficient arguments"));
                 };
 
-                match (&*left, &*right) {
+                match (&*Rc::clone(&left).borrow(), &*Rc::clone(&right).borrow()) {
                     (Value::Long(l), Value::Long(r)) => {
                         frame_mut
                             .operand_stack
-                            .push(Rc::new(Value::Long(l.wrapping_add(*r))));
+                            .push(Rc::new(RefCell::new(Value::Long(l.wrapping_add(*r)))));
                         Ok(None)
                     }
                     _ => {
@@ -626,11 +603,11 @@ impl VMState {
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match (&*left, &*right) {
+                match (&*Rc::clone(&left).borrow(), &*Rc::clone(&right).borrow()) {
                     (Value::Integer(l), Value::Integer(r)) => {
                         frame_mut
                             .operand_stack
-                            .push(Rc::new(Value::Integer(l.wrapping_sub(*r))));
+                            .push(Rc::new(RefCell::new(Value::Integer(l.wrapping_sub(*r)))));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
@@ -644,11 +621,11 @@ impl VMState {
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match &*value {
+                match &*Rc::clone(&value).borrow() {
                     Value::Integer(l) => {
                         frame_mut
                             .operand_stack
-                            .push(Rc::new(Value::Integer((*l) as i8 as i32)));
+                            .push(Rc::new(RefCell::new(Value::Integer((*l) as i8 as i32))));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
@@ -662,11 +639,11 @@ impl VMState {
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match &*value {
+                match &*Rc::clone(&value).borrow() {
                     Value::Integer(l) => {
                         frame_mut
                             .operand_stack
-                            .push(Rc::new(Value::Integer((*l) as i16 as u16 as i32)));
+                            .push(Rc::new(RefCell::new(Value::Integer((*l) as i16 as u16 as i32))));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
@@ -680,8 +657,24 @@ impl VMState {
                     return Err(VMError::BadClass("ireturn but insufficient arguments"));
                 };
 
-                match &*value {
+                match &*Rc::clone(&value).borrow() {
                     Value::Integer(_) => {
+                        self.leave();
+                        Ok(Some(value))
+                    }
+                    _ => Err(VMError::BadClass("ireturn but invalid operand types")),
+                }
+            }
+            Instruction::AReturn => {
+                let frame_mut = self.current_frame_mut();
+                let value = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("ireturn but insufficient arguments"));
+                };
+
+                match &*Rc::clone(&value).borrow() {
+                    Value::Array(_) => {
                         self.leave();
                         Ok(Some(value))
                     }
@@ -690,13 +683,13 @@ impl VMState {
             }
             Instruction::Ldc(idx) => {
                 let value = match self.current_frame().enclosing_class.get_const(*idx) {
-                    Some(Constant::Integer(i)) => Rc::new(Value::Integer(*i as i32)),
-                    Some(Constant::Long(l)) => Rc::new(Value::Long(*l as i64)),
+                    Some(Constant::Integer(i)) => Rc::new(RefCell::new(Value::Integer(*i as i32))),
+                    Some(Constant::Long(l)) => Rc::new(RefCell::new(Value::Long(*l as i64))),
                     Some(Constant::String(idx)) => {
                         if let Some(Constant::Utf8(data)) =
                             self.current_frame().enclosing_class.get_const(*idx)
                         {
-                            Rc::new(Value::String(data.clone()))
+                            Rc::new(RefCell::new(Value::String(data.clone())))
                         } else {
                             return Err(VMError::BadClass("string ref is not utf8 data"));
                         }
@@ -732,6 +725,7 @@ pub enum Value {
     Long(i64),
     Float(f32),
     Double(f64),
+    Array(Box<[Rc<RefCell<Value>>]>),
     String(Vec<u8>),
     Null(String), // Null, of type `String`
 }
@@ -783,6 +777,7 @@ impl Value {
 
 pub struct VirtualMachine {
     classes: HashMap<String, Rc<ClassFile>>,
+    static_instances: HashMap<ClassFileRef, HashMap<String, Rc<RefCell<Value>>>>,
 }
 
 #[derive(Debug)]
@@ -799,6 +794,35 @@ impl VirtualMachine {
     pub fn new() -> Self {
         VirtualMachine {
             classes: HashMap::new(),
+            static_instances: HashMap::new(),
+        }
+    }
+
+    fn get_static_field(&mut self, class_ref: &Rc<ClassFile>, name: &str, ty: &str) -> Option<Rc<RefCell<Value>>> {
+        let fields = self
+            .static_instances
+            .entry(ClassFileRef::of(class_ref))
+            .or_insert_with(|| HashMap::new());
+        if class_ref.has_static_field(name) {
+            Some(Rc::clone(
+                fields
+                    .entry(name.to_string())
+                    .or_insert_with(|| Rc::new(RefCell::new(Value::default_of(ty)))),
+            ))
+        } else {
+            None
+        }
+    }
+
+    fn put_static_field(&mut self, class_ref: &Rc<ClassFile>, name: &str, ty: &str, value: Rc<RefCell<Value>>) {
+        let fields = self
+            .static_instances
+            .entry(ClassFileRef::of(class_ref))
+            .or_insert_with(|| HashMap::new());
+        if class_ref.has_static_field(name) {
+            fields.insert(name.to_owned(), value);
+        } else {
+            panic!("no field {} on {}", name, ty);
         }
     }
 
@@ -912,8 +936,8 @@ impl VirtualMachine {
         &mut self,
         method: Rc<MethodHandle>,
         class_ref: &Rc<ClassFile>,
-        args: Vec<Rc<Value>>,
-    ) -> Result<Option<Rc<Value>>, VMError> {
+        args: Vec<Rc<RefCell<Value>>>,
+    ) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
         if !method.access().is_static() {
             return Err(VMError::AccessError(
                 "attempted to call an instance method without an instance",
@@ -936,7 +960,7 @@ impl VirtualMachine {
         self.interpret(&mut state)
     }
 
-    fn interpret(&mut self, state: &mut VMState) -> Result<Option<Rc<Value>>, VMError> {
+    fn interpret(&mut self, state: &mut VMState) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
         // magic incantation to awaken the machine
         println!("zoom zoom");
 
@@ -1003,7 +1027,7 @@ fn system_out_println(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(
         .operand_stack
         .pop()
         .expect("argument available");
-    if let Value::String(data) = &*argument {
+    if let Value::String(data) = &*argument.borrow() {
         if let Ok(string) = std::str::from_utf8(data) {
             println!("{}", string);
         } else {

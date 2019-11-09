@@ -5,6 +5,7 @@ use crate::class_file::read;
 use crate::vm::Value;
 use crate::vm::VirtualMachine;
 
+use std::cell::RefCell;
 use std::fs::File;
 use std::path::Path;
 use std::rc::Rc;
@@ -38,12 +39,12 @@ fn main() {
 }
 
 // the string is because i don't want to think right now
-fn parse_args(env: &[String]) -> Result<Vec<Rc<Value>>, String> {
+fn parse_args(env: &[String]) -> Result<Vec<Rc<RefCell<Value>>>, String> {
     let mut result = Vec::new();
 
     for s in env {
         if let Some(value) = Value::parse_from(s) {
-            result.push(Rc::new(value))
+            result.push(Rc::new(RefCell::new(value)))
         } else {
             return Err(format!("unable to parse {} as a value", s));
         }
