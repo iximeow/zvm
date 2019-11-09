@@ -1072,7 +1072,80 @@ impl VirtualMachine {
     }
 
     pub fn resolve_class(&mut self, referent: &str) -> Result<Rc<ClassFile>, VMError> {
-        match referent {
+        if let Some(class_file) = self.classes.get(referent) {
+            return Ok(Rc::clone(class_file));
+        }
+
+        let new_class = match referent {
+            "java/lang/String" => {
+                let constants = vec![
+                    Constant::Utf8(b"java/lang/String".to_vec()),
+                    Constant::Utf8(b"<init>".to_vec()),
+                    Constant::Utf8(b"hashCode".to_vec()),
+                    Constant::Utf8(b"()I".to_vec()),
+                    Constant::Utf8(b"(Ljava/lang/String;)".to_vec()),
+                    Constant::Utf8(b"([B)V".to_vec()),
+                    Constant::Utf8(b"[B".to_vec()),
+                    Constant::Utf8(b"value".to_vec()),
+                    Constant::Utf8(b"(Ljava/lang/String;)Ljava/lang/String;".to_vec()),
+                    Constant::Utf8(b"concat".to_vec()),
+                ];
+
+                let mut native_methods: HashMap<
+                    String,
+                    fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>,
+                > = HashMap::new();
+                native_methods.insert("<init>(Ljava/lang/String;)".to_string(), string_init_string);
+                native_methods.insert("<init>([B)V".to_string(), string_init_bytearray);
+                native_methods.insert("hashCode()I".to_string(), string_hashcode);
+                native_methods.insert("concat(Ljava/lang/String;)Ljava/lang/String;".to_string(), string_concat);
+
+                let synthetic_class = ClassFile {
+                    major_version: 55,
+                    minor_version: 0,
+                    constant_pool: constants,
+                    access_flags: AccessFlags { flags: 0x0001 },
+                    this_class: ConstantIdx::new(1).unwrap(),
+                    super_class: None,
+                    interfaces: Vec::new(),
+                    fields: vec![FieldInfo {
+                        access_flags: FieldAccessFlags { flags: 0x0001 },
+                        name_index: ConstantIdx::new(8).unwrap(),
+                        descriptor_index: ConstantIdx::new(7).unwrap(),
+                        attributes: Vec::new()
+                    }],
+                    methods: vec![
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(2).unwrap(),
+                            descriptor_index: ConstantIdx::new(5).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(2).unwrap(),
+                            descriptor_index: ConstantIdx::new(6).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(3).unwrap(),
+                            descriptor_index: ConstantIdx::new(4).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(10).unwrap(),
+                            descriptor_index: ConstantIdx::new(9).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                    ],
+                    attributes: vec![],
+                    native_methods,
+                };
+
+                synthetic_class
+            }
             "java/lang/System" => {
                 let constants = vec![
                     Constant::Utf8(b"java/lang/System".to_vec()),
@@ -1099,7 +1172,7 @@ impl VirtualMachine {
                     native_methods: HashMap::new(),
                 };
 
-                Ok(Rc::new(synthetic_class))
+                synthetic_class
             }
             "java/io/PrintStream" => {
                 let constants = vec![
@@ -1133,16 +1206,18 @@ impl VirtualMachine {
                     native_methods,
                 };
 
-                Ok(Rc::new(synthetic_class))
+                synthetic_class
             }
             class_name => {
                 //                println!("Looking up class {}", class_name);
-                match self.classes.get(class_name) {
+                return match self.classes.get(class_name) {
                     Some(class_ref) => Ok(Rc::clone(class_ref)),
                     None => Err(VMError::BadClass("unknown class, cannot dynamically ")),
                 }
             }
-        }
+        };
+
+        self.register(referent.to_string(), new_class)
     }
 
     pub fn register(
@@ -1280,6 +1355,87 @@ fn system_out_println(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(
         }
     } else {
         panic!("type error, expected string, got {:?}", argument);
+    }
+    Ok(())
+}
+// "<init>(Ljava/lang/String;)"
+fn string_init_string(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let argument = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    let receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    if let Value::Integer(data) = &*argument.borrow() {
+        // replace `argument`? ... objects must be RefCell<Object>...
+        panic!("string constructors are not ... real ... yeah...");
+    } else {
+        panic!("type error, expected string, got {:?}", argument);
+    }
+    Ok(())
+}
+// "<init>([B)"
+fn string_init_bytearray(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let argument = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    let receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    if let Value::Integer(data) = &*argument.borrow() {
+        // replace `argument`? ... objects must be RefCell<Object>...
+        panic!("string constructors are not ... real ... yeah...");
+    } else {
+        panic!("type error, expected string, got {:?}", argument);
+    }
+    Ok(())
+}
+// "hashCode()I"
+fn string_hashcode(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    if let Value::String(data) = &*receiver.borrow() {
+        let mut hashcode: i32 = 0;
+        for c in data.iter().cloned() {
+            hashcode = hashcode.wrapping_mul(31).wrapping_add(c as i8 as i32);
+        }
+        state.current_frame_mut().operand_stack.push(
+            Rc::new(RefCell::new(Value::Integer(hashcode)))
+        );
+    } else {
+        panic!("type error, expected string, got {:?}", receiver);
+    }
+    Ok(())
+}
+// "concat(Ljava/lang/String;)Ljava/lang/String;"
+fn string_concat(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let argument = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    let receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    if let (Value::String(base), Value::String(ext)) = (&*receiver.borrow(), &*argument.borrow()) {
+        state.current_frame_mut().operand_stack.push(
+            Rc::new(RefCell::new(Value::String(base.iter().cloned().chain(ext.iter().cloned()).collect())))
+        );
+    } else {
+        panic!("type error, expected string, string, got {:?}", argument);
     }
     Ok(())
 }
