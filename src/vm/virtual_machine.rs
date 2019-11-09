@@ -431,6 +431,207 @@ impl VMState {
                     ))
                 }
             }
+            Instruction::InvokeSpecial(idx) => {
+                if let Some(Constant::Methodref(class_idx, name_and_type_idx)) =
+                    self.current_frame().enclosing_class.get_const(*idx)
+                {
+                    let method_class = self
+                        .current_frame()
+                        .enclosing_class
+                        .get_const(*class_idx)
+                        .unwrap();
+                    let method_class_name = if let Constant::Class(class_name_idx) = method_class {
+                        self.current_frame()
+                            .enclosing_class
+                            .get_str(*class_name_idx)
+                            .unwrap()
+                    } else {
+                        panic!("method's class is not a class?");
+                    };
+                    let target_class = vm.resolve_class(method_class_name).unwrap();
+                    if let Some(Constant::NameAndType(name_idx, type_idx)) = self
+                        .current_frame()
+                        .enclosing_class
+                        .get_const(*name_and_type_idx)
+                    {
+                        let method_name = self
+                            .current_frame()
+                            .enclosing_class
+                            .get_str(*name_idx)
+                            .unwrap()
+                            .to_string();
+                        let method_type = self
+                            .current_frame()
+                            .enclosing_class
+                            .get_str(*type_idx)
+                            .unwrap()
+                            .to_string();
+                        let method = target_class
+                            .get_method(&method_name, &method_type)
+                            .expect("method exists");
+                        // get method by name `method_name`
+                        if method.access_flags.is_native() {
+                            if let Some(native_method) =
+                                target_class.native_methods.get(&method_name)
+                            {
+                                native_method(self, vm)?;
+                                Ok(None)
+                            } else {
+                                panic!("attempted to call native method with no implementation: {} - note, JNI resolution is not yet supported.", method_name);
+                            }
+                        } else {
+                            interpreted_method_call(self, vm, method, target_class, &method_type)?;
+                            Ok(None)
+                        }
+                    } else {
+                        Err(VMError::BadClass(
+                            "fieldref name_and_type does not index a NameAndType",
+                        ))
+                    }
+                } else {
+                    Err(VMError::BadClass(
+                        "getstatic constant pool idx does not index a Fieldref",
+                    ))
+                }
+            }
+            Instruction::NewArray(tpe) => {
+                let top = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                let mut elems = Vec::new();
+                if let Value::Integer(size) = &*top.borrow() {
+                    for _ in 0..*size {
+                        elems.push(Rc::new(RefCell::new(Value::Integer(0))));
+                    }
+                }
+
+                self.current_frame_mut().operand_stack.push(Rc::new(RefCell::new(Value::Array(elems.into_boxed_slice()))));
+                Ok(None)
+            }
+            Instruction::New(idx) => {
+                if let Some(Constant::Class(class_idx)) = self.current_frame().enclosing_class.get_const(*idx)
+                {
+                    let class_name = self
+                        .current_frame()
+                        .enclosing_class
+                        .get_str(*class_idx)
+                        .unwrap()
+                        .to_string();
+
+                    self.current_frame_mut().operand_stack.push(Rc::new(RefCell::new(Value::Null(class_name))));
+                    Ok(None)
+                } else {
+                    Err(VMError::BadClass(
+                        "new constant pool idx does not index a Class"
+                    ))
+                }
+            }
+            Instruction::BIPush(b) => {
+                self.current_frame_mut().operand_stack.push(Rc::new(RefCell::new(Value::Integer(*b as i32))));
+                Ok(None)
+            }
+            Instruction::SIPush(s) => {
+                self.current_frame_mut().operand_stack.push(Rc::new(RefCell::new(Value::Integer(*s as i32))));
+                Ok(None)
+            }
+            Instruction::Dup => {
+                let top = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                self.current_frame_mut().operand_stack.push(Rc::clone(&top));
+                self.current_frame_mut().operand_stack.push(top);
+                Ok(None)
+            }
+            Instruction::Dup2 => {
+                // ok this one is trickier
+                // TODO: handle longs/doubles properly
+                let top = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let next = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                self.current_frame_mut().operand_stack.push(Rc::clone(&next));
+                self.current_frame_mut().operand_stack.push(Rc::clone(&top));
+                self.current_frame_mut().operand_stack.push(next);
+                self.current_frame_mut().operand_stack.push(top);
+                Ok(None)
+            }
+            Instruction::BALoad => {
+                // ok this one is trickier
+                // TODO: handle longs/doubles properly
+                let index = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let array = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                if let (Value::Array(elements), Value::Integer(index)) = (&*array.borrow(), &*index.borrow()) {
+                    // TODO: homogeneously typed arrays
+                    if let Some(value) = elements.get(*index as usize) {
+                        self.current_frame_mut().operand_stack.push(Rc::clone(value));
+                    } else {
+                        panic!("array index out of bounds exceptions!!");
+                    }
+                } else {
+                    panic!("getting element out of non-array");
+                }
+                Ok(None)
+            }
+            Instruction::BAStore => {
+                // ok this one is trickier
+                // TODO: handle longs/doubles properly
+                let value = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let index = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let array = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                if let (Value::Array(elements), Value::Integer(index)) = (&mut *array.borrow_mut(), &*index.borrow()) {
+                    // TODO: homogeneously typed arrays
+                    elements[*index as usize] = value;
+                } else {
+                    panic!("getting element out of non-array");
+                }
+                Ok(None)
+            }
+            Instruction::ArrayLength => {
+                let top = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                // return length?
+                self.current_frame_mut().operand_stack.push(Rc::new(RefCell::new(Value::Integer(10))));
+                Ok(None)
+            }
             Instruction::LConst0 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut.operand_stack.push(Rc::new(RefCell::new(Value::Long(0))));
