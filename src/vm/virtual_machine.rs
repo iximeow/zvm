@@ -476,6 +476,46 @@ impl VMState {
                 frame_mut.operand_stack.push(Rc::new(RefCell::new(Value::Integer(-1))));
                 Ok(None)
             }
+            Instruction::IfGe(offset) => {
+                let frame_mut = self.current_frame_mut();
+                let value = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+
+                match &*Rc::clone(&value).borrow() {
+                    Value::Integer(v) => {
+                        if *v >= 0 {
+                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            Ok(None)
+                        } else {
+                            Ok(None)
+                        }
+                    }
+                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                }
+            }
+            Instruction::IfLe(offset) => {
+                let frame_mut = self.current_frame_mut();
+                let value = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+
+                match &*Rc::clone(&value).borrow() {
+                    Value::Integer(v) => {
+                        if *v <= 0 {
+                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            Ok(None)
+                        } else {
+                            Ok(None)
+                        }
+                    }
+                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                }
+            }
             Instruction::IfNe(offset) => {
                 let frame_mut = self.current_frame_mut();
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
