@@ -653,9 +653,12 @@ impl VMState {
                     .pop()
                     .expect("stack has a value");
 
-                // return length?
-                self.current_frame_mut().operand_stack.push(Rc::new(RefCell::new(Value::Integer(10))));
-                Ok(None)
+                if let Value::Array(elems) = &*Rc::clone(&top).borrow() {
+                    self.current_frame_mut().operand_stack.push(Rc::new(RefCell::new(Value::Integer(elems.len() as i32))));
+                    Ok(None)
+                } else {
+                    panic!("arraylength but value is not array");
+                }
             }
             Instruction::LConst0 => {
                 let frame_mut = self.current_frame_mut();
