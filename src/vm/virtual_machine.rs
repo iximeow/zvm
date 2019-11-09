@@ -542,7 +542,11 @@ impl VMState {
                         .unwrap()
                         .to_string();
 
-                    self.current_frame_mut().operand_stack.push(Rc::new(RefCell::new(Value::Null(class_name))));
+                    self.current_frame_mut().operand_stack.push(
+                        Rc::new(RefCell::new(
+                            Value::new_inst(vm.resolve_class(&class_name)?)
+                        ))
+                    );
                     Ok(None)
                 } else {
                     Err(VMError::BadClass(
@@ -993,10 +997,23 @@ pub enum Value {
     Double(f64),
     Array(Box<[Rc<RefCell<Value>>]>),
     String(Vec<u8>),
+    Object(HashMap<String, Rc<RefCell<Value>>>, Rc<ClassFile>),
     Null(String), // Null, of type `String`
 }
 
 impl Value {
+    pub fn new_inst(class_file: Rc<ClassFile>) -> Value {
+        let mut fields = HashMap::new();
+        // TODO: respect type and access flags of fields
+        for field in class_file.fields.iter() {
+            fields.insert(
+                class_file.get_str(field.name_index).unwrap().to_string(),
+                Rc::new(RefCell::new(Value::default_of(class_file.get_str(field.descriptor_index).unwrap()))),
+            );
+        }
+        Value::Object(fields, class_file)
+    }
+
     pub fn default_of(s: &str) -> Value {
         match s {
             "J" => {
