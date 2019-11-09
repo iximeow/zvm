@@ -1322,7 +1322,7 @@ impl VirtualMachine {
                 let constants = vec![
                     Constant::Utf8(b"java/lang/System".to_vec()),
                     Constant::Utf8(b"out".to_vec()),
-                    Constant::Utf8(b"();".to_vec()),
+                    Constant::Utf8(b"Ljava/io/PrintStream;".to_vec()),
                 ];
 
                 let synthetic_class = ClassFile {
@@ -1334,7 +1334,7 @@ impl VirtualMachine {
                     super_class: None,
                     interfaces: Vec::new(),
                     fields: vec![FieldInfo {
-                        access_flags: FieldAccessFlags { flags: 0x0001 },
+                        access_flags: FieldAccessFlags { flags: 0x0009 },
                         name_index: ConstantIdx::new(2).unwrap(),
                         descriptor_index: ConstantIdx::new(3).unwrap(),
                         attributes: Vec::new(),
@@ -1350,14 +1350,16 @@ impl VirtualMachine {
                 let constants = vec![
                     Constant::Utf8(b"java/io/PrintStream".to_vec()),
                     Constant::Utf8(b"println".to_vec()),
-                    Constant::Utf8(b"Ljava/io/PrintStream;".to_vec()),
+                    Constant::Utf8(b"(Ljava/lang/String;)V".to_vec()),
+                    Constant::Utf8(b"(I)V".to_vec()),
                 ];
 
                 let mut native_methods: HashMap<
                     String,
                     fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>,
                 > = HashMap::new();
-                native_methods.insert("println".to_string(), system_out_println);
+                native_methods.insert("println(Ljava/lang/String;)V".to_string(), system_out_println_string);
+                native_methods.insert("println(I)V".to_string(), system_out_println_int);
 
                 let synthetic_class = ClassFile {
                     major_version: 55,
@@ -1368,12 +1370,20 @@ impl VirtualMachine {
                     super_class: None,
                     interfaces: Vec::new(),
                     fields: vec![],
-                    methods: vec![MethodInfo {
-                        access_flags: MethodAccessFlags { flags: 0x0101 },
-                        name_index: ConstantIdx::new(2).unwrap(),
-                        descriptor_index: ConstantIdx::new(3).unwrap(),
-                        attributes: Vec::new(),
-                    }],
+                    methods: vec![
+                         MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(2).unwrap(),
+                            descriptor_index: ConstantIdx::new(3).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                         MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(2).unwrap(),
+                            descriptor_index: ConstantIdx::new(4).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                    ],
                     attributes: vec![],
                     native_methods,
                 };
@@ -1523,7 +1533,7 @@ fn interpreted_method_call(
     Ok(())
 }
 
-fn system_out_println(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+fn system_out_println_string(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
     let argument = state
         .current_frame_mut()
         .operand_stack
@@ -1540,6 +1550,38 @@ fn system_out_println(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(
         } else {
             panic!("executing System.out.println(\"{:?}\")", data);
         }
+    } else if let Value::Object(fields, _) = &*argument.borrow() {
+        if let Value::Array(elements) = &*fields["value"].borrow() {
+            for el in elements.iter() {
+                if let Value::Integer(v) = &*el.borrow() {
+                    print!("{}", *v as u8 as char);
+                } else {
+                    panic!("string contains non-byte element")
+                }
+            }
+            print!("\n");
+        } else {
+            panic!("string does not contain value");
+        }
+    } else {
+        panic!("type error, expected string, got {:?}", argument);
+    }
+    Ok(())
+}
+
+fn system_out_println_int(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let argument = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    let _receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    if let Value::Integer(v) = &*argument.borrow() {
+        println!("{}", v);
     } else {
         panic!("type error, expected string, got {:?}", argument);
     }
@@ -1611,6 +1653,23 @@ fn string_hashcode(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), 
             .current_frame_mut()
             .operand_stack
             .push(Rc::new(RefCell::new(Value::Integer(hashcode))));
+    } else if let Value::Object(fields, _) = &*receiver.borrow() {
+        let mut hashcode: i32 = 0;
+        if let Value::Array(elems) = &*fields["value"].borrow() {
+            for c in elems.iter() {
+                if let Value::Integer(v) = &*c.borrow() {
+                    hashcode = hashcode.wrapping_mul(31).wrapping_add(*v as i8 as i32);
+                } else {
+                    panic!("string contains non-byte element");
+                }
+            }
+            state
+                .current_frame_mut()
+                .operand_stack
+                .push(Rc::new(RefCell::new(Value::Integer(hashcode))));
+        } else {
+            panic!("string does not have a value?");
+        }
     } else {
         panic!("type error, expected string, got {:?}", receiver);
     }
