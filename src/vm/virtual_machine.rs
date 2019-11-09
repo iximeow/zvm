@@ -1437,9 +1437,12 @@ fn string_init_bytearray(state: &mut VMState, _vm: &mut VirtualMachine) -> Resul
         .operand_stack
         .pop()
         .expect("argument available");
-    if let Value::Integer(data) = &*argument.borrow() {
-        // replace `argument`? ... objects must be RefCell<Object>...
-        panic!("string constructors are not ... real ... yeah...");
+    if let (Value::Array(new_elems), Value::Object(fields, _)) = (&*argument.borrow(), &mut *receiver.borrow_mut()) {
+        let mut str_elems = Vec::new();
+        for el in new_elems.iter() {
+            str_elems.push(Rc::clone(el));
+        }
+        fields.insert("value".to_string(), Rc::new(RefCell::new(Value::Array(str_elems.into_boxed_slice()))));
     } else {
         panic!("type error, expected string, got {:?}", argument);
     }
