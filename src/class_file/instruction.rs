@@ -311,7 +311,7 @@ impl<'a, 'b> fmt::Display for InstructionDisplay<'a, 'b> {
                     .display(self.class_file),
                 idx.inner()
             ),
-            Instruction::NewArray(idx) => write!(f, "newarray (const {})", idx,),
+            Instruction::NewArray(tpe) => write!(f, "newarray (const {})", tpe),
             Instruction::ANewArray => write!(f, "anewarray"),
             Instruction::ArrayLength => write!(f, "arraylength"),
             Instruction::AThrow => write!(f, "athrow"),

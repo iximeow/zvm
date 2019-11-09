@@ -255,7 +255,7 @@ impl VMState {
                     }
                 } else {
                     Err(VMError::BadClass(
-                        "getstatic constant pool idx does not index a Fieldref",
+                        "invokestatic constant pool idx does not index a Methodref",
                     ))
                 }
             }
@@ -585,7 +585,6 @@ impl VMState {
                         Ok(None)
                     }
                     _ => {
-                        println!("bad types: {:?}, {:?}", left, right);
                         Err(VMError::BadClass("ladd but invalid operand types"))
                     }
                 }
