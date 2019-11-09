@@ -1228,6 +1228,15 @@ impl VirtualMachine {
         //        println!("Registering class {}", class_name);;
         let rc = Rc::new(class_file);
         self.classes.insert(class_name, Rc::clone(&rc));
+
+        if let Ok(method) = rc.get_method("<clinit>", "()V") {
+            let mut state = VMState::new(method.body().expect("clinit has a body"), Rc::clone(&rc), vec![]);
+            let clinit_res = self.interpret(&mut state).expect("clinit executes successfully");
+            if clinit_res.is_some() {
+                panic!("clinit should not return values");
+            }
+        } // else no static initializer
+
         Ok(rc)
     }
 
