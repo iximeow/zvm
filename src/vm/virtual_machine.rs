@@ -1996,7 +1996,15 @@ fn string_init_bytearray(state: &mut VMState, _vm: &mut VirtualMachine) -> Resul
     {
         let mut str_elems = Vec::new();
         for el in new_elems.iter() {
-            str_elems.push(Rc::clone(el));
+            if let Value::Integer(i) = &*Rc::clone(el).borrow() {
+                if (*i as u8) < 128 {
+                    str_elems.push(Rc::clone(el));
+                } else {
+                    str_elems.push(Rc::new(RefCell::new(Value::Integer(0xfffd))));
+                }
+            } else {
+                panic!("bad string");
+            }
         }
         fields.insert(
             "value".to_string(),
@@ -2017,7 +2025,8 @@ fn string_hashcode(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), 
     if let Value::String(data) = &*receiver.borrow() {
         let mut hashcode: i32 = 0;
         for c in data.iter().cloned() {
-            hashcode = hashcode.wrapping_mul(31).wrapping_add(c as i8 as i32);
+            // value is actually a char array
+            hashcode = hashcode.wrapping_mul(31).wrapping_add(c as u16 as i32);
         }
         state
             .current_frame_mut()
@@ -2028,7 +2037,8 @@ fn string_hashcode(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), 
         if let Value::Array(elems) = &*fields["value"].borrow() {
             for c in elems.iter() {
                 if let Value::Integer(v) = &*c.borrow() {
-                    hashcode = hashcode.wrapping_mul(31).wrapping_add(*v as i8 as i32);
+                    // value is actually a char array
+                    hashcode = hashcode.wrapping_mul(31).wrapping_add(*v as u16 as i32);
                 } else {
                     panic!("string contains non-byte element");
                 }
