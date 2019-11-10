@@ -532,7 +532,7 @@ pub enum Instruction {
     IfIcmpLe(i16),
     IfAcmpEq(i16),
     IfAcmpNe(i16),
-    Goto(u16),
+    Goto(i16),
     Jsr(i16),
     Ret(u16),
     TableSwitch(i32, i32, i32, Vec<i32>),
@@ -750,7 +750,7 @@ impl<R: Read + Seek> FromReader<R> for Instruction {
                 0xa4 => Instruction::IfIcmpLe(i16::read_from(data)?),
                 0xa5 => Instruction::IfAcmpEq(i16::read_from(data)?),
                 0xa6 => Instruction::IfAcmpNe(i16::read_from(data)?),
-                0xa7 => Instruction::Goto(u16::read_from(data)?),
+                0xa7 => Instruction::Goto(i16::read_from(data)?),
                 0xa8 => Instruction::Jsr(i16::read_from(data)?),
                 0xa9 => Instruction::Ret(read_idx(data, wide)?),
                 0xaa => {

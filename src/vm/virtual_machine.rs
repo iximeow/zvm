@@ -1031,6 +1031,11 @@ impl VMState {
                     .push(Rc::new(RefCell::new(Value::Integer(-1))));
                 Ok(None)
             }
+            Instruction::Goto(offset) => {
+                let frame_mut = self.current_frame_mut();
+                frame_mut.offset = frame_mut.offset.wrapping_add(*offset as i32 as u32 - 3);
+                Ok(None)
+            }
             Instruction::IfGe(offset) => {
                 let frame_mut = self.current_frame_mut();
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
