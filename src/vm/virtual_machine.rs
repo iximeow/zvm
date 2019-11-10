@@ -1719,10 +1719,16 @@ impl VirtualMachine {
                             descriptor_index: ConstantIdx::new(3).unwrap(),
                             attributes: Vec::new(),
                         },
-                         MethodInfo {
+                        MethodInfo {
                             access_flags: MethodAccessFlags { flags: 0x0101 },
                             name_index: ConstantIdx::new(2).unwrap(),
                             descriptor_index: ConstantIdx::new(4).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(2).unwrap(),
+                            descriptor_index: ConstantIdx::new(5).unwrap(),
                             attributes: Vec::new(),
                         },
                     ],
