@@ -1763,7 +1763,15 @@ impl VirtualMachine {
                     Constant::Utf8(b"java/lang/System".to_vec()),
                     Constant::Utf8(b"out".to_vec()),
                     Constant::Utf8(b"Ljava/io/PrintStream;".to_vec()),
+                    Constant::Utf8(b"exit".to_vec()),
+                    Constant::Utf8(b"(I)V".to_vec()),
                 ];
+
+                let mut native_methods: HashMap<
+                    String,
+                    fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>,
+                > = HashMap::new();
+                native_methods.insert("exit(I)V".to_string(), system_exit);
 
                 let synthetic_class = ClassFile {
                     major_version: 55,
@@ -1779,9 +1787,16 @@ impl VirtualMachine {
                         descriptor_index: ConstantIdx::new(3).unwrap(),
                         attributes: Vec::new(),
                     }],
-                    methods: vec![],
+                    methods: vec![
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(4).unwrap(),
+                            descriptor_index: ConstantIdx::new(5).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                    ],
                     attributes: vec![],
-                    native_methods: HashMap::new(),
+                    native_methods,
                 };
 
                 synthetic_class
@@ -2279,4 +2294,18 @@ fn string_concat(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VM
         panic!("type error, expected string, string, got {:?}", argument);
     }
     Ok(())
+}
+
+fn system_exit(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let argument = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+
+    if let Value::Integer(i) = &*Rc::clone(&argument).borrow() {
+        std::process::exit(*i);
+    } else {
+        panic!("attempted to exit with non-int operand");
+    }
 }
