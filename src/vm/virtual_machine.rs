@@ -724,7 +724,123 @@ impl VMState {
                     // TODO: homogeneously typed arrays
                     elements[*index as usize] = value;
                 } else {
-                    panic!("getting element out of non-array");
+                    panic!("storing element into non-array");
+                }
+                Ok(None)
+            }
+            Instruction::CAStore => {
+                // ok this one is trickier
+                // TODO: handle longs/doubles properly
+                let value = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let index = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let array = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                if let (Value::Array(elements), Value::Integer(index)) =
+                    (&mut *array.borrow_mut(), &*index.borrow())
+                {
+                    // TODO: homogeneously typed arrays
+                    elements[*index as usize] = value;
+                } else {
+                    panic!("storing element into non-array");
+                }
+                Ok(None)
+            }
+            Instruction::SAStore => {
+                // ok this one is trickier
+                // TODO: handle longs/doubles properly
+                let value = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let index = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let array = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                if let (Value::Array(elements), Value::Integer(index)) =
+                    (&mut *array.borrow_mut(), &*index.borrow())
+                {
+                    // TODO: homogeneously typed arrays
+                    elements[*index as usize] = value;
+                } else {
+                    panic!("storing element into non-array");
+                }
+                Ok(None)
+            }
+            Instruction::IAStore => {
+                // ok this one is trickier
+                // TODO: handle longs/doubles properly
+                let value = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let index = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let array = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                if let (Value::Array(elements), Value::Integer(index)) =
+                    (&mut *array.borrow_mut(), &*index.borrow())
+                {
+                    // TODO: homogeneously typed arrays
+                    elements[*index as usize] = value;
+                } else {
+                    panic!("storing element into non-array");
+                }
+                Ok(None)
+            }
+            Instruction::LAStore => {
+                // ok this one is trickier
+                // TODO: handle longs/doubles properly
+                let value = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let index = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let array = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                if let (Value::Array(elements), Value::Long(index)) =
+                    (&mut *array.borrow_mut(), &*index.borrow())
+                {
+                    // TODO: homogeneously typed arrays
+                    elements[*index as usize] = value;
+                } else {
+                    panic!("storing element into non-array");
                 }
                 Ok(None)
             }
