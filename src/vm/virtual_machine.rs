@@ -1560,6 +1560,7 @@ impl VirtualMachine {
                     Constant::Utf8(b"println".to_vec()),
                     Constant::Utf8(b"(Ljava/lang/String;)V".to_vec()),
                     Constant::Utf8(b"(I)V".to_vec()),
+                    Constant::Utf8(b"(J)V".to_vec()),
                 ];
 
                 let mut native_methods: HashMap<
@@ -1568,6 +1569,7 @@ impl VirtualMachine {
                 > = HashMap::new();
                 native_methods.insert("println(Ljava/lang/String;)V".to_string(), system_out_println_string);
                 native_methods.insert("println(I)V".to_string(), system_out_println_int);
+                native_methods.insert("println(J)V".to_string(), system_out_println_long);
 
                 let synthetic_class = ClassFile {
                     major_version: 55,
@@ -1803,6 +1805,26 @@ fn system_out_println_int(state: &mut VMState, _vm: &mut VirtualMachine) -> Resu
     }
     Ok(())
 }
+
+fn system_out_println_long(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let argument = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    let _receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    if let Value::Long(v) = &*argument.borrow() {
+        println!("{}", v);
+    } else {
+        panic!("type error, expected string, got {:?}", argument);
+    }
+    Ok(())
+}
+
 // "<init>(Ljava/lang/String;)"
 fn string_init_string(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
     let argument = state
