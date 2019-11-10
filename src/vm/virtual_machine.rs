@@ -1011,6 +1011,98 @@ impl VMState {
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
                 }
             }
+            Instruction::IAnd => {
+                let frame_mut = self.current_frame_mut();
+                let left = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iand but insufficient arguments"));
+                };
+                let right = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iand but insufficient arguments"));
+                };
+
+                match (&*Rc::clone(&left).borrow(), &*Rc::clone(&right).borrow()) {
+                    (Value::Integer(l), Value::Integer(r)) => {
+                        frame_mut
+                            .operand_stack
+                            .push(Rc::new(RefCell::new(Value::Integer(*l & *r))));
+                        Ok(None)
+                    }
+                    _ => Err(VMError::BadClass("iand but invalid operand types")),
+                }
+            }
+            Instruction::IOr => {
+                let frame_mut = self.current_frame_mut();
+                let left = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("ior but insufficient arguments"));
+                };
+                let right = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("ior but insufficient arguments"));
+                };
+
+                match (&*Rc::clone(&left).borrow(), &*Rc::clone(&right).borrow()) {
+                    (Value::Integer(l), Value::Integer(r)) => {
+                        frame_mut
+                            .operand_stack
+                            .push(Rc::new(RefCell::new(Value::Integer(*l | *r))));
+                        Ok(None)
+                    }
+                    _ => Err(VMError::BadClass("ior but invalid operand types")),
+                }
+            }
+            Instruction::IShr => {
+                let frame_mut = self.current_frame_mut();
+                let value2 = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("ishr but insufficient arguments"));
+                };
+                let value1 = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("ishr but insufficient arguments"));
+                };
+
+                match (&*Rc::clone(&value1).borrow(), &*Rc::clone(&value2).borrow()) {
+                    (Value::Integer(v1), Value::Integer(v2)) => {
+                        frame_mut
+                            .operand_stack
+                            .push(Rc::new(RefCell::new(Value::Integer(*v1 >> (*v2 & 0x1f)))));
+                        Ok(None)
+                    }
+                    _ => Err(VMError::BadClass("ishr but invalid operand types")),
+                }
+            }
+            Instruction::IShl => {
+                let frame_mut = self.current_frame_mut();
+                let value2 = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("ishl but insufficient arguments"));
+                };
+                let value1 = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("ishl but insufficient arguments"));
+                };
+
+                match (&*Rc::clone(&value1).borrow(), &*Rc::clone(&value2).borrow()) {
+                    (Value::Integer(v1), Value::Integer(v2)) => {
+                        frame_mut
+                            .operand_stack
+                            .push(Rc::new(RefCell::new(Value::Integer(*v1 << (*v2 & 0x1f)))));
+                        Ok(None)
+                    }
+                    _ => Err(VMError::BadClass("ishl but invalid operand types")),
+                }
+            }
             Instruction::I2B => {
                 let frame_mut = self.current_frame_mut();
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
