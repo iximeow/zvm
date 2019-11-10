@@ -757,6 +757,33 @@ impl VMState {
                 }
                 Ok(None)
             }
+            Instruction::CALoad => {
+                // ok this one is trickier
+                // TODO: handle longs/doubles properly
+                let index = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let array = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                if let (Value::Array(elements), Value::Integer(index)) =
+                    (&mut *array.borrow_mut(), &*index.borrow())
+                {
+                    // TODO: homogeneously typed arrays
+                    self
+                        .current_frame_mut()
+                        .operand_stack
+                        .push(Rc::clone(&elements[*index as usize]));
+                } else {
+                    panic!("storing element into non-array");
+                }
+                Ok(None)
+            }
             Instruction::SAStore => {
                 // ok this one is trickier
                 // TODO: handle longs/doubles properly
@@ -781,6 +808,33 @@ impl VMState {
                 {
                     // TODO: homogeneously typed arrays
                     elements[*index as usize] = value;
+                } else {
+                    panic!("storing element into non-array");
+                }
+                Ok(None)
+            }
+            Instruction::SALoad => {
+                // ok this one is trickier
+                // TODO: handle longs/doubles properly
+                let index = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let array = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                if let (Value::Array(elements), Value::Integer(index)) =
+                    (&mut *array.borrow_mut(), &*index.borrow())
+                {
+                    // TODO: homogeneously typed arrays
+                    self
+                        .current_frame_mut()
+                        .operand_stack
+                        .push(Rc::clone(&elements[*index as usize]));
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -815,6 +869,33 @@ impl VMState {
                 }
                 Ok(None)
             }
+            Instruction::IALoad => {
+                // ok this one is trickier
+                // TODO: handle longs/doubles properly
+                let index = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let array = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                if let (Value::Array(elements), Value::Integer(index)) =
+                    (&mut *array.borrow_mut(), &*index.borrow())
+                {
+                    // TODO: homogeneously typed arrays
+                    self
+                        .current_frame_mut()
+                        .operand_stack
+                        .push(Rc::clone(&elements[*index as usize]));
+                } else {
+                    panic!("storing element into non-array");
+                }
+                Ok(None)
+            }
             Instruction::LAStore => {
                 // ok this one is trickier
                 // TODO: handle longs/doubles properly
@@ -839,6 +920,33 @@ impl VMState {
                 {
                     // TODO: homogeneously typed arrays
                     elements[*index as usize] = value;
+                } else {
+                    panic!("storing element into non-array");
+                }
+                Ok(None)
+            }
+            Instruction::LALoad => {
+                // ok this one is trickier
+                // TODO: handle longs/doubles properly
+                let index = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let array = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                if let (Value::Array(elements), Value::Long(index)) =
+                    (&mut *array.borrow_mut(), &*index.borrow())
+                {
+                    // TODO: homogeneously typed arrays
+                    self
+                        .current_frame_mut()
+                        .operand_stack
+                        .push(Rc::clone(&elements[*index as usize]));
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -948,7 +1056,7 @@ impl VMState {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return Err(VMError::BadClass("ifle but insufficient arguments"));
                 };
 
                 match &*Rc::clone(&value).borrow() {
@@ -960,7 +1068,27 @@ impl VMState {
                             Ok(None)
                         }
                     }
-                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                    _ => Err(VMError::BadClass("ifle but invalid operand types")),
+                }
+            }
+            Instruction::IfEq(offset) => {
+                let frame_mut = self.current_frame_mut();
+                let value = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("ifeq but insufficient arguments"));
+                };
+
+                match &*Rc::clone(&value).borrow() {
+                    Value::Integer(v) => {
+                        if *v == 0 {
+                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            Ok(None)
+                        } else {
+                            Ok(None)
+                        }
+                    }
+                    _ => Err(VMError::BadClass("ifeq but invalid operand types")),
                 }
             }
             Instruction::IfNe(offset) => {
@@ -968,7 +1096,7 @@ impl VMState {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return Err(VMError::BadClass("ifne but insufficient arguments"));
                 };
 
                 match &*Rc::clone(&value).borrow() {
@@ -980,7 +1108,7 @@ impl VMState {
                             Ok(None)
                         }
                     }
-                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                    _ => Err(VMError::BadClass("ifne but invalid operand types")),
                 }
             }
             Instruction::IfIcmpNe(offset) => {
@@ -1319,7 +1447,6 @@ impl VMState {
             }
         }
     }
-
     #[allow(dead_code)]
     fn return_value(&mut self) -> Option<Value> {
         // panic!("Hello there");
