@@ -329,7 +329,7 @@ impl VMState {
                     }
                 } else {
                     Err(VMError::BadClass(
-                        "invokestatic constant pool idx does not index a Methodref",
+                        "invokevirtual constant pool idx does not index a Methodref",
                     ))
                 }
             }
@@ -1724,6 +1724,14 @@ fn interpreted_method_call(
     // today: [...], do the call
 
     if method_type == "(I)I" {
+        let frame = state.current_frame_mut();
+        let arg = frame.operand_stack.pop().expect("argument is present");
+        state.enter(
+            method.body().expect("method has a body"),
+            method_class,
+            vec![arg],
+        );
+    } else if method_type == "(I)V" {
         let frame = state.current_frame_mut();
         let arg = frame.operand_stack.pop().expect("argument is present");
         state.enter(
