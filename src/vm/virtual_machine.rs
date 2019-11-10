@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::io::Cursor;
 use std::rc::Rc;
 use std::str::FromStr;
+use std::hash::{Hash, Hasher};
 
 use crate::class_file::attribute::Attribute;
 use crate::class_file::instruction::Instruction;
@@ -1520,9 +1521,41 @@ impl Value {
     }
 }
 
+pub(crate) struct ValueRef(Rc<RefCell<Value>>);
+
+impl ValueRef {
+    pub fn of(reference: &Rc<RefCell<Value>>) -> Self {
+        ValueRef(Rc::clone(reference))
+    }
+}
+
+impl Hash for ValueRef {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        unsafe {
+            let ptr = Rc::into_raw(Rc::clone(&self.0));
+            ptr.hash(state);
+            Rc::from_raw(ptr);
+        }
+    }
+}
+
+impl Eq for ValueRef {}
+
+impl PartialEq for ValueRef {
+    fn eq(&self, other: &ValueRef) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+enum NativeObject {
+    StringBuilder(Vec<u16>),
+    Unknown,
+}
+
 pub struct VirtualMachine {
     classes: HashMap<String, Rc<ClassFile>>,
     static_instances: HashMap<ClassFileRef, HashMap<String, Rc<RefCell<Value>>>>,
+    native_instances: HashMap<ValueRef, RefCell<NativeObject>>,
 }
 
 #[derive(Debug)]
@@ -1540,6 +1573,7 @@ impl VirtualMachine {
         VirtualMachine {
             classes: HashMap::new(),
             static_instances: HashMap::new(),
+            native_instances: HashMap::new(),
         }
     }
 
@@ -1649,6 +1683,72 @@ impl VirtualMachine {
                             access_flags: MethodAccessFlags { flags: 0x0101 },
                             name_index: ConstantIdx::new(10).unwrap(),
                             descriptor_index: ConstantIdx::new(9).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                    ],
+                    attributes: vec![],
+                    native_methods,
+                };
+
+                synthetic_class
+            }
+            "java/lang/StringBuilder" => {
+                let constants = vec![
+                    Constant::Utf8(b"java/lang/StringBuilder".to_vec()),
+                    Constant::Utf8(b"<init>".to_vec()),
+                    Constant::Utf8(b"()V".to_vec()),
+                    Constant::Utf8(b"(Ljava/lang/String;)V".to_vec()),
+                    Constant::Utf8(b"append".to_vec()),
+//                    Constant::Utf8(b"(B)Ljava/lang/String;".to_vec()),
+//                    Constant::Utf8(b"(C)Ljava/lang/String;".to_vec()),
+//                    Constant::Utf8(b"([C)Ljava/lang/String;".to_vec()),
+                    Constant::Utf8(b"(Ljava/lang/String;)Ljava/lang/StringBuilder;".to_vec()),
+                    Constant::Utf8(b"toString".to_vec()),
+                    Constant::Utf8(b"()Ljava/lang/String;".to_vec()),
+                ];
+
+                let mut native_methods: HashMap<
+                    String,
+                    fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>,
+                > = HashMap::new();
+                native_methods.insert("<init>()V".to_string(), stringbuilder_init);
+                native_methods.insert("<init>(Ljava/lang/String;)V".to_string(), string_init_string);
+                native_methods.insert("append(Ljava/lang/String;)Ljava/lang/StringBuilder;".to_string(), stringbuilder_append_string);
+//                native_methods.insert("append([C)Ljava/lang/StringBuilder".to_string(), stringbuilder_append_chars);
+                native_methods.insert("toString()Ljava/lang/String;".to_string(), stringbuilder_tostring);
+
+                let synthetic_class = ClassFile {
+                    major_version: 55,
+                    minor_version: 0,
+                    constant_pool: constants,
+                    access_flags: AccessFlags { flags: 0x0001 },
+                    this_class: ConstantIdx::new(1).unwrap(),
+                    super_class: None,
+                    interfaces: Vec::new(),
+                    fields: vec![],
+                    methods: vec![
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(2).unwrap(),
+                            descriptor_index: ConstantIdx::new(3).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(2).unwrap(),
+                            descriptor_index: ConstantIdx::new(4).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(5).unwrap(),
+                            descriptor_index: ConstantIdx::new(6).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(7).unwrap(),
+                            descriptor_index: ConstantIdx::new(8).unwrap(),
                             attributes: Vec::new(),
                         },
                     ],
@@ -1963,7 +2063,102 @@ fn system_out_println_long(state: &mut VMState, _vm: &mut VirtualMachine) -> Res
     Ok(())
 }
 
-// "<init>(Ljava/lang/String;)"
+// "<init>()V"
+fn stringbuilder_init(state: &mut VMState, vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+
+    let data = RefCell::new(NativeObject::StringBuilder(Vec::new()));
+
+    vm.native_instances.insert(ValueRef::of(&receiver), data);
+    Ok(())
+}
+
+// "append(Ljava/lang/String;);Ljava/lang/StringBuilder"
+fn stringbuilder_append_string(state: &mut VMState, vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let appendee = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+
+    let receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+
+    let data = vm.native_instances.get(&ValueRef::of(&receiver)).expect("stringbuilder receiver has associated native data");
+
+    if let NativeObject::StringBuilder(data) = &mut *data.borrow_mut() {
+        if let Value::String(str_data) = &*appendee.borrow() {
+            // do thing
+            for el in str_data.iter() {
+                data.push(*el as u16);
+            }
+        } else if let Value::Object(fields, _) = &*appendee.borrow() {
+            // do thing
+            if let Value::Array(str_data) = &*fields["value"].borrow() {
+                for el in str_data.iter() {
+                    if let Value::Integer(i) = &*el.borrow() {
+                        data.push(*i as u16);
+                    }
+                }
+            } else {
+                panic!("appendee of stringbuilder is a non-string object");
+            }
+        } else {
+            panic!("appendee of stringbuilder append is not a string");
+        }
+    } else {
+        panic!("native object corresponding to stringbuilder receiver is not stringbuilder data");
+    }
+
+    state.current_frame_mut().operand_stack.push(receiver);
+    Ok(())
+}
+
+// "toString()Ljava/lang/String"
+fn stringbuilder_tostring(state: &mut VMState, vm: &mut VirtualMachine) -> Result<(), VMError> {
+    // really just consume the argument
+    let receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+
+    let data = vm.native_instances.get(&ValueRef::of(&receiver)).expect("stringbuilder receiver has associated native data");
+
+    let mut str_data: Vec<Rc<RefCell<Value>>> = Vec::new();
+
+    if let NativeObject::StringBuilder(data) = &*data.borrow() {
+        for el in data.iter() {
+            str_data.push(Rc::new(RefCell::new(Value::Integer(*el as i32))));
+        }
+    } else {
+        panic!("native object corresponding to stringbuilder receiver is not stringbuilder data");
+    }
+
+    // now make the string to return...
+    let mut string_fields = HashMap::new();
+    string_fields.insert("value".to_string(), Rc::new(RefCell::new(Value::Array(str_data.into_boxed_slice()))));
+    let s = Value::Object(string_fields, vm.resolve_class("java/lang/String")?);
+
+    state.current_frame_mut().operand_stack.push(Rc::new(RefCell::new(s)));
+    Ok(())
+}
+
+/*
+                native_methods.insert("<init>(Ljava/lang/String;)V".to_string(), string_init_string);
+                native_methods.insert("append(Ljava/lang/String;)Ljava/lang/StringBuilder".to_string(), stringbuilder_append_string);
+//                native_methods.insert("append([C)Ljava/lang/StringBuilder".to_string(), stringbuilder_append_chars);
+                native_methods.insert("toString()Ljava/lang/String".to_string(), stringbuilder_tostring);
+*/
+
+// "<init>(Ljava/lang/String;)V"
 fn string_init_string(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
     let argument = state
         .current_frame_mut()
