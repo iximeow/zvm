@@ -1,9 +1,5 @@
-pub mod class_file;
-pub mod vm;
-
-use crate::class_file::read;
-use crate::vm::Value;
-use crate::vm::VirtualMachine;
+use zvm::class_file::read;
+use zvm::{Value, VirtualMachine};
 
 use std::cell::RefCell;
 use std::fs::File;

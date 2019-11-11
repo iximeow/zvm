@@ -12,5 +12,26 @@ dependencies = [
  "byteorder 1.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
+[[package]]
+name = "zvm-cli"
+version = "0.1.0"
+dependencies = [
+ "zvm 0.1.0",
+]
+
+[[package]]
+name = "zvm-stdlib"
+version = "0.1.0"
+dependencies = [
+ "zvm 0.1.0",
+]
+
+[[package]]
+name = "zvm-tools"
+version = "0.1.0"
+dependencies = [
+ "zvm 0.1.0",
+]
+
 [metadata]
 "checksum byteorder 1.3.2 (registry+https://github.com/rust-lang/crates.io-index)" = "a7c3dd8985a7111efc5c80b44e23ecdd8c007de8ade3b96595387e812b957cf5"

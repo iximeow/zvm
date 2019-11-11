@@ -1,3 +1,4 @@
+pub mod class_file;
 mod virtual_machine;
 
 pub use virtual_machine::VMError;

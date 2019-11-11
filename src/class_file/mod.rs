@@ -8,9 +8,9 @@ use crate::class_file::attribute::Attribute;
 use crate::class_file::attribute::ExceptionTableRecord;
 use crate::class_file::attribute::LineNumberEntry;
 
-use crate::vm::VMError;
-use crate::vm::VMState;
-use crate::vm::VirtualMachine;
+use crate::virtual_machine::VMError;
+use crate::virtual_machine::VMState;
+use crate::virtual_machine::VirtualMachine;
 
 use std::collections::HashMap;
 use std::fmt;
