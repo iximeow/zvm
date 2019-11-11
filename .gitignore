@@ -35,3 +35,6 @@ hs_err_pid*
 
 # Just ignore all of IDEA
 /.idea/
+
+# Miscellaneous build files
+/build/

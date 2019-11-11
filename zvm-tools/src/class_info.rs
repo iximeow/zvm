@@ -1,9 +1,4 @@
-#[allow(dead_code)]
-mod class_file;
-#[allow(dead_code)]
-mod vm;
-
-use crate::class_file::read;
+use zvm::class_file::read;
 
 use std::fs::File;
 

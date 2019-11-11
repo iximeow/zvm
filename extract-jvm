@@ -1,0 +1,15 @@
+#!/bin/bash
+
+if [ -z $JAVA_HOME ]; then
+    echo -e "Please define JAVA_HOME and try again"
+    exit 1
+fi
+
+mkdir -p build/jvm
+cp $JAVA_HOME/lib/modules build/jvm
+
+cd build/jvm
+jimage extract modules
+rm modules
+
+echo "Local java installation class files extracted to build/jvm"
