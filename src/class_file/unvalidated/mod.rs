@@ -284,6 +284,25 @@ pub enum Constant {
 }
 
 impl Constant {
+    pub(crate) fn type_name(&self) -> &str {
+        match self {
+            Constant::Utf8(_) => "Utf8",
+            Constant::Integer(_) => "Integer",
+            Constant::Float(_) => "Float",
+            Constant::Long(_) => "Long",
+            Constant::Double(_) => "Double",
+            Constant::Class(_) => "Class",
+            Constant::String(_) => "String",
+            Constant::Fieldref(_, _) => "Fieldref",
+            Constant::Methodref(_, _) => "Methodref",
+            Constant::InterfaceMethodref(_, _) => "InterfaceMethodref",
+            Constant::NameAndType(_, _) => "NameAndType",
+            Constant::MethodHandle(_, _) => "MethodHandle",
+            Constant::MethodType(_) => "MethodType",
+            Constant::InvokeDynamic(_, _) => "InvokeDynamic",
+        }
+    }
+
     fn display<'a, 'b>(&'a self, class_file: &'b ClassFile) -> ConstantDisplay<'a, 'b> {
         ConstantDisplay {
             constant: self,
