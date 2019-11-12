@@ -1,7 +1,7 @@
-use crate::class_file::read::FromReader;
-use crate::class_file::ClassFile;
-use crate::class_file::ConstantIdx;
-use crate::class_file::Error;
+use crate::class_file::unvalidated::read::FromReader;
+use crate::class_file::unvalidated::ClassFile;
+use crate::class_file::unvalidated::ConstantIdx;
+use crate::class_file::unvalidated::Error;
 use std::fmt;
 use std::io::{Read, Seek, SeekFrom};
 

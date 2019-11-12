@@ -1,14 +1,14 @@
-use crate::class_file::AccessFlags;
-use crate::class_file::AttributeInfo;
-use crate::class_file::ClassFile;
-use crate::class_file::Constant;
-use crate::class_file::ConstantIdx;
-use crate::class_file::Error;
-use crate::class_file::FieldAccessFlags;
-use crate::class_file::FieldInfo;
-use crate::class_file::MethodAccessFlags;
-use crate::class_file::MethodHandleBehavior;
-use crate::class_file::MethodInfo;
+use crate::class_file::unvalidated::AccessFlags;
+use crate::class_file::unvalidated::AttributeInfo;
+use crate::class_file::unvalidated::ClassFile;
+use crate::class_file::unvalidated::Constant;
+use crate::class_file::unvalidated::ConstantIdx;
+use crate::class_file::unvalidated::Error;
+use crate::class_file::unvalidated::FieldAccessFlags;
+use crate::class_file::unvalidated::FieldInfo;
+use crate::class_file::unvalidated::MethodAccessFlags;
+use crate::class_file::unvalidated::MethodHandleBehavior;
+use crate::class_file::unvalidated::MethodInfo;
 
 use byteorder::{BigEndian, ReadBytesExt};
 use std::collections::HashMap;

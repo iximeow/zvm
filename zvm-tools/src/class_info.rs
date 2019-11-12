@@ -1,4 +1,4 @@
-use zvm::class_file::read;
+use zvm::class_file::unvalidated::read;
 
 use std::fs::File;
 

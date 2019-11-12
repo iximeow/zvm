@@ -1,10 +1,10 @@
-use crate::class_file::instruction::Instruction;
-use crate::class_file::AttributeInfo;
-use crate::class_file::ClassFile;
-use crate::class_file::ConstantIdx;
-use crate::class_file::Error;
+use crate::class_file::unvalidated::instruction::Instruction;
+use crate::class_file::unvalidated::AttributeInfo;
+use crate::class_file::unvalidated::ClassFile;
+use crate::class_file::unvalidated::ConstantIdx;
+use crate::class_file::unvalidated::Error;
 
-use crate::class_file::read::FromReader;
+use crate::class_file::unvalidated::read::FromReader;
 
 use std::fmt;
 use std::io::{Cursor, Read};
