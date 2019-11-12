@@ -4,9 +4,9 @@ pub mod read;
 
 use read::FromReader;
 
-use crate::class_file::attribute::Attribute;
-use crate::class_file::attribute::ExceptionTableRecord;
-use crate::class_file::attribute::LineNumberEntry;
+use crate::class_file::unvalidated::attribute::Attribute;
+use crate::class_file::unvalidated::attribute::ExceptionTableRecord;
+use crate::class_file::unvalidated::attribute::LineNumberEntry;
 
 use crate::virtual_machine::VMError;
 use crate::virtual_machine::VMState;

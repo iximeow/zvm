@@ -5,19 +5,19 @@ use std::rc::Rc;
 use std::str::FromStr;
 use std::hash::{Hash, Hasher};
 
-use crate::class_file::attribute::Attribute;
-use crate::class_file::instruction::Instruction;
-use crate::class_file::read::FromReader;
-use crate::class_file::AccessFlags;
-use crate::class_file::ClassFile;
-use crate::class_file::ClassFileRef;
-use crate::class_file::Constant;
-use crate::class_file::ConstantIdx;
-use crate::class_file::FieldAccessFlags;
-use crate::class_file::FieldInfo;
-use crate::class_file::MethodAccessFlags;
-use crate::class_file::MethodHandle;
-use crate::class_file::MethodInfo;
+use crate::class_file::unvalidated::attribute::Attribute;
+use crate::class_file::unvalidated::instruction::Instruction;
+use crate::class_file::unvalidated::read::FromReader;
+use crate::class_file::unvalidated::AccessFlags;
+use crate::class_file::unvalidated::ClassFile;
+use crate::class_file::unvalidated::ClassFileRef;
+use crate::class_file::unvalidated::Constant;
+use crate::class_file::unvalidated::ConstantIdx;
+use crate::class_file::unvalidated::FieldAccessFlags;
+use crate::class_file::unvalidated::FieldInfo;
+use crate::class_file::unvalidated::MethodAccessFlags;
+use crate::class_file::unvalidated::MethodHandle;
+use crate::class_file::unvalidated::MethodInfo;
 
 struct CallFrame {
     offset: u32,
