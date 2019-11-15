@@ -2,6 +2,8 @@ pub mod attribute;
 pub mod instruction;
 pub mod read;
 
+pub use instruction::Instruction;
+
 use read::FromReader;
 
 use crate::class_file::unvalidated::attribute::Attribute;
@@ -135,8 +137,8 @@ impl AccessFlags {
 
 #[derive(Debug)]
 pub struct AttributeInfo {
-    name_index: ConstantIdx,
-    data: Vec<u8>,
+    pub(crate) name_index: ConstantIdx,
+    pub(crate)data: Vec<u8>,
 }
 
 impl AttributeInfo {
@@ -465,7 +467,7 @@ pub struct ConstantIdx {
 }
 
 impl ConstantIdx {
-    fn inner(&self) -> u16 {
+    pub(crate) fn inner(&self) -> u16 {
         self.idx
     }
 
