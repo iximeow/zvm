@@ -1,4 +1,5 @@
 use zvm::class_file::unvalidated::read;
+use zvm::class_file::validated::ClassFile;
 use zvm::{Value, VirtualMachine};
 
 use std::cell::RefCell;
@@ -13,15 +14,18 @@ fn main() {
 
     let values = parse_args(&env[3..]).unwrap();
 
-    let class_file = read::class_header(
-        &mut File::open(filename).unwrap_or_else(|_| panic!("No such file {}", filename)),
+    let class_file = ClassFile::validate(
+        &read::class_header(
+            &mut File::open(filename).unwrap_or_else(|_| panic!("No such file {}", filename)),
+        )
+        .unwrap()
     )
     .unwrap();
     let mut vm = VirtualMachine::new();
     let class_file_path = Path::new(filename);
     let class_name = class_file_path.file_stem().unwrap().to_str().unwrap();
     let class_ref = vm.register(class_name.to_string(), class_file).unwrap();
-    let entrypoint_methods = vm.get_methods(&class_ref, methodname).unwrap();
+    let entrypoint_methods = class_ref.get_methods(methodname);
     if entrypoint_methods.len() != 1 {
         println!(
             "invalid number of methods matching entrypoint name: {:?}",
