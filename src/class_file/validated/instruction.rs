@@ -1,11 +1,12 @@
 use std::fmt;
+use std::rc::Rc;
 
 use crate::class_file::unvalidated::ConstantIdx;
 use crate::class_file::validated::Constant;
 use crate::class_file::validated::FieldRef;
 use crate::class_file::validated::MethodRef;
 
-impl<'method, 'cls> fmt::Display for Instruction<'method, 'cls> {
+impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Instruction::Nop => write!(f, "nop"),
@@ -296,7 +297,7 @@ impl<'method, 'cls> fmt::Display for Instruction<'method, 'cls> {
     }
 }
 
-pub enum Instruction<'method, 'cls> {
+pub enum Instruction {
     Nop,
     AConstNull,
     IConstM1,
@@ -315,9 +316,9 @@ pub enum Instruction<'method, 'cls> {
     DConst1,
     BIPush(i8),
     SIPush(i16),
-    Ldc(&'method Constant<'cls>),
-    LdcW(&'method Constant<'cls>),
-    Ldc2W(&'method Constant<'cls>),
+    Ldc(Rc<Constant>),
+    LdcW(Rc<Constant>),
+    Ldc2W(Rc<Constant>),
     ILoad(u16),
     LLoad(u16),
     FLoad(u16),
@@ -475,25 +476,25 @@ pub enum Instruction<'method, 'cls> {
     DReturn,
     AReturn,
     Return,
-    GetStatic(&'method FieldRef<'cls>),
-    PutStatic(&'method FieldRef<'cls>),
-    GetField(&'method FieldRef<'cls>),
-    PutField(&'method FieldRef<'cls>),
-    InvokeVirtual(&'method MethodRef<'cls>),
-    InvokeSpecial(&'method MethodRef<'cls>),
-    InvokeStatic(&'method MethodRef<'cls>),
+    GetStatic(Rc<FieldRef>),
+    PutStatic(Rc<FieldRef>),
+    GetField(Rc<FieldRef>),
+    PutField(Rc<FieldRef>),
+    InvokeVirtual(Rc<MethodRef>),
+    InvokeSpecial(Rc<MethodRef>),
+    InvokeStatic(Rc<MethodRef>),
     InvokeInterface(ConstantIdx, u8),
     InvokeDynamic(ConstantIdx),
-    New(&'cls str),
+    New(Rc<String>),
     NewArray(u8),
     ANewArray,
     ArrayLength,
     AThrow,
-    CheckCast(&'cls str),
-    InstanceOf(&'cls str),
+    CheckCast(Rc<String>),
+    InstanceOf(Rc<String>),
     MonitorEnter,
     MonitorExit,
-    MultiANewArray(&'cls str, u8),
+    MultiANewArray(Rc<String>, u8),
     IfNull(i16),
     IfNonNull(i16),
     GotoW(i32),
