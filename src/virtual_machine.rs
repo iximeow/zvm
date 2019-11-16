@@ -5,38 +5,38 @@ use std::rc::Rc;
 use std::str::FromStr;
 use std::hash::{Hash, Hasher};
 
-use crate::class_file::unvalidated::attribute::Attribute;
-use crate::class_file::unvalidated::instruction::Instruction;
+use crate::class_file::validated::Instruction;
 use crate::class_file::unvalidated::read::FromReader;
 use crate::class_file::unvalidated::AccessFlags;
-use crate::class_file::unvalidated::ClassFile;
-use crate::class_file::unvalidated::ClassFileRef;
-use crate::class_file::unvalidated::Constant;
+use crate::class_file::unvalidated::{ClassFile as UnvalidatedClassFile};
+use crate::class_file::validated::ClassFile;
+use crate::class_file::validated::ClassFileRef;
+use crate::class_file::unvalidated::{Constant as UnvalidatedConstant};
+use crate::class_file::validated::Constant;
 use crate::class_file::unvalidated::ConstantIdx;
 use crate::class_file::unvalidated::FieldAccessFlags;
 use crate::class_file::unvalidated::FieldInfo;
 use crate::class_file::unvalidated::MethodAccessFlags;
-use crate::class_file::unvalidated::MethodHandle;
+use crate::class_file::validated::MethodBody;
+use crate::class_file::validated::MethodHandle;
 use crate::class_file::unvalidated::MethodInfo;
 
 struct CallFrame {
     offset: u32,
     arguments: Vec<Rc<RefCell<Value>>>,
-    body: Rc<Attribute>,
+    body: Rc<MethodBody>,
     enclosing_class: Rc<ClassFile>,
     operand_stack: Vec<Rc<RefCell<Value>>>,
 }
 
 impl CallFrame {
     pub fn new(
-        body: Rc<Attribute>,
+        body: Rc<MethodBody>,
         enclosing_class: Rc<ClassFile>,
         mut arguments: Vec<Rc<RefCell<Value>>>,
     ) -> Self {
-        if let Attribute::Code(_max_stack, max_locals, _, _, _) = &*body {
-            while arguments.len() < (*max_locals as usize) {
-                arguments.push(Rc::new(RefCell::new(Value::Integer(0))));
-            }
+        while arguments.len() < (body.max_locals as usize) {
+            arguments.push(Rc::new(RefCell::new(Value::Integer(0))));
         }
 
         CallFrame {
@@ -56,7 +56,7 @@ pub struct VMState {
 
 impl VMState {
     pub fn new(
-        code: Rc<Attribute>,
+        code: Rc<MethodBody>,
         method_class: Rc<ClassFile>,
         initial_args: Vec<Rc<RefCell<Value>>>,
     ) -> Self {
@@ -83,25 +83,16 @@ impl VMState {
         }
 
         let frame = self.current_frame_mut();
-        let attr_ref: &Attribute = &*frame.body;
-        if let Attribute::Code(_, _, code, _, _) = attr_ref {
-            let mut instr_bytes = Cursor::new(code.as_slice());
+        let mut inst_iter = frame.body.iter_from(frame.offset);
+        let inst = inst_iter.next();
+        frame.offset = inst_iter.offset as u32;
 
-            while (instr_bytes.position() as u32) < frame.offset {
-                Instruction::read_from(&mut instr_bytes).unwrap();
-            }
-
-            let res = Instruction::read_from(&mut instr_bytes).ok();
-            frame.offset = instr_bytes.position() as u32;
-            res
-        } else {
-            panic!("call stack has a call record that does not have code");
-        }
+        inst
     }
 
     pub fn enter(
         &mut self,
-        body: Rc<Attribute>,
+        body: Rc<MethodBody>,
         enclosing_class: Rc<ClassFile>,
         arguments: Vec<Rc<RefCell<Value>>>,
     ) {
@@ -265,320 +256,105 @@ impl VMState {
         vm: &mut VirtualMachine,
     ) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
         match instruction {
-            Instruction::InvokeVirtual(idx) => {
-                if let Some(Constant::Methodref(class_idx, name_and_type_idx)) =
-                    self.current_frame().enclosing_class.get_const(*idx)
-                {
-                    let method_class = self
-                        .current_frame()
-                        .enclosing_class
-                        .get_const(*class_idx)
-                        .unwrap();
-                    let method_class_name = if let Constant::Class(class_name_idx) = method_class {
-                        self.current_frame()
-                            .enclosing_class
-                            .get_str(*class_name_idx)
-                            .unwrap()
-                    } else {
-                        panic!("method's class is not a class?");
-                    };
-                    let target_class = vm.resolve_class(method_class_name).unwrap();
-                    if let Some(Constant::NameAndType(name_idx, type_idx)) = self
-                        .current_frame()
-                        .enclosing_class
-                        .get_const(*name_and_type_idx)
+            Instruction::InvokeVirtual(method_ref) => {
+                let target_class = vm.resolve_class(&method_ref.class_name).unwrap();
+                let method = target_class
+                    .get_method(&method_ref.name, &method_ref.desc)
+                    .expect("method exists");
+                // get method by name `method_name`
+                if method.access().is_native() {
+                    if let Some(native_method) =
+                        target_class.native_methods.get(&method_ref.name)
                     {
-                        let method_name = self
-                            .current_frame()
-                            .enclosing_class
-                            .get_str(*name_idx)
-                            .unwrap()
-                            .to_string();
-                        let method_type = self
-                            .current_frame()
-                            .enclosing_class
-                            .get_str(*type_idx)
-                            .unwrap()
-                            .to_string();
-                        let method = target_class
-                            .get_method(&method_name, &method_type)
-                            .expect("method exists");
-                        // get method by name `method_name`
-                        if method.access_flags.is_native() {
-                            if let Some(native_method) =
-                                target_class.native_methods.get(&method_name)
-                            {
-                                native_method(self, vm)?;
-                                Ok(None)
-                            } else if let Some(native_method) = target_class
-                                .native_methods
-                                .get(&format!("{}{}", method_name, method_type))
-                            {
-                                native_method(self, vm)?;
-                                Ok(None)
-                            } else {
-                                panic!("attempted to call native method with no implementation: {} - note, JNI resolution is not yet supported.", method_name);
-                            }
-                        } else {
-                            interpreted_method_call(self, vm, method, target_class, &method_type)?;
-                            Ok(None)
-                        }
-                    } else {
-                        Err(VMError::BadClass(
-                            "fieldref name_and_type does not index a NameAndType",
-                        ))
-                    }
-                } else {
-                    Err(VMError::BadClass(
-                        "invokevirtual constant pool idx does not index a Methodref",
-                    ))
-                }
-            }
-            Instruction::InvokeStatic(idx) => {
-                if let Some(Constant::Methodref(class_idx, name_and_type_idx)) =
-                    self.current_frame().enclosing_class.get_const(*idx)
-                {
-                    let method_class = self
-                        .current_frame()
-                        .enclosing_class
-                        .get_const(*class_idx)
-                        .unwrap();
-                    let method_class_name = if let Constant::Class(class_name_idx) = method_class {
-                        self.current_frame()
-                            .enclosing_class
-                            .get_str(*class_name_idx)
-                            .unwrap()
-                    } else {
-                        panic!("method's class is not a class?");
-                    };
-                    let target_class = vm.resolve_class(method_class_name).unwrap();
-                    if let Some(Constant::NameAndType(name_idx, type_idx)) = self
-                        .current_frame()
-                        .enclosing_class
-                        .get_const(*name_and_type_idx)
+                        native_method(self, vm)?;
+                        Ok(None)
+                    } else if let Some(native_method) = target_class
+                        .native_methods
+                        .get(&format!("{}{}", &method_ref.name, &method_ref.desc))
                     {
-                        let method_name = self
-                            .current_frame()
-                            .enclosing_class
-                            .get_str(*name_idx)
-                            .unwrap()
-                            .to_string();
-                        let method_type = self
-                            .current_frame()
-                            .enclosing_class
-                            .get_str(*type_idx)
-                            .unwrap()
-                            .to_string();
-                        let method = target_class
-                            .get_method(&method_name, &method_type)
-                            .expect("method exists");
-                        // get method by name `method_name`
-                        if method.access_flags.is_native() {
-                            if let Some(native_method) =
-                                target_class.native_methods.get(&method_name)
-                            {
-                                native_method(self, vm)?;
-                                Ok(None)
-                            } else if let Some(native_method) = target_class
-                                .native_methods
-                                .get(&format!("{}{}", method_name, method_type))
-                            {
-                                native_method(self, vm)?;
-                                Ok(None)
-                            } else {
-                                panic!("attempted to call native method with no implementation: {} - note, JNI resolution is not yet supported.", method_name);
-                            }
-                        } else {
-                            interpreted_method_call(self, vm, method, target_class, &method_type)?;
-                            Ok(None)
-                        }
-                    } else {
-                        Err(VMError::BadClass(
-                            "fieldref name_and_type does not index a NameAndType",
-                        ))
-                    }
-                } else {
-                    Err(VMError::BadClass(
-                        "getstatic constant pool idx does not index a Fieldref",
-                    ))
-                }
-            }
-            Instruction::GetStatic(idx) => {
-                if let Some(Constant::Fieldref(class_idx, name_and_type_idx)) =
-                    self.current_frame().enclosing_class.get_const(*idx)
-                {
-                    let referent_class = self
-                        .current_frame()
-                        .enclosing_class
-                        .get_const(*class_idx)
-                        .unwrap();
-                    let referent_class_name =
-                        if let Constant::Class(class_name_idx) = referent_class {
-                            self.current_frame()
-                                .enclosing_class
-                                .get_str(*class_name_idx)
-                                .unwrap()
-                        } else {
-                            panic!("referent class is not a class?");
-                        };
-                    let target_class = vm.resolve_class(referent_class_name).unwrap();
-                    if let Some(Constant::NameAndType(name_idx, type_idx)) = self
-                        .current_frame()
-                        .enclosing_class
-                        .get_const(*name_and_type_idx)
-                    {
-                        let referent_name = self
-                            .current_frame()
-                            .enclosing_class
-                            .get_str(*name_idx)
-                            .unwrap()
-                            .to_string();
-                        let referent_type = self
-                            .current_frame()
-                            .enclosing_class
-                            .get_str(*type_idx)
-                            .unwrap()
-                            .to_string();
-                        let value = vm
-                            .get_static_field(&target_class, &referent_name, &referent_type)
-                            .unwrap();
-                        self.current_frame_mut().operand_stack.push(value);
+                        native_method(self, vm)?;
                         Ok(None)
                     } else {
-                        Err(VMError::BadClass(
-                            "fieldref name_and_type does not index a NameAndType",
-                        ))
+                        panic!("attempted to call native method with no implementation: {} - note, JNI resolution is not yet supported.", &method_ref.name);
                     }
                 } else {
-                    Err(VMError::BadClass(
-                        "getstatic constant pool idx does not index a Fieldref",
-                    ))
+                    interpreted_method_call(self, vm, method, target_class, &method_ref.desc)?;
+                    Ok(None)
                 }
             }
-            Instruction::PutStatic(idx) => {
-                if let Some(Constant::Fieldref(class_idx, name_and_type_idx)) =
-                    self.current_frame().enclosing_class.get_const(*idx)
-                {
-                    let referent_class = self
-                        .current_frame()
-                        .enclosing_class
-                        .get_const(*class_idx)
-                        .unwrap();
-                    let referent_class_name =
-                        if let Constant::Class(class_name_idx) = referent_class {
-                            self.current_frame()
-                                .enclosing_class
-                                .get_str(*class_name_idx)
-                                .unwrap()
-                        } else {
-                            panic!("referent class is not a class?");
-                        };
-                    let target_class = vm.resolve_class(referent_class_name).unwrap();
-                    if let Some(Constant::NameAndType(name_idx, type_idx)) = self
-                        .current_frame()
-                        .enclosing_class
-                        .get_const(*name_and_type_idx)
+            Instruction::InvokeStatic(method_ref) => {
+                let target_class = vm.resolve_class(&method_ref.class_name).unwrap();
+                let method = target_class
+                    .get_method(&method_ref.name, &method_ref.desc)
+                    .expect("method exists");
+                // get method by name `method_name`
+                if method.access().is_native() {
+                    if let Some(native_method) =
+                        target_class.native_methods.get(&method_ref.name)
                     {
-                        let referent_name = self
-                            .current_frame()
-                            .enclosing_class
-                            .get_str(*name_idx)
-                            .unwrap()
-                            .to_string();
-                        let referent_type = self
-                            .current_frame()
-                            .enclosing_class
-                            .get_str(*type_idx)
-                            .unwrap()
-                            .to_string();
-
-                        let value =
-                            if let Some(value) = self.current_frame_mut().operand_stack.pop() {
-                                value
-                            } else {
-                                return Err(VMError::BadClass("iadd but insufficient arguments"));
-                            };
-
-                        vm.put_static_field(&target_class, &referent_name, &referent_type, value);
+                        native_method(self, vm)?;
+                        Ok(None)
+                    } else if let Some(native_method) = target_class
+                        .native_methods
+                        .get(&format!("{}{}", &method_ref.name, &method_ref.desc))
+                    {
+                        native_method(self, vm)?;
                         Ok(None)
                     } else {
-                        Err(VMError::BadClass(
-                            "fieldref name_and_type does not index a NameAndType",
-                        ))
+                        panic!("attempted to call native method with no implementation: {} - note, JNI resolution is not yet supported.", &method_ref.name);
                     }
                 } else {
-                    Err(VMError::BadClass(
-                        "getstatic constant pool idx does not index a Fieldref",
-                    ))
+                    interpreted_method_call(self, vm, method, target_class, &method_ref.desc)?;
+                    Ok(None)
                 }
             }
-            Instruction::InvokeSpecial(idx) => {
-                if let Some(Constant::Methodref(class_idx, name_and_type_idx)) =
-                    self.current_frame().enclosing_class.get_const(*idx)
-                {
-                    let method_class = self
-                        .current_frame()
-                        .enclosing_class
-                        .get_const(*class_idx)
-                        .unwrap();
-                    let method_class_name = if let Constant::Class(class_name_idx) = method_class {
-                        self.current_frame()
-                            .enclosing_class
-                            .get_str(*class_name_idx)
-                            .unwrap()
+            Instruction::GetStatic(field_ref) => {
+                let target_class = vm.resolve_class(&field_ref.class_name).unwrap();
+                let value = vm
+                    .get_static_field(&target_class, &field_ref.name, &field_ref.desc)
+                    .unwrap();
+                self.current_frame_mut().operand_stack.push(value);
+                Ok(None)
+            }
+            Instruction::PutStatic(field_ref) => {
+                let target_class = vm.resolve_class(&field_ref.class_name).unwrap();
+                let value = vm
+                    .get_static_field(&target_class, &field_ref.name, &field_ref.desc)
+                    .unwrap();
+                let value =
+                    if let Some(value) = self.current_frame_mut().operand_stack.pop() {
+                        value
                     } else {
-                        panic!("method's class is not a class?");
+                        return Err(VMError::BadClass("putstatic but insufficient arguments"));
                     };
-                    let target_class = vm.resolve_class(method_class_name).unwrap();
-                    if let Some(Constant::NameAndType(name_idx, type_idx)) = self
-                        .current_frame()
-                        .enclosing_class
-                        .get_const(*name_and_type_idx)
+
+                vm.put_static_field(&target_class, &field_ref.name, &field_ref.desc, value);
+                Ok(None)
+            }
+            Instruction::InvokeSpecial(method_ref) => {
+                let target_class = vm.resolve_class(&method_ref.class_name).unwrap();
+                let method = target_class
+                    .get_method(&method_ref.name, &method_ref.desc)
+                    .expect("method exists");
+                // get method by name `method_name`
+                if method.access().is_native() {
+                    if let Some(native_method) =
+                        target_class.native_methods.get(&method_ref.name)
                     {
-                        let method_name = self
-                            .current_frame()
-                            .enclosing_class
-                            .get_str(*name_idx)
-                            .unwrap()
-                            .to_string();
-                        let method_type = self
-                            .current_frame()
-                            .enclosing_class
-                            .get_str(*type_idx)
-                            .unwrap()
-                            .to_string();
-                        let method = target_class
-                            .get_method(&method_name, &method_type)
-                            .expect("method exists");
-                        // get method by name `method_name`
-                        if method.access_flags.is_native() {
-                            if let Some(native_method) =
-                                target_class.native_methods.get(&method_name)
-                            {
-                                native_method(self, vm)?;
-                                Ok(None)
-                            } else if let Some(native_method) = target_class
-                                .native_methods
-                                .get(&format!("{}{}", method_name, method_type))
-                            {
-                                native_method(self, vm)?;
-                                Ok(None)
-                            } else {
-                                panic!("attempted to call native method with no implementation: {} - note, JNI resolution is not yet supported.", method_name);
-                            }
-                        } else {
-                            interpreted_method_call(self, vm, method, target_class, &method_type)?;
-                            Ok(None)
-                        }
+                        native_method(self, vm)?;
+                        Ok(None)
+                    } else if let Some(native_method) = target_class
+                        .native_methods
+                        .get(&format!("{}{}", &method_ref.name, &method_ref.desc))
+                    {
+                        native_method(self, vm)?;
+                        Ok(None)
                     } else {
-                        Err(VMError::BadClass(
-                            "fieldref name_and_type does not index a NameAndType",
-                        ))
+                        panic!("attempted to call native method with no implementation: {} - note, JNI resolution is not yet supported.", &method_ref.name);
                     }
                 } else {
-                    Err(VMError::BadClass(
-                        "getstatic constant pool idx does not index a Fieldref",
-                    ))
+                    interpreted_method_call(self, vm, method, target_class, &method_ref.desc)?;
+                    Ok(None)
                 }
             }
             Instruction::NewArray(_tpe) => {
@@ -602,28 +378,13 @@ impl VMState {
                     ))));
                 Ok(None)
             }
-            Instruction::New(idx) => {
-                if let Some(Constant::Class(class_idx)) =
-                    self.current_frame().enclosing_class.get_const(*idx)
-                {
-                    let class_name = self
-                        .current_frame()
-                        .enclosing_class
-                        .get_str(*class_idx)
-                        .unwrap()
-                        .to_string();
-
-                    self.current_frame_mut()
-                        .operand_stack
-                        .push(Rc::new(RefCell::new(Value::new_inst(
-                            vm.resolve_class(&class_name)?,
-                        ))));
-                    Ok(None)
-                } else {
-                    Err(VMError::BadClass(
-                        "new constant pool idx does not index a Class",
-                    ))
-                }
+            Instruction::New(tpe) => {
+                self.current_frame_mut()
+                    .operand_stack
+                    .push(Rc::new(RefCell::new(Value::new_inst(
+                        vm.resolve_class(tpe)?,
+                    ))));
+                Ok(None)
             }
             Instruction::BIPush(b) => {
                 self.current_frame_mut()
@@ -1423,18 +1184,12 @@ impl VMState {
                     _ => Err(VMError::BadClass("ireturn but invalid operand types")),
                 }
             }
-            Instruction::Ldc(idx) => {
-                let value = match self.current_frame().enclosing_class.get_const(*idx) {
-                    Some(Constant::Integer(i)) => Rc::new(RefCell::new(Value::Integer(*i as i32))),
-                    Some(Constant::Long(l)) => Rc::new(RefCell::new(Value::Long(*l as i64))),
-                    Some(Constant::String(idx)) => {
-                        if let Some(Constant::Utf8(data)) =
-                            self.current_frame().enclosing_class.get_const(*idx)
-                        {
-                            Rc::new(RefCell::new(Value::String(data.clone())))
-                        } else {
-                            return Err(VMError::BadClass("string ref is not utf8 data"));
-                        }
+            Instruction::Ldc(c) => {
+                let value = match &**c {
+                    Constant::Integer(i) => Rc::new(RefCell::new(Value::Integer(*i as i32))),
+                    Constant::Long(l) => Rc::new(RefCell::new(Value::Long(*l as i64))),
+                    Constant::String(s) => {
+                        Rc::new(RefCell::new(Value::String(s.bytes().collect())))
                     }
                     _ => {
                         return Err(VMError::Unsupported("unsupported constant type for ldc"));
@@ -1478,9 +1233,9 @@ impl Value {
         // TODO: respect type and access flags of fields
         for field in class_file.fields.iter() {
             fields.insert(
-                class_file.get_str(field.name_index).unwrap().to_string(),
+                field.name.clone(),
                 Rc::new(RefCell::new(Value::default_of(
-                    class_file.get_str(field.descriptor_index).unwrap(),
+                    &field.desc,
                 ))),
             );
         }
@@ -1622,16 +1377,16 @@ impl VirtualMachine {
         let new_class = match referent {
             "java/lang/String" => {
                 let constants = vec![
-                    Constant::Utf8(b"java/lang/String".to_vec()),
-                    Constant::Utf8(b"<init>".to_vec()),
-                    Constant::Utf8(b"hashCode".to_vec()),
-                    Constant::Utf8(b"()I".to_vec()),
-                    Constant::Utf8(b"(Ljava/lang/String;)".to_vec()),
-                    Constant::Utf8(b"([B)V".to_vec()),
-                    Constant::Utf8(b"[B".to_vec()),
-                    Constant::Utf8(b"value".to_vec()),
-                    Constant::Utf8(b"(Ljava/lang/String;)Ljava/lang/String;".to_vec()),
-                    Constant::Utf8(b"concat".to_vec()),
+                    UnvalidatedConstant::Utf8(b"java/lang/String".to_vec()),
+                    UnvalidatedConstant::Utf8(b"<init>".to_vec()),
+                    UnvalidatedConstant::Utf8(b"hashCode".to_vec()),
+                    UnvalidatedConstant::Utf8(b"()I".to_vec()),
+                    UnvalidatedConstant::Utf8(b"(Ljava/lang/String;)".to_vec()),
+                    UnvalidatedConstant::Utf8(b"([B)V".to_vec()),
+                    UnvalidatedConstant::Utf8(b"[B".to_vec()),
+                    UnvalidatedConstant::Utf8(b"value".to_vec()),
+                    UnvalidatedConstant::Utf8(b"(Ljava/lang/String;)Ljava/lang/String;".to_vec()),
+                    UnvalidatedConstant::Utf8(b"concat".to_vec()),
                 ];
 
                 let mut native_methods: HashMap<
@@ -1646,7 +1401,7 @@ impl VirtualMachine {
                     string_concat,
                 );
 
-                let synthetic_class = ClassFile {
+                let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
                     major_version: 55,
                     minor_version: 0,
                     constant_pool: constants,
@@ -1688,23 +1443,23 @@ impl VirtualMachine {
                     ],
                     attributes: vec![],
                     native_methods,
-                };
+                }).unwrap();
 
                 synthetic_class
             }
             "java/lang/StringBuilder" => {
                 let constants = vec![
-                    Constant::Utf8(b"java/lang/StringBuilder".to_vec()),
-                    Constant::Utf8(b"<init>".to_vec()),
-                    Constant::Utf8(b"()V".to_vec()),
-                    Constant::Utf8(b"(Ljava/lang/String;)V".to_vec()),
-                    Constant::Utf8(b"append".to_vec()),
-//                    Constant::Utf8(b"(B)Ljava/lang/String;".to_vec()),
-//                    Constant::Utf8(b"(C)Ljava/lang/String;".to_vec()),
-//                    Constant::Utf8(b"([C)Ljava/lang/String;".to_vec()),
-                    Constant::Utf8(b"(Ljava/lang/String;)Ljava/lang/StringBuilder;".to_vec()),
-                    Constant::Utf8(b"toString".to_vec()),
-                    Constant::Utf8(b"()Ljava/lang/String;".to_vec()),
+                    UnvalidatedConstant::Utf8(b"java/lang/StringBuilder".to_vec()),
+                    UnvalidatedConstant::Utf8(b"<init>".to_vec()),
+                    UnvalidatedConstant::Utf8(b"()V".to_vec()),
+                    UnvalidatedConstant::Utf8(b"(Ljava/lang/String;)V".to_vec()),
+                    UnvalidatedConstant::Utf8(b"append".to_vec()),
+//                    UnvalidatedConstant::Utf8(b"(B)Ljava/lang/String;".to_vec()),
+//                    UnvalidatedConstant::Utf8(b"(C)Ljava/lang/String;".to_vec()),
+//                    UnvalidatedConstant::Utf8(b"([C)Ljava/lang/String;".to_vec()),
+                    UnvalidatedConstant::Utf8(b"(Ljava/lang/String;)Ljava/lang/StringBuilder;".to_vec()),
+                    UnvalidatedConstant::Utf8(b"toString".to_vec()),
+                    UnvalidatedConstant::Utf8(b"()Ljava/lang/String;".to_vec()),
                 ];
 
                 let mut native_methods: HashMap<
@@ -1717,7 +1472,7 @@ impl VirtualMachine {
 //                native_methods.insert("append([C)Ljava/lang/StringBuilder".to_string(), stringbuilder_append_chars);
                 native_methods.insert("toString()Ljava/lang/String;".to_string(), stringbuilder_tostring);
 
-                let synthetic_class = ClassFile {
+                let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
                     major_version: 55,
                     minor_version: 0,
                     constant_pool: constants,
@@ -1754,17 +1509,17 @@ impl VirtualMachine {
                     ],
                     attributes: vec![],
                     native_methods,
-                };
+                }).unwrap();
 
                 synthetic_class
             }
             "java/lang/System" => {
                 let constants = vec![
-                    Constant::Utf8(b"java/lang/System".to_vec()),
-                    Constant::Utf8(b"out".to_vec()),
-                    Constant::Utf8(b"Ljava/io/PrintStream;".to_vec()),
-                    Constant::Utf8(b"exit".to_vec()),
-                    Constant::Utf8(b"(I)V".to_vec()),
+                    UnvalidatedConstant::Utf8(b"java/lang/System".to_vec()),
+                    UnvalidatedConstant::Utf8(b"out".to_vec()),
+                    UnvalidatedConstant::Utf8(b"Ljava/io/PrintStream;".to_vec()),
+                    UnvalidatedConstant::Utf8(b"exit".to_vec()),
+                    UnvalidatedConstant::Utf8(b"(I)V".to_vec()),
                 ];
 
                 let mut native_methods: HashMap<
@@ -1773,7 +1528,7 @@ impl VirtualMachine {
                 > = HashMap::new();
                 native_methods.insert("exit(I)V".to_string(), system_exit);
 
-                let synthetic_class = ClassFile {
+                let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
                     major_version: 55,
                     minor_version: 0,
                     constant_pool: constants,
@@ -1797,17 +1552,17 @@ impl VirtualMachine {
                     ],
                     attributes: vec![],
                     native_methods,
-                };
+                }).unwrap();
 
                 synthetic_class
             }
             "java/io/PrintStream" => {
                 let constants = vec![
-                    Constant::Utf8(b"java/io/PrintStream".to_vec()),
-                    Constant::Utf8(b"println".to_vec()),
-                    Constant::Utf8(b"(Ljava/lang/String;)V".to_vec()),
-                    Constant::Utf8(b"(I)V".to_vec()),
-                    Constant::Utf8(b"(J)V".to_vec()),
+                    UnvalidatedConstant::Utf8(b"java/io/PrintStream".to_vec()),
+                    UnvalidatedConstant::Utf8(b"println".to_vec()),
+                    UnvalidatedConstant::Utf8(b"(Ljava/lang/String;)V".to_vec()),
+                    UnvalidatedConstant::Utf8(b"(I)V".to_vec()),
+                    UnvalidatedConstant::Utf8(b"(J)V".to_vec()),
                 ];
 
                 let mut native_methods: HashMap<
@@ -1818,7 +1573,7 @@ impl VirtualMachine {
                 native_methods.insert("println(I)V".to_string(), system_out_println_int);
                 native_methods.insert("println(J)V".to_string(), system_out_println_long);
 
-                let synthetic_class = ClassFile {
+                let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
                     major_version: 55,
                     minor_version: 0,
                     constant_pool: constants,
@@ -1849,7 +1604,7 @@ impl VirtualMachine {
                     ],
                     attributes: vec![],
                     native_methods,
-                };
+                }).unwrap();
 
                 synthetic_class
             }
@@ -1874,9 +1629,9 @@ impl VirtualMachine {
         let rc = Rc::new(class_file);
         self.classes.insert(class_name, Rc::clone(&rc));
 
-        if let Ok(method) = rc.get_method("<clinit>", "()V") {
+        if let Some(method) = rc.get_method("<clinit>", "()V") {
             let mut state = VMState::new(
-                method.body().expect("clinit has a body"),
+                Rc::clone(method.body.as_ref().expect("clinit has a body")),
                 Rc::clone(&rc),
                 vec![],
             );
@@ -1889,27 +1644,6 @@ impl VirtualMachine {
         } // else no static initializer
 
         Ok(rc)
-    }
-
-    pub fn get_method(
-        &self,
-        class_ref: &Rc<ClassFile>,
-        method: &str,
-        desc: &str,
-    ) -> Result<Rc<MethodHandle>, VMError> {
-        class_ref
-            .get_method(method, desc)
-            .map_err(|_| VMError::NameResolutionError)
-    }
-
-    pub fn get_methods(
-        &self,
-        class_ref: &Rc<ClassFile>,
-        method: &str,
-    ) -> Result<Vec<Rc<MethodHandle>>, VMError> {
-        class_ref
-            .get_methods(method)
-            .map_err(|_| VMError::NameResolutionError)
     }
 
     pub fn execute(
@@ -1930,13 +1664,13 @@ impl VirtualMachine {
             ));
         }
 
-        let code = method.body().ok_or(VMError::AccessError(
+        let code = method.body.as_ref().ok_or(VMError::AccessError(
             "attempted to initiate VM with function that has no body",
         ))?;
 
         // TODO: verify arguments? verify that `method` does not take arguments??
 
-        let mut state = VMState::new(code, Rc::clone(class_ref), args);
+        let mut state = VMState::new(Rc::clone(code), Rc::clone(class_ref), args);
         self.interpret(&mut state)
     }
 
@@ -1947,7 +1681,7 @@ impl VirtualMachine {
         while let Some(instruction) = state.next_instruction() {
             //            println!("Executing {:?}", instruction);
             //            let enc = &*state.current_frame().enclosing_class;
-            //            println!("Executing {}", instruction.display(enc));
+            //            println!("Executing {}", instruction);
             if let Some(value) = state.execute(&instruction, self)? {
                 // TODO: type check the return value
                 if state.call_stack.len() == 0 {
@@ -1982,7 +1716,7 @@ fn interpreted_method_call(
         let frame = state.current_frame_mut();
         let arg = frame.operand_stack.pop().expect("argument is present");
         state.enter(
-            method.body().expect("method has a body"),
+            Rc::clone(method.body.as_ref().expect("method has a body")),
             method_class,
             vec![arg],
         );
@@ -1990,13 +1724,13 @@ fn interpreted_method_call(
         let frame = state.current_frame_mut();
         let arg = frame.operand_stack.pop().expect("argument is present");
         state.enter(
-            method.body().expect("method has a body"),
+            Rc::clone(method.body.as_ref().expect("method has a body")),
             method_class,
             vec![arg],
         );
     } else {
         state.enter(
-            method.body().expect("method has a body"),
+            Rc::clone(method.body.as_ref().expect("method has a body")),
             method_class,
             vec![],
         );
