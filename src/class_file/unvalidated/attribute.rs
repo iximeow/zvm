@@ -1,5 +1,4 @@
 use crate::class_file::unvalidated::instruction::Instruction;
-use crate::class_file::unvalidated::AttributeInfo;
 use crate::class_file::unvalidated::ClassFile;
 use crate::class_file::unvalidated::ConstantIdx;
 use crate::class_file::unvalidated::Error;
@@ -152,5 +151,82 @@ impl<'a, 'b> fmt::Display for AttributeDisplay<'a, 'b> {
                 Ok(())
             }
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct AttributeInfo {
+    pub(crate) name_index: ConstantIdx,
+    pub(crate)data: Vec<u8>,
+}
+
+impl AttributeInfo {
+    pub fn materialize(&self, class_file: &ClassFile) -> Result<Attribute, Error> {
+        match class_file.get_raw_str(self.name_index) {
+            Some(b"ConstantValue") => Ok(Attribute::ConstantValue(ConstantIdx::read_from(
+                &mut self.data.as_slice(),
+            )?)),
+            Some(b"Code") => {
+                let data = &mut self.data.as_slice();
+                let max_stack = u16::read_from(data)?;
+                let max_locals = u16::read_from(data)?;
+                let code_length = u32::read_from(data)?;
+                let mut code: Vec<u8> = Vec::new();
+                for _ in 0..code_length {
+                    code.push(u8::read_from(data)?);
+                }
+                let exceptions_length = u16::read_from(data)?;
+                let mut exceptions: Vec<ExceptionTableRecord> = Vec::new();
+                for _ in 0..exceptions_length {
+                    exceptions.push(ExceptionTableRecord::read_from(data)?);
+                }
+                let attr_length = u16::read_from(data)?;
+                let mut attrs: Vec<AttributeInfo> = Vec::new();
+                for _ in 0..attr_length {
+                    attrs.push(AttributeInfo::read_from(data)?);
+                }
+                Ok(Attribute::Code(
+                    max_stack, max_locals, code, exceptions, attrs,
+                ))
+            }
+            Some(b"LineNumberTable") => {
+                let data = &mut self.data.as_slice();
+                let lineno_length = u16::read_from(data)?;
+                let mut entries: Vec<LineNumberEntry> = Vec::new();
+                for _ in 0..lineno_length {
+                    entries.push(LineNumberEntry::read_from(data)?);
+                }
+                Ok(Attribute::LineNumberTable(entries))
+            }
+            Some(_) => Err(Error::Unsupported("unsupported attribute type")),
+            None => Err(Error::ClassFileError(
+                "bad constant pool index - not a utf8",
+            )),
+        }
+    }
+}
+
+pub struct AttributeInfoDisplay<'a, 'b> {
+    attribute: &'a AttributeInfo,
+    class_file: &'b ClassFile,
+}
+
+impl AttributeInfo {
+    pub fn display<'a, 'b>(&'a self, class_file: &'b ClassFile) -> AttributeInfoDisplay<'a, 'b> {
+        AttributeInfoDisplay {
+            attribute: self,
+            class_file,
+        }
+    }
+}
+
+impl<'a, 'b> fmt::Display for AttributeInfoDisplay<'a, 'b> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}, {:?}",
+            self.class_file.get_str(self.attribute.name_index).unwrap(),
+            self.attribute.data
+        )
     }
 }

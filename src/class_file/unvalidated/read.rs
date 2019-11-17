@@ -144,22 +144,18 @@ impl<R: Read> FromReader<R> for MethodHandleBehavior {
 impl<R: Read> FromReader<R> for ConstantIdx {
     fn read_from(data: &mut R) -> Result<Self, Error> {
         let idx = data.read_u16::<BigEndian>()?;
-        if idx == 0 {
-            return Err(Error::BadIndex);
+        match ConstantIdx::new(idx) {
+            Some(idx) => Ok(idx),
+            None => Err(Error::ClassFileError("invalid null index"))
         }
-
-        Ok(ConstantIdx { idx })
     }
 }
 
 impl<R: Read> FromReader<R> for Option<ConstantIdx> {
     fn read_from(data: &mut R) -> Result<Self, Error> {
         let idx = data.read_u16::<BigEndian>()?;
-        if idx == 0 {
-            return Ok(None);
-        }
 
-        Ok(Some(ConstantIdx { idx }))
+        Ok(ConstantIdx::new(idx))
     }
 }
 
