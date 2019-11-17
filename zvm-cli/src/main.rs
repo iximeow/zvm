@@ -42,12 +42,12 @@ fn main() {
 }
 
 // the string is because i don't want to think right now
-fn parse_args(env: &[String]) -> Result<Vec<Rc<RefCell<Value>>>, String> {
+fn parse_args(env: &[String]) -> Result<Vec<Value>, String> {
     let mut result = Vec::new();
 
     for s in env {
         if let Some(value) = Value::parse_from(s) {
-            result.push(Rc::new(RefCell::new(value)))
+            result.push(value);
         } else {
             return Err(format!("unable to parse {} as a value", s));
         }
