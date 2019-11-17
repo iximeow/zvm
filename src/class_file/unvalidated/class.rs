@@ -84,6 +84,7 @@ impl fmt::Debug for ClassFile {
 
 pub(crate) struct ClassFileRef(Rc<ClassFile>);
 
+#[allow(dead_code)]
 impl ClassFileRef {
     pub fn of(reference: &Rc<ClassFile>) -> Self {
         ClassFileRef(Rc::clone(reference))

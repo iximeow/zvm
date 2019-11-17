@@ -108,9 +108,9 @@ fn validate_inst(handle: &MethodBody, position: u32, raw_inst: &unvalidated::Ins
         unvalidated::Instruction::DConst1 => Instruction::DConst1,
         unvalidated::Instruction::BIPush(v) => Instruction::BIPush(*v),
         unvalidated::Instruction::SIPush(v) => Instruction::SIPush(*v),
-        unvalidated::Instruction::Ldc(v) => Instruction::Ldc(Rc::clone(&handle.const_refs[&position])),
-        unvalidated::Instruction::LdcW(v) => Instruction::LdcW(Rc::clone(&handle.const_refs[&position])),
-        unvalidated::Instruction::Ldc2W(v) => Instruction::Ldc2W(Rc::clone(&handle.const_refs[&position])),
+        unvalidated::Instruction::Ldc(_) => Instruction::Ldc(Rc::clone(&handle.const_refs[&position])),
+        unvalidated::Instruction::LdcW(_) => Instruction::LdcW(Rc::clone(&handle.const_refs[&position])),
+        unvalidated::Instruction::Ldc2W(_) => Instruction::Ldc2W(Rc::clone(&handle.const_refs[&position])),
         unvalidated::Instruction::ILoad(v) => Instruction::ILoad(*v),
         unvalidated::Instruction::LLoad(v) => Instruction::LLoad(*v),
         unvalidated::Instruction::FLoad(v) => Instruction::FLoad(*v),
@@ -298,6 +298,7 @@ fn validate_inst(handle: &MethodBody, position: u32, raw_inst: &unvalidated::Ins
 
 fn make_refs<'validation>(
     inst: &unvalidated::Instruction,
+    max_locals: u16,
     position: u32,
     raw_class: &UnvalidatedClassFile,
     class_refs: &'validation mut HashMap<u32, Rc<String>>,
@@ -317,7 +318,9 @@ fn make_refs<'validation>(
         Instruction::FLoad(local_idx) |
         Instruction::DLoad(local_idx) |
         Instruction::ALoad(local_idx) => {
-            // TODO: check that local_idx < max_locals
+            if *local_idx >= max_locals {
+                return Err(ValidationError::InvalidMethod("invalid local index"));
+            }
         }
         Instruction::New(class_idx) |
         Instruction::CheckCast(class_idx) |
@@ -433,20 +436,14 @@ fn make_refs<'validation>(
                 method_refs.insert(position as u32, Rc::new(method_ref));
             }
         }
-        Instruction::InvokeInterface(method_idx, count) => {
+        Instruction::InvokeInterface(_method_idx, _count) => {
             panic!("invokeinterface is not yet validated");
         }
-        Instruction::InvokeDynamic(method_idx) => {
+        Instruction::InvokeDynamic(_method_idx) => {
             panic!("invokedynamic is not yet validated");
         }
-        Instruction::New(class_idx) => {
-            panic!("new not yet validated");
-        }
-        Instruction::NewArray(tpe) => {
+        Instruction::NewArray(_tpe) => {
             panic!("newarray not yet validated");
-        }
-        Instruction::CheckCast(idx) => {
-            panic!("checkcast not yet validated");
         }
         _ => { /* no validation necessary */ }
     }
@@ -502,7 +499,7 @@ impl MethodHandle {
                         Ok(inst) => inst,
                         _ => { break; }
                     };
-                    make_refs(&inst, position, raw_class, &mut class_refs, &mut field_refs, &mut method_refs, &mut const_refs)?;
+                    make_refs(&inst, max_locals, position, raw_class, &mut class_refs, &mut field_refs, &mut method_refs, &mut const_refs)?;
                 }
 
                 Some(Rc::new(MethodBody {
@@ -624,7 +621,6 @@ impl unvalidated::Constant {
                 Err(ValidationError::BadString)
             }
         } else {
-            panic!("uh oh");
             Err(ValidationError::BadConst(self.type_name().to_string(), "Utf8".to_string()))
         }
     }
@@ -694,7 +690,6 @@ impl ClassFile {
             None => None
         };
 
-        // TODO
         let mut constants = Vec::new();
         for raw_const in raw_class.constant_pool.iter() {
             match raw_const {
@@ -711,7 +706,7 @@ impl ClassFile {
                 }
             }
         }
-        let mut interfaces = Vec::new();
+        let interfaces = Vec::new();
         let mut fields = Vec::new();
         for raw_field in raw_class.fields.iter() {
             fields.push(Rc::new(FieldHandle::validate(raw_class, raw_field)?));
@@ -720,7 +715,7 @@ impl ClassFile {
         for raw_method in raw_class.methods.iter() {
             methods.push(Rc::new(MethodHandle::validate(raw_class, raw_method)?));
         }
-        let mut attributes = Vec::new();
+        let attributes = Vec::new();
 
         Ok(ClassFile {
             this_class: this_class.to_string(),

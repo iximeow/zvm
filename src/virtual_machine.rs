@@ -1,12 +1,10 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::io::Cursor;
 use std::rc::Rc;
 use std::str::FromStr;
 use std::hash::{Hash, Hasher};
 
 use crate::class_file::validated::Instruction;
-use crate::class_file::unvalidated::read::FromReader;
 use crate::class_file::unvalidated::AccessFlags;
 use crate::class_file::unvalidated::{ClassFile as UnvalidatedClassFile};
 use crate::class_file::validated::ClassFile;
@@ -54,6 +52,7 @@ pub struct VMState {
     call_stack: Vec<CallFrame>,
 }
 
+#[allow(dead_code)]
 impl VMState {
     pub fn new(
         code: Rc<MethodBody>,
@@ -318,9 +317,6 @@ impl VMState {
             }
             Instruction::PutStatic(field_ref) => {
                 let target_class = vm.resolve_class(&field_ref.class_name).unwrap();
-                let value = vm
-                    .get_static_field(&target_class, &field_ref.name, &field_ref.desc)
-                    .unwrap();
                 let value =
                     if let Some(value) = self.current_frame_mut().operand_stack.pop() {
                         value
@@ -1302,6 +1298,7 @@ impl PartialEq for ValueRef {
     }
 }
 
+#[allow(dead_code)]
 enum NativeObject {
     StringBuilder(Vec<u16>),
     Unknown,
