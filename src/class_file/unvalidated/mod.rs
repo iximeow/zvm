@@ -8,20 +8,7 @@ pub mod constant;
 
 pub use instruction::Instruction;
 
-use read::FromReader;
-
 use crate::class_file::unvalidated::attribute::Attribute;
-use crate::class_file::unvalidated::attribute::ExceptionTableRecord;
-use crate::class_file::unvalidated::attribute::LineNumberEntry;
-
-use crate::virtual_machine::VMError;
-use crate::virtual_machine::VMState;
-use crate::virtual_machine::VirtualMachine;
-
-use std::collections::HashMap;
-use std::fmt;
-use std::hash::{Hash, Hasher};
-use std::rc::Rc;
 
 pub use crate::class_file::unvalidated::attribute::AttributeInfo;
 pub use crate::class_file::unvalidated::class::AccessFlags;
