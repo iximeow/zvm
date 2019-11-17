@@ -11,6 +11,7 @@ pub use instruction::Instruction;
 use crate::class_file::unvalidated::attribute::Attribute;
 
 pub use crate::class_file::unvalidated::attribute::AttributeInfo;
+pub use crate::class_file::unvalidated::attribute::ExceptionTableRecord;
 pub use crate::class_file::unvalidated::class::AccessFlags;
 pub use crate::class_file::unvalidated::class::ClassFile;
 pub use crate::class_file::unvalidated::constant::Constant;
