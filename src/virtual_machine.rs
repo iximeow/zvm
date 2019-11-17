@@ -21,20 +21,20 @@ use crate::class_file::unvalidated::MethodInfo;
 
 struct CallFrame {
     offset: u32,
-    arguments: Vec<Rc<RefCell<Value>>>,
+    arguments: Vec<Value>,
     body: Rc<MethodBody>,
     enclosing_class: Rc<ClassFile>,
-    operand_stack: Vec<Rc<RefCell<Value>>>,
+    operand_stack: Vec<Value>,
 }
 
 impl CallFrame {
     pub fn new(
         body: Rc<MethodBody>,
         enclosing_class: Rc<ClassFile>,
-        mut arguments: Vec<Rc<RefCell<Value>>>,
+        mut arguments: Vec<Value>,
     ) -> Self {
         while arguments.len() < (body.max_locals as usize) {
-            arguments.push(Rc::new(RefCell::new(Value::Integer(0))));
+            arguments.push(Value::Integer(0));
         }
 
         CallFrame {
@@ -57,7 +57,7 @@ impl VMState {
     pub fn new(
         code: Rc<MethodBody>,
         method_class: Rc<ClassFile>,
-        initial_args: Vec<Rc<RefCell<Value>>>,
+        initial_args: Vec<Value>,
     ) -> Self {
         let mut state = VMState {
             call_stack: Vec::new(),
@@ -93,7 +93,7 @@ impl VMState {
         &mut self,
         body: Rc<MethodBody>,
         enclosing_class: Rc<ClassFile>,
-        arguments: Vec<Rc<RefCell<Value>>>,
+        arguments: Vec<Value>,
     ) {
         self.call_stack
             .push(CallFrame::new(body, enclosing_class, arguments));
@@ -103,12 +103,12 @@ impl VMState {
         self.call_stack.pop().expect("stack is non-empty");
     }
 
-    fn interpret_iload(&mut self, idx: u16) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
+    fn interpret_iload(&mut self, idx: u16) -> Result<Option<Value>, VMError> {
         let frame_mut = self.current_frame_mut();
-        let argument: Option<&Rc<RefCell<Value>>> = frame_mut.arguments.get(idx as usize);
+        let argument: Option<&Value> = frame_mut.arguments.get(idx as usize);
         let operand = match argument {
-            Some(argument) => match &*argument.borrow() {
-                Value::Integer(_) => Rc::clone(argument),
+            Some(argument) => match argument {
+                Value::Integer(v) => Value::Integer(*v),
                 _ => {
                     return Err(VMError::BadClass("iload but not integer"));
                 }
@@ -122,23 +122,23 @@ impl VMState {
         Ok(None)
     }
 
-    fn interpret_istore(&mut self, idx: u16) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
+    fn interpret_istore(&mut self, idx: u16) -> Result<Option<Value>, VMError> {
         let frame_mut = self.current_frame_mut();
         let value = frame_mut
             .operand_stack
             .pop()
             .expect("operand stack has value");
-        frame_mut.arguments[idx as usize] = Rc::clone(&value);
+        frame_mut.arguments[idx as usize] = value.clone();
 
         Ok(None)
     }
 
-    fn interpret_lload(&mut self, idx: u16) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
+    fn interpret_lload(&mut self, idx: u16) -> Result<Option<Value>, VMError> {
         let frame_mut = self.current_frame_mut();
-        let argument: Option<&Rc<RefCell<Value>>> = frame_mut.arguments.get(idx as usize);
+        let argument: Option<&Value> = frame_mut.arguments.get(idx as usize);
         let operand = match argument {
-            Some(argument) => match &*argument.borrow() {
-                Value::Long(_) => Rc::clone(argument),
+            Some(argument) => match argument {
+                Value::Long(v) => Value::Long(*v),
                 _ => {
                     return Err(VMError::BadClass("lload but not long"));
                 }
@@ -152,23 +152,23 @@ impl VMState {
         Ok(None)
     }
 
-    fn interpret_lstore(&mut self, idx: u16) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
+    fn interpret_lstore(&mut self, idx: u16) -> Result<Option<Value>, VMError> {
         let frame_mut = self.current_frame_mut();
         let value = frame_mut
             .operand_stack
             .pop()
             .expect("operand stack has value");
-        frame_mut.arguments[idx as usize] = Rc::clone(&value);
+        frame_mut.arguments[idx as usize] = value.clone();
 
         Ok(None)
     }
 
-    fn interpret_fload(&mut self, idx: u16) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
+    fn interpret_fload(&mut self, idx: u16) -> Result<Option<Value>, VMError> {
         let frame_mut = self.current_frame_mut();
-        let argument: Option<&Rc<RefCell<Value>>> = frame_mut.arguments.get(idx as usize);
+        let argument: Option<&Value> = frame_mut.arguments.get(idx as usize);
         let operand = match argument {
-            Some(argument) => match &*argument.borrow() {
-                Value::Float(_) => Rc::clone(argument),
+            Some(argument) => match argument {
+                Value::Float(v) => Value::Float(*v),
                 _ => {
                     return Err(VMError::BadClass("fload but not float"));
                 }
@@ -182,23 +182,23 @@ impl VMState {
         Ok(None)
     }
 
-    fn interpret_fstore(&mut self, idx: u16) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
+    fn interpret_fstore(&mut self, idx: u16) -> Result<Option<Value>, VMError> {
         let frame_mut = self.current_frame_mut();
         let value = frame_mut
             .operand_stack
             .pop()
             .expect("operand stack has value");
-        frame_mut.arguments[idx as usize] = Rc::clone(&value);
+        frame_mut.arguments[idx as usize] = value.clone();
 
         Ok(None)
     }
 
-    fn interpret_dload(&mut self, idx: u16) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
+    fn interpret_dload(&mut self, idx: u16) -> Result<Option<Value>, VMError> {
         let frame_mut = self.current_frame_mut();
-        let argument: Option<&Rc<RefCell<Value>>> = frame_mut.arguments.get(idx as usize);
+        let argument: Option<&Value> = frame_mut.arguments.get(idx as usize);
         let operand = match argument {
-            Some(argument) => match &*argument.borrow() {
-                Value::Double(_) => Rc::clone(argument),
+            Some(argument) => match argument {
+                Value::Double(v) => Value::Double(*v),
                 _ => {
                     return Err(VMError::BadClass("dload but not double"));
                 }
@@ -212,23 +212,23 @@ impl VMState {
         Ok(None)
     }
 
-    fn interpret_dstore(&mut self, idx: u16) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
+    fn interpret_dstore(&mut self, idx: u16) -> Result<Option<Value>, VMError> {
         let frame_mut = self.current_frame_mut();
         let value = frame_mut
             .operand_stack
             .pop()
             .expect("operand stack has value");
-        frame_mut.arguments[idx as usize] = Rc::clone(&value);
+        frame_mut.arguments[idx as usize] = value.clone();
 
         Ok(None)
     }
 
-    fn interpret_aload(&mut self, idx: u16) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
+    fn interpret_aload(&mut self, idx: u16) -> Result<Option<Value>, VMError> {
         let frame_mut = self.current_frame_mut();
-        let argument: Option<&Rc<RefCell<Value>>> = frame_mut.arguments.get(idx as usize);
+        let argument: Option<&Value> = frame_mut.arguments.get(idx as usize);
         let operand = match argument {
             // TODO: type check argument as an object?
-            Some(argument) => Rc::clone(argument),
+            Some(argument) => argument.clone(),
             None => {
                 return Err(VMError::BadClass("dload but insufficient arguments"));
             }
@@ -238,13 +238,13 @@ impl VMState {
         Ok(None)
     }
 
-    fn interpret_astore(&mut self, idx: u16) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
+    fn interpret_astore(&mut self, idx: u16) -> Result<Option<Value>, VMError> {
         let frame_mut = self.current_frame_mut();
         let value = frame_mut
             .operand_stack
             .pop()
             .expect("operand stack has value");
-        frame_mut.arguments[idx as usize] = Rc::clone(&value);
+        frame_mut.arguments[idx as usize] = value.clone();
 
         Ok(None)
     }
@@ -253,7 +253,7 @@ impl VMState {
         &mut self,
         instruction: &Instruction,
         vm: &mut VirtualMachine,
-    ) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
+    ) -> Result<Option<Value>, VMError> {
         match instruction {
             Instruction::InvokeVirtual(method_ref) => {
                 let target_class = vm.resolve_class(&method_ref.class_name).unwrap();
@@ -361,37 +361,37 @@ impl VMState {
                     .expect("stack has a value");
 
                 let mut elems = Vec::new();
-                if let Value::Integer(size) = &*top.borrow() {
-                    for _ in 0..*size {
-                        elems.push(Rc::new(RefCell::new(Value::Integer(0))));
+                if let Value::Integer(size) = top {
+                    for _ in 0..size {
+                        elems.push(Value::Integer(0));
                     }
                 }
 
                 self.current_frame_mut()
                     .operand_stack
-                    .push(Rc::new(RefCell::new(Value::Array(
-                        elems.into_boxed_slice(),
-                    ))));
+                    .push(Value::Array(
+                        Rc::new(RefCell::new(elems.into_boxed_slice())),
+                    ));
                 Ok(None)
             }
             Instruction::New(tpe) => {
                 self.current_frame_mut()
                     .operand_stack
-                    .push(Rc::new(RefCell::new(Value::new_inst(
+                    .push(Value::new_inst(
                         vm.resolve_class(tpe)?,
-                    ))));
+                    ));
                 Ok(None)
             }
             Instruction::BIPush(b) => {
                 self.current_frame_mut()
                     .operand_stack
-                    .push(Rc::new(RefCell::new(Value::Integer(*b as i32))));
+                    .push(Value::Integer(*b as i32));
                 Ok(None)
             }
             Instruction::SIPush(s) => {
                 self.current_frame_mut()
                     .operand_stack
-                    .push(Rc::new(RefCell::new(Value::Integer(*s as i32))));
+                    .push(Value::Integer(*s as i32));
                 Ok(None)
             }
             Instruction::Dup => {
@@ -401,7 +401,7 @@ impl VMState {
                     .pop()
                     .expect("stack has a value");
 
-                self.current_frame_mut().operand_stack.push(Rc::clone(&top));
+                self.current_frame_mut().operand_stack.push(top.clone());
                 self.current_frame_mut().operand_stack.push(top);
                 Ok(None)
             }
@@ -419,10 +419,8 @@ impl VMState {
                     .pop()
                     .expect("stack has a value");
 
-                self.current_frame_mut()
-                    .operand_stack
-                    .push(Rc::clone(&next));
-                self.current_frame_mut().operand_stack.push(Rc::clone(&top));
+                self.current_frame_mut().operand_stack.push(next.clone());
+                self.current_frame_mut().operand_stack.push(top.clone());
                 self.current_frame_mut().operand_stack.push(next);
                 self.current_frame_mut().operand_stack.push(top);
                 Ok(None)
@@ -442,13 +440,13 @@ impl VMState {
                     .expect("stack has a value");
 
                 if let (Value::Array(elements), Value::Integer(index)) =
-                    (&*array.borrow(), &*index.borrow())
+                    (array, index)
                 {
                     // TODO: homogeneously typed arrays
-                    if let Some(value) = elements.get(*index as usize) {
+                    if let Some(value) = elements.borrow().get(index as usize) {
                         self.current_frame_mut()
                             .operand_stack
-                            .push(Rc::clone(value));
+                            .push(value.clone());
                     } else {
                         panic!("array index out of bounds exceptions!!");
                     }
@@ -477,10 +475,10 @@ impl VMState {
                     .expect("stack has a value");
 
                 if let (Value::Array(elements), Value::Integer(index)) =
-                    (&mut *array.borrow_mut(), &*index.borrow())
+                    (array, index)
                 {
                     // TODO: homogeneously typed arrays
-                    elements[*index as usize] = value;
+                    elements.borrow_mut()[index as usize] = value;
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -506,10 +504,10 @@ impl VMState {
                     .expect("stack has a value");
 
                 if let (Value::Array(elements), Value::Integer(index)) =
-                    (&mut *array.borrow_mut(), &*index.borrow())
+                    (array, index)
                 {
                     // TODO: homogeneously typed arrays
-                    elements[*index as usize] = value;
+                    elements.borrow_mut()[index as usize] = value;
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -530,13 +528,13 @@ impl VMState {
                     .expect("stack has a value");
 
                 if let (Value::Array(elements), Value::Integer(index)) =
-                    (&mut *array.borrow_mut(), &*index.borrow())
+                    (array, index)
                 {
                     // TODO: homogeneously typed arrays
                     self
                         .current_frame_mut()
                         .operand_stack
-                        .push(Rc::clone(&elements[*index as usize]));
+                        .push(elements.borrow()[index as usize].clone());
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -562,10 +560,10 @@ impl VMState {
                     .expect("stack has a value");
 
                 if let (Value::Array(elements), Value::Integer(index)) =
-                    (&mut *array.borrow_mut(), &*index.borrow())
+                    (array, index)
                 {
                     // TODO: homogeneously typed arrays
-                    elements[*index as usize] = value;
+                    elements.borrow_mut()[index as usize] = value;
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -586,13 +584,13 @@ impl VMState {
                     .expect("stack has a value");
 
                 if let (Value::Array(elements), Value::Integer(index)) =
-                    (&mut *array.borrow_mut(), &*index.borrow())
+                    (array, index)
                 {
                     // TODO: homogeneously typed arrays
                     self
                         .current_frame_mut()
                         .operand_stack
-                        .push(Rc::clone(&elements[*index as usize]));
+                        .push(elements.borrow()[index as usize].clone());
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -618,10 +616,10 @@ impl VMState {
                     .expect("stack has a value");
 
                 if let (Value::Array(elements), Value::Integer(index)) =
-                    (&mut *array.borrow_mut(), &*index.borrow())
+                    (array, index)
                 {
                     // TODO: homogeneously typed arrays
-                    elements[*index as usize] = value;
+                    elements.borrow_mut()[index as usize] = value;
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -642,13 +640,13 @@ impl VMState {
                     .expect("stack has a value");
 
                 if let (Value::Array(elements), Value::Integer(index)) =
-                    (&mut *array.borrow_mut(), &*index.borrow())
+                    (array, index)
                 {
                     // TODO: homogeneously typed arrays
                     self
                         .current_frame_mut()
                         .operand_stack
-                        .push(Rc::clone(&elements[*index as usize]));
+                        .push(elements.borrow()[index as usize].clone());
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -674,10 +672,10 @@ impl VMState {
                     .expect("stack has a value");
 
                 if let (Value::Array(elements), Value::Long(index)) =
-                    (&mut *array.borrow_mut(), &*index.borrow())
+                    (array, index)
                 {
                     // TODO: homogeneously typed arrays
-                    elements[*index as usize] = value;
+                    elements.borrow_mut()[index as usize] = value;
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -698,13 +696,13 @@ impl VMState {
                     .expect("stack has a value");
 
                 if let (Value::Array(elements), Value::Long(index)) =
-                    (&mut *array.borrow_mut(), &*index.borrow())
+                    (array, index)
                 {
                     // TODO: homogeneously typed arrays
                     self
                         .current_frame_mut()
                         .operand_stack
-                        .push(Rc::clone(&elements[*index as usize]));
+                        .push(elements.borrow()[index as usize].clone());
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -717,10 +715,10 @@ impl VMState {
                     .pop()
                     .expect("stack has a value");
 
-                if let Value::Array(elems) = &*Rc::clone(&top).borrow() {
+                if let Value::Array(elems) = top {
                     self.current_frame_mut()
                         .operand_stack
-                        .push(Rc::new(RefCell::new(Value::Integer(elems.len() as i32))));
+                        .push(Value::Integer(elems.borrow().len() as i32));
                     Ok(None)
                 } else {
                     panic!("arraylength but value is not array");
@@ -730,63 +728,63 @@ impl VMState {
                 let frame_mut = self.current_frame_mut();
                 frame_mut
                     .operand_stack
-                    .push(Rc::new(RefCell::new(Value::Long(0))));
+                    .push(Value::Long(0));
                 Ok(None)
             }
             Instruction::LConst1 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut
                     .operand_stack
-                    .push(Rc::new(RefCell::new(Value::Long(1))));
+                    .push(Value::Long(1));
                 Ok(None)
             }
             Instruction::IConst0 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut
                     .operand_stack
-                    .push(Rc::new(RefCell::new(Value::Integer(0))));
+                    .push(Value::Integer(0));
                 Ok(None)
             }
             Instruction::IConst1 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut
                     .operand_stack
-                    .push(Rc::new(RefCell::new(Value::Integer(1))));
+                    .push(Value::Integer(1));
                 Ok(None)
             }
             Instruction::IConst2 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut
                     .operand_stack
-                    .push(Rc::new(RefCell::new(Value::Integer(2))));
+                    .push(Value::Integer(2));
                 Ok(None)
             }
             Instruction::IConst3 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut
                     .operand_stack
-                    .push(Rc::new(RefCell::new(Value::Integer(3))));
+                    .push(Value::Integer(3));
                 Ok(None)
             }
             Instruction::IConst4 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut
                     .operand_stack
-                    .push(Rc::new(RefCell::new(Value::Integer(4))));
+                    .push(Value::Integer(4));
                 Ok(None)
             }
             Instruction::IConst5 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut
                     .operand_stack
-                    .push(Rc::new(RefCell::new(Value::Integer(5))));
+                    .push(Value::Integer(5));
                 Ok(None)
             }
             Instruction::IConstM1 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut
                     .operand_stack
-                    .push(Rc::new(RefCell::new(Value::Integer(-1))));
+                    .push(Value::Integer(-1));
                 Ok(None)
             }
             Instruction::Goto(offset) => {
@@ -802,9 +800,9 @@ impl VMState {
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match &*Rc::clone(&value).borrow() {
+                match value {
                     Value::Integer(v) => {
-                        if *v >= 0 {
+                        if v >= 0 {
                             frame_mut.offset += *offset as i32 as u32 - 3;
                             Ok(None)
                         } else {
@@ -822,9 +820,9 @@ impl VMState {
                     return Err(VMError::BadClass("ifle but insufficient arguments"));
                 };
 
-                match &*Rc::clone(&value).borrow() {
+                match value {
                     Value::Integer(v) => {
-                        if *v <= 0 {
+                        if v <= 0 {
                             frame_mut.offset += *offset as i32 as u32 - 3;
                             Ok(None)
                         } else {
@@ -842,9 +840,9 @@ impl VMState {
                     return Err(VMError::BadClass("ifeq but insufficient arguments"));
                 };
 
-                match &*Rc::clone(&value).borrow() {
+                match value {
                     Value::Integer(v) => {
-                        if *v == 0 {
+                        if v == 0 {
                             frame_mut.offset += *offset as i32 as u32 - 3;
                             Ok(None)
                         } else {
@@ -862,9 +860,9 @@ impl VMState {
                     return Err(VMError::BadClass("ifne but insufficient arguments"));
                 };
 
-                match &*Rc::clone(&value).borrow() {
+                match value {
                     Value::Integer(v) => {
-                        if *v != 0 {
+                        if v != 0 {
                             frame_mut.offset += *offset as i32 as u32 - 3;
                             Ok(None)
                         } else {
@@ -887,9 +885,9 @@ impl VMState {
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match (&*Rc::clone(&left).borrow(), &*Rc::clone(&right).borrow()) {
+                match (left, right) {
                     (Value::Integer(l), Value::Integer(r)) => {
-                        if *l != *r {
+                        if l != r {
                             frame_mut.offset += *offset as i32 as u32 - 3;
                             Ok(None)
                         } else {
@@ -962,11 +960,11 @@ impl VMState {
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match (&*Rc::clone(&left).borrow(), &*Rc::clone(&right).borrow()) {
+                match (left, right) {
                     (Value::Integer(l), Value::Integer(r)) => {
                         frame_mut
                             .operand_stack
-                            .push(Rc::new(RefCell::new(Value::Integer(l.wrapping_add(*r)))));
+                            .push(Value::Integer(l.wrapping_add(r)));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
@@ -985,11 +983,11 @@ impl VMState {
                     return Err(VMError::BadClass("ladd but insufficient arguments"));
                 };
 
-                match (&*Rc::clone(&left).borrow(), &*Rc::clone(&right).borrow()) {
+                match (left, right) {
                     (Value::Long(l), Value::Long(r)) => {
                         frame_mut
                             .operand_stack
-                            .push(Rc::new(RefCell::new(Value::Long(l.wrapping_add(*r)))));
+                            .push(Value::Long(l.wrapping_add(r)));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("ladd but invalid operand types")),
@@ -1008,11 +1006,11 @@ impl VMState {
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match (&*Rc::clone(&left).borrow(), &*Rc::clone(&right).borrow()) {
+                match (left, right) {
                     (Value::Integer(l), Value::Integer(r)) => {
                         frame_mut
                             .operand_stack
-                            .push(Rc::new(RefCell::new(Value::Integer(l.wrapping_sub(*r)))));
+                            .push(Value::Integer(l.wrapping_sub(r)));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
@@ -1031,11 +1029,11 @@ impl VMState {
                     return Err(VMError::BadClass("iand but insufficient arguments"));
                 };
 
-                match (&*Rc::clone(&left).borrow(), &*Rc::clone(&right).borrow()) {
+                match (left, right) {
                     (Value::Integer(l), Value::Integer(r)) => {
                         frame_mut
                             .operand_stack
-                            .push(Rc::new(RefCell::new(Value::Integer(*l & *r))));
+                            .push(Value::Integer(l & r));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iand but invalid operand types")),
@@ -1054,11 +1052,11 @@ impl VMState {
                     return Err(VMError::BadClass("ior but insufficient arguments"));
                 };
 
-                match (&*Rc::clone(&left).borrow(), &*Rc::clone(&right).borrow()) {
+                match (left, right) {
                     (Value::Integer(l), Value::Integer(r)) => {
                         frame_mut
                             .operand_stack
-                            .push(Rc::new(RefCell::new(Value::Integer(*l | *r))));
+                            .push(Value::Integer(l | r));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("ior but invalid operand types")),
@@ -1077,11 +1075,11 @@ impl VMState {
                     return Err(VMError::BadClass("ishr but insufficient arguments"));
                 };
 
-                match (&*Rc::clone(&value1).borrow(), &*Rc::clone(&value2).borrow()) {
+                match (value1, value2) {
                     (Value::Integer(v1), Value::Integer(v2)) => {
                         frame_mut
                             .operand_stack
-                            .push(Rc::new(RefCell::new(Value::Integer(*v1 >> (*v2 & 0x1f)))));
+                            .push(Value::Integer(v1 >> (v2 & 0x1f)));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("ishr but invalid operand types")),
@@ -1100,11 +1098,11 @@ impl VMState {
                     return Err(VMError::BadClass("ishl but insufficient arguments"));
                 };
 
-                match (&*Rc::clone(&value1).borrow(), &*Rc::clone(&value2).borrow()) {
+                match (value1, value2) {
                     (Value::Integer(v1), Value::Integer(v2)) => {
                         frame_mut
                             .operand_stack
-                            .push(Rc::new(RefCell::new(Value::Integer(*v1 << (*v2 & 0x1f)))));
+                            .push(Value::Integer(v1 << (v2 & 0x1f)));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("ishl but invalid operand types")),
@@ -1118,11 +1116,11 @@ impl VMState {
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match &*Rc::clone(&value).borrow() {
+                match value {
                     Value::Integer(l) => {
                         frame_mut
                             .operand_stack
-                            .push(Rc::new(RefCell::new(Value::Integer((*l) as i8 as i32))));
+                            .push(Value::Integer(l as i8 as i32));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
@@ -1136,13 +1134,11 @@ impl VMState {
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match &*Rc::clone(&value).borrow() {
+                match value {
                     Value::Integer(l) => {
                         frame_mut
                             .operand_stack
-                            .push(Rc::new(RefCell::new(Value::Integer(
-                                (*l) as i16 as u16 as i32,
-                            ))));
+                            .push(Value::Integer(l as i16 as u16 as i32));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
@@ -1156,7 +1152,7 @@ impl VMState {
                     return Err(VMError::BadClass("ireturn but insufficient arguments"));
                 };
 
-                match &*Rc::clone(&value).borrow() {
+                match value {
                     Value::Integer(_) => {
                         self.leave();
                         Ok(Some(value))
@@ -1172,7 +1168,7 @@ impl VMState {
                     return Err(VMError::BadClass("ireturn but insufficient arguments"));
                 };
 
-                match &*Rc::clone(&value).borrow() {
+                match value {
                     Value::Array(_) => {
                         self.leave();
                         Ok(Some(value))
@@ -1182,10 +1178,10 @@ impl VMState {
             }
             Instruction::Ldc(c) => {
                 let value = match &**c {
-                    Constant::Integer(i) => Rc::new(RefCell::new(Value::Integer(*i as i32))),
-                    Constant::Long(l) => Rc::new(RefCell::new(Value::Long(*l as i64))),
+                    Constant::Integer(i) => Value::Integer(*i as i32),
+                    Constant::Long(l) => Value::Long(*l as i64),
                     Constant::String(s) => {
-                        Rc::new(RefCell::new(Value::String(s.bytes().collect())))
+                        Value::String(Rc::new(s.bytes().collect()))
                     }
                     _ => {
                         return Err(VMError::Unsupported("unsupported constant type for ldc"));
@@ -1217,10 +1213,25 @@ pub enum Value {
     Long(i64),
     Float(f32),
     Double(f64),
-    Array(Box<[Rc<RefCell<Value>>]>),
-    String(Vec<u8>),
-    Object(HashMap<String, Rc<RefCell<Value>>>, Rc<ClassFile>),
+    Array(Rc<RefCell<Box<[Value]>>>),
+    String(Rc<Vec<u8>>),
+    Object(Rc<RefCell<HashMap<String, Value>>>, Rc<ClassFile>),
     Null(String), // Null, of type `String`
+}
+
+impl Clone for Value {
+    fn clone(&self) -> Self {
+        match self {
+            Value::Integer(v) => Value::Integer(*v),
+            Value::Long(v) => Value::Long(*v),
+            Value::Float(v) => Value::Float(*v),
+            Value::Double(v) => Value::Double(*v),
+            Value::Array(v) => Value::Array(Rc::clone(v)),
+            Value::String(v) => Value::String(Rc::clone(v)),
+            Value::Object(v1, v2) => Value::Object(Rc::clone(v1), Rc::clone(v2)),
+            Value::Null(v) => Value::Null(v.clone()),
+        }
+    }
 }
 
 impl Value {
@@ -1230,12 +1241,12 @@ impl Value {
         for field in class_file.fields.iter() {
             fields.insert(
                 field.name.clone(),
-                Rc::new(RefCell::new(Value::default_of(
+                Value::default_of(
                     &field.desc,
-                ))),
+                ),
             );
         }
-        Value::Object(fields, class_file)
+        Value::Object(Rc::new(RefCell::new(fields)), class_file)
     }
 
     pub fn default_of(s: &str) -> Value {
@@ -1265,27 +1276,53 @@ impl Value {
         }
 
         if s.len() >= 2 && s.starts_with("\"") && s.ends_with("\"") {
-            return Some(Value::String(s[1..][..s.len() - 2].bytes().collect()));
+            return Some(Value::String(Rc::new(s[1..][..s.len() - 2].bytes().collect())));
         }
 
         return None;
     }
 }
 
-pub(crate) struct ValueRef(Rc<RefCell<Value>>);
+pub(crate) struct ValueRef(Value);
 
 impl ValueRef {
-    pub fn of(reference: &Rc<RefCell<Value>>) -> Self {
-        ValueRef(Rc::clone(reference))
+    pub fn of(reference: &Value) -> Self {
+        ValueRef(reference.clone())
     }
 }
 
 impl Hash for ValueRef {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        unsafe {
-            let ptr = Rc::into_raw(Rc::clone(&self.0));
-            ptr.hash(state);
-            Rc::from_raw(ptr);
+        match &self.0 {
+            Value::Integer(v) => v.hash(state),
+            Value::Long(v) => v.hash(state),
+            Value::Float(v) => v.to_bits().hash(state),
+            Value::Double(v) => v.to_bits().hash(state),
+            Value::Array(v) => {
+                unsafe {
+                    let ptr = Rc::into_raw(Rc::clone(v));
+                    ptr.hash(state);
+                    Rc::from_raw(ptr);
+                }
+            },
+            Value::String(v) => {
+                unsafe {
+                    let ptr = Rc::into_raw(Rc::clone(v));
+                    ptr.hash(state);
+                    Rc::from_raw(ptr);
+                }
+            },
+            Value::Object(v1, v2) => {
+                unsafe {
+                    let ptr = Rc::into_raw(Rc::clone(v1));
+                    ptr.hash(state);
+                    Rc::from_raw(ptr);
+                    let ptr = Rc::into_raw(Rc::clone(v2));
+                    ptr.hash(state);
+                    Rc::from_raw(ptr);
+                }
+            }
+            Value::Null(v) => v.hash(state),
         }
     }
 }
@@ -1294,7 +1331,17 @@ impl Eq for ValueRef {}
 
 impl PartialEq for ValueRef {
     fn eq(&self, other: &ValueRef) -> bool {
-        Rc::ptr_eq(&self.0, &other.0)
+        match (&self.0, &other.0) {
+            (Value::Integer(v1), Value::Integer(v2)) => { v1 == v2 },
+            (Value::Long(v1), Value::Long(v2)) => { v1 == v2 },
+            (Value::Float(v1), Value::Float(v2)) => { v1 == v2 },
+            (Value::Double(v1), Value::Double(v2)) => { v1 == v2 },
+            (Value::Array(v1), Value::Array(v2)) => { Rc::ptr_eq(v1, v2) },
+            (Value::Object(v1, _), Value::Object(v2, _)) => { Rc::ptr_eq(v1, v2) },
+            (Value::String(v1), Value::String(v2)) => { Rc::ptr_eq(v1, v2) },
+            (Value::Null(v1), Value::Null(v2)) => { v1 == v2 },
+            _ => false,
+        }
     }
 }
 
@@ -1306,7 +1353,7 @@ enum NativeObject {
 
 pub struct VirtualMachine {
     classes: HashMap<String, Rc<ClassFile>>,
-    static_instances: HashMap<ClassFileRef, HashMap<String, Rc<RefCell<Value>>>>,
+    static_instances: HashMap<ClassFileRef, HashMap<String, Value>>,
     native_instances: HashMap<ValueRef, RefCell<NativeObject>>,
 }
 
@@ -1334,15 +1381,15 @@ impl VirtualMachine {
         class_ref: &Rc<ClassFile>,
         name: &str,
         ty: &str,
-    ) -> Option<Rc<RefCell<Value>>> {
+    ) -> Option<Value> {
         let fields = self
             .static_instances
             .entry(ClassFileRef::of(class_ref))
             .or_insert_with(|| HashMap::new());
         if class_ref.has_static_field(name) {
-            Some(Rc::clone(fields.entry(name.to_string()).or_insert_with(
-                || Rc::new(RefCell::new(Value::default_of(ty))),
-            )))
+            Some(fields.entry(name.to_string()).or_insert_with(
+                || Value::default_of(ty)
+            ).clone())
         } else {
             None
         }
@@ -1353,7 +1400,7 @@ impl VirtualMachine {
         class_ref: &Rc<ClassFile>,
         name: &str,
         ty: &str,
-        value: Rc<RefCell<Value>>,
+        value: Value,
     ) {
         let fields = self
             .static_instances
@@ -1647,8 +1694,8 @@ impl VirtualMachine {
         &mut self,
         method: Rc<MethodHandle>,
         class_ref: &Rc<ClassFile>,
-        args: Vec<Rc<RefCell<Value>>>,
-    ) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
+        args: Vec<Value>,
+    ) -> Result<Option<Value>, VMError> {
         if !method.access().is_static() {
             return Err(VMError::AccessError(
                 "attempted to call an instance method without an instance",
@@ -1671,7 +1718,7 @@ impl VirtualMachine {
         self.interpret(&mut state)
     }
 
-    fn interpret(&mut self, state: &mut VMState) -> Result<Option<Rc<RefCell<Value>>>, VMError> {
+    fn interpret(&mut self, state: &mut VMState) -> Result<Option<Value>, VMError> {
         // magic incantation to awaken the machine
         println!("zoom zoom");
 
@@ -1746,16 +1793,16 @@ fn system_out_println_string(state: &mut VMState, _vm: &mut VirtualMachine) -> R
         .operand_stack
         .pop()
         .expect("argument available");
-    if let Value::String(data) = &*argument.borrow() {
-        if let Ok(string) = std::str::from_utf8(data) {
+    if let Value::String(data) = argument {
+        if let Ok(string) = std::str::from_utf8(data.as_slice()) {
             println!("{}", string);
         } else {
             panic!("executing System.out.println(\"{:?}\")", data);
         }
-    } else if let Value::Object(fields, _) = &*argument.borrow() {
-        if let Value::Array(elements) = &*fields["value"].borrow() {
-            for el in elements.iter() {
-                if let Value::Integer(v) = &*el.borrow() {
+    } else if let Value::Object(fields, _) = argument {
+        if let Value::Array(elements) = &fields.borrow()["value"] {
+            for el in elements.borrow().iter() {
+                if let Value::Integer(v) = el {
                     print!("{}", *v as u8 as char);
                 } else {
                     panic!("string contains non-byte element")
@@ -1782,7 +1829,7 @@ fn system_out_println_int(state: &mut VMState, _vm: &mut VirtualMachine) -> Resu
         .operand_stack
         .pop()
         .expect("argument available");
-    if let Value::Integer(v) = &*argument.borrow() {
+    if let Value::Integer(v) = argument {
         println!("{}", v);
     } else {
         panic!("type error, expected string, got {:?}", argument);
@@ -1801,7 +1848,7 @@ fn system_out_println_long(state: &mut VMState, _vm: &mut VirtualMachine) -> Res
         .operand_stack
         .pop()
         .expect("argument available");
-    if let Value::Long(v) = &*argument.borrow() {
+    if let Value::Long(v) = argument {
         println!("{}", v);
     } else {
         panic!("type error, expected string, got {:?}", argument);
@@ -1840,16 +1887,17 @@ fn stringbuilder_append_string(state: &mut VMState, vm: &mut VirtualMachine) -> 
     let data = vm.native_instances.get(&ValueRef::of(&receiver)).expect("stringbuilder receiver has associated native data");
 
     if let NativeObject::StringBuilder(data) = &mut *data.borrow_mut() {
-        if let Value::String(str_data) = &*appendee.borrow() {
+        if let Value::String(str_data) = appendee {
             // do thing
             for el in str_data.iter() {
                 data.push(*el as u16);
             }
-        } else if let Value::Object(fields, _) = &*appendee.borrow() {
+        } else if let Value::Object(fields, _) = appendee {
             // do thing
-            if let Value::Array(str_data) = &*fields["value"].borrow() {
+            if let Value::Array(str_data) = &fields.borrow()["value"] {
+                let str_data = str_data.borrow();
                 for el in str_data.iter() {
-                    if let Value::Integer(i) = &*el.borrow() {
+                    if let Value::Integer(i) = el {
                         data.push(*i as u16);
                     }
                 }
@@ -1878,11 +1926,11 @@ fn stringbuilder_tostring(state: &mut VMState, vm: &mut VirtualMachine) -> Resul
 
     let data = vm.native_instances.get(&ValueRef::of(&receiver)).expect("stringbuilder receiver has associated native data");
 
-    let mut str_data: Vec<Rc<RefCell<Value>>> = Vec::new();
+    let mut str_data: Vec<Value> = Vec::new();
 
     if let NativeObject::StringBuilder(data) = &*data.borrow() {
         for el in data.iter() {
-            str_data.push(Rc::new(RefCell::new(Value::Integer(*el as i32))));
+            str_data.push(Value::Integer(*el as i32));
         }
     } else {
         panic!("native object corresponding to stringbuilder receiver is not stringbuilder data");
@@ -1890,10 +1938,10 @@ fn stringbuilder_tostring(state: &mut VMState, vm: &mut VirtualMachine) -> Resul
 
     // now make the string to return...
     let mut string_fields = HashMap::new();
-    string_fields.insert("value".to_string(), Rc::new(RefCell::new(Value::Array(str_data.into_boxed_slice()))));
-    let s = Value::Object(string_fields, vm.resolve_class("java/lang/String")?);
+    string_fields.insert("value".to_string(), Value::Array(Rc::new(RefCell::new(str_data.into_boxed_slice()))));
+    let s = Value::Object(Rc::new(RefCell::new(string_fields)), vm.resolve_class("java/lang/String")?);
 
-    state.current_frame_mut().operand_stack.push(Rc::new(RefCell::new(s)));
+    state.current_frame_mut().operand_stack.push(s);
     Ok(())
 }
 
@@ -1917,10 +1965,10 @@ fn string_init_string(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(
         .pop()
         .expect("argument available");
     if let (Value::Object(argument, _), Value::Object(receiver, _)) =
-        (&*argument.borrow(), &mut *receiver.borrow_mut())
+        (&argument, &receiver)
     {
-        let new_value = Rc::clone(&argument["value"]);
-        receiver.insert("value".to_string(), new_value);
+        let new_value = argument.borrow()["value"].clone();
+        receiver.borrow_mut().insert("value".to_string(), new_value);
     } else {
         panic!("type error, expected string, got {:?}", argument);
     }
@@ -1939,23 +1987,23 @@ fn string_init_bytearray(state: &mut VMState, _vm: &mut VirtualMachine) -> Resul
         .pop()
         .expect("argument available");
     if let (Value::Array(new_elems), Value::Object(fields, _)) =
-        (&*argument.borrow(), &mut *receiver.borrow_mut())
+        (&argument, &receiver)
     {
         let mut str_elems = Vec::new();
-        for el in new_elems.iter() {
-            if let Value::Integer(i) = &*Rc::clone(el).borrow() {
+        for el in new_elems.borrow().iter() {
+            if let Value::Integer(i) = el {
                 if (*i as u8) < 128 {
-                    str_elems.push(Rc::clone(el));
+                    str_elems.push(Value::Integer(*i));
                 } else {
-                    str_elems.push(Rc::new(RefCell::new(Value::Integer(0xfffd))));
+                    str_elems.push(Value::Integer(0xfffd));
                 }
             } else {
                 panic!("bad string");
             }
         }
-        fields.insert(
+        fields.borrow_mut().insert(
             "value".to_string(),
-            Rc::new(RefCell::new(Value::Array(str_elems.into_boxed_slice()))),
+            Value::Array(Rc::new(RefCell::new(str_elems.into_boxed_slice()))),
         );
     } else {
         panic!("type error, expected string, got {:?}", argument);
@@ -1969,7 +2017,7 @@ fn string_hashcode(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), 
         .operand_stack
         .pop()
         .expect("argument available");
-    if let Value::String(data) = &*receiver.borrow() {
+    if let Value::String(data) = receiver {
         let mut hashcode: i32 = 0;
         for c in data.iter().cloned() {
             // value is actually a char array
@@ -1978,12 +2026,12 @@ fn string_hashcode(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), 
         state
             .current_frame_mut()
             .operand_stack
-            .push(Rc::new(RefCell::new(Value::Integer(hashcode))));
-    } else if let Value::Object(fields, _) = &*receiver.borrow() {
+            .push(Value::Integer(hashcode));
+    } else if let Value::Object(fields, _) = receiver {
         let mut hashcode: i32 = 0;
-        if let Value::Array(elems) = &*fields["value"].borrow() {
-            for c in elems.iter() {
-                if let Value::Integer(v) = &*c.borrow() {
+        if let Value::Array(elems) = &fields.borrow()["value"] {
+            for c in elems.borrow().iter() {
+                if let Value::Integer(v) = c {
                     // value is actually a char array
                     hashcode = hashcode.wrapping_mul(31).wrapping_add(*v as u16 as i32);
                 } else {
@@ -1993,7 +2041,7 @@ fn string_hashcode(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), 
             state
                 .current_frame_mut()
                 .operand_stack
-                .push(Rc::new(RefCell::new(Value::Integer(hashcode))));
+                .push(Value::Integer(hashcode));
         } else {
             panic!("string does not have a value?");
         }
@@ -2014,13 +2062,13 @@ fn string_concat(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VM
         .operand_stack
         .pop()
         .expect("argument available");
-    if let (Value::String(base), Value::String(ext)) = (&*receiver.borrow(), &*argument.borrow()) {
+    if let (Value::String(base), Value::String(ext)) = (&receiver, &argument) {
         state
             .current_frame_mut()
             .operand_stack
-            .push(Rc::new(RefCell::new(Value::String(
-                base.iter().cloned().chain(ext.iter().cloned()).collect(),
-            ))));
+            .push(Value::String(
+                Rc::new(base.iter().cloned().chain(ext.iter().cloned()).collect()),
+            ));
     } else {
         panic!("type error, expected string, string, got {:?}", argument);
     }
@@ -2034,8 +2082,8 @@ fn system_exit(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMEr
         .pop()
         .expect("argument available");
 
-    if let Value::Integer(i) = &*Rc::clone(&argument).borrow() {
-        std::process::exit(*i);
+    if let Value::Integer(i) = argument {
+        std::process::exit(i);
     } else {
         panic!("attempted to exit with non-int operand");
     }
