@@ -21,7 +21,9 @@ fn main() {
         .unwrap()
     )
     .unwrap();
-    let mut vm = VirtualMachine::new();
+    let mut classes_dir = Path::new(filename).to_path_buf();
+    classes_dir.pop();
+    let mut vm = VirtualMachine::new(classes_dir);
     let class_file_path = Path::new(filename);
     let class_name = class_file_path.file_stem().unwrap().to_str().unwrap();
     let class_ref = vm.register(class_name.to_string(), class_file).unwrap();

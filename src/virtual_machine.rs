@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::str::FromStr;
 use std::hash::{Hash, Hasher};
+use std::path::PathBuf;
 
 use crate::class_file::validated::Instruction;
 use crate::class_file::unvalidated::AccessFlags;
@@ -1355,6 +1356,7 @@ pub struct VirtualMachine {
     classes: HashMap<String, Rc<ClassFile>>,
     static_instances: HashMap<ClassFileRef, HashMap<String, Value>>,
     native_instances: HashMap<ValueRef, RefCell<NativeObject>>,
+    classpath: Vec<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -1368,11 +1370,28 @@ pub enum VMError {
 }
 
 impl VirtualMachine {
-    pub fn new() -> Self {
+    pub fn new(initial_classpath: PathBuf) -> Self {
         VirtualMachine {
             classes: HashMap::new(),
             static_instances: HashMap::new(),
             native_instances: HashMap::new(),
+            classpath: vec![initial_classpath],
+        }
+    }
+
+    fn has_instance_field(
+        &mut self,
+        instance_class: &Rc<ClassFile>,
+        name: &str,
+    ) -> bool {
+        if instance_class.has_instance_field(name) {
+            return true;
+        } else if let Some(sup) = instance_class.super_class.as_ref() {
+            eprintln!("checking superclass {} for {}", sup, name);
+            let sup = self.resolve_class(sup).unwrap();
+            return self.has_instance_field(&sup, name);
+        } else {
+            return false;
         }
     }
 
@@ -1653,10 +1672,26 @@ impl VirtualMachine {
                 synthetic_class
             }
             class_name => {
-                //                println!("Looking up class {}", class_name);
-                return match self.classes.get(class_name) {
-                    Some(class_ref) => Ok(Rc::clone(class_ref)),
-                    None => Err(VMError::BadClass("unknown class, cannot dynamically ")),
+                use std::collections::hash_map::Entry;
+                use std::fs::File;
+                println!("Looking up class {}", class_name);
+                return match self.classes.entry(class_name.to_string()) {
+                    Entry::Occupied(oe) => Ok(Rc::clone(oe.get())),
+                    Entry::Vacant(ve) => {
+                        for path in self.classpath.iter() {
+                            let possible_class = path.join(PathBuf::from(format!("{}.class", class_name)));
+                            println!("-- checking {}", possible_class.display());
+                            if possible_class.exists() {
+                                let class_file = ClassFile::validate(
+                                    &crate::class_file::unvalidated::read::class_header(
+                                        &mut File::open(possible_class).unwrap()
+                                    ).unwrap()
+                                ).unwrap();
+                                return self.register(referent.to_string(), class_file);
+                            }
+                        }
+                        Err(VMError::BadClass("could not resolve class"))
+                    }
                 };
             }
         };

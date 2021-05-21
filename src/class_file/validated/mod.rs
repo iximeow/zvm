@@ -237,7 +237,7 @@ fn validate_inst(handle: &MethodBody, position: u32, raw_inst: &unvalidated::Ins
 
 pub struct ClassFile {
     pub(crate) this_class: String,
-    super_class: Option<String>,
+    pub(crate) super_class: Option<String>,
     constants: Vec<Rc<Constant>>,
     interfaces: Vec<String>,
     pub(crate) fields: Vec<Rc<FieldHandle>>,
@@ -318,6 +318,18 @@ impl ClassFile {
     pub fn has_static_field(&self, name: &str) -> bool {
         for field in self.fields.iter() {
             if field.access_flags.is_static() {
+                if field.name == name {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    pub fn has_instance_field(&self, name: &str) -> bool {
+        for field in self.fields.iter() {
+            if !field.access_flags.is_static() {
                 if field.name == name {
                     return true;
                 }
