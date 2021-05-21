@@ -186,7 +186,8 @@ impl<R: Read> FromReader<R> for Constant {
             ),
             16 => Constant::MethodType(ConstantIdx::read_from(data)?),
             18 => Constant::InvokeDynamic(u16::read_from(data)?, ConstantIdx::read_from(data)?),
-            _ => {
+            o => {
+                eprintln!("invalid constant pool tag {}", o);
                 return Err(Error::Str("Invalid constant pool entry tag"));
             }
         };
@@ -194,7 +195,33 @@ impl<R: Read> FromReader<R> for Constant {
     }
 }
 
-fn read_prefixed_array<R: Read, T: FromReader<R>>(
+fn read_constant_array<R: Read>(
+    start: u16,
+    data: &mut R,
+) -> Result<Vec<Constant>, Error> {
+    let count = data.read_u16::<BigEndian>().map_err(|_| Error::EOF)?;
+    if count < start {
+        return Err(Error::Str("Invalid array length"));
+    }
+
+    let mut elements = Vec::new();
+    let mut i = start;
+    while i < count {
+        elements.push(Constant::read_from(data)?);
+        match elements.last().unwrap() {
+            Constant::Long(_) | Constant::Double(_) => {
+                elements.push(Constant::Utf8(b"PADDING CONST".to_vec()));
+                i += 2;
+            },
+            _ => {
+                i += 1;
+            }
+        }
+    }
+    Ok(elements)
+}
+
+fn read_prefixed_array<R: Read, T: FromReader<R> + std::fmt::Debug>(
     start: u16,
     data: &mut R,
 ) -> Result<Vec<T>, Error> {
@@ -218,7 +245,7 @@ pub fn class_header<R: Read>(data: &mut R) -> Result<ClassFile, Error> {
 
     let minor = data.read_u16::<BigEndian>()?;
     let major = data.read_u16::<BigEndian>()?;
-    let constants = read_prefixed_array::<_, Constant>(1, data)?;
+    let constants = read_constant_array(1, data)?;
 
     let access_flags = data.read_u16::<BigEndian>()?;
     let access_flags = AccessFlags {
