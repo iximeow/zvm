@@ -939,6 +939,28 @@ impl VMState {
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
                 }
             }
+            Instruction::IfNonNull(offset) => {
+                let frame_mut = self.current_frame_mut();
+                let value = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("ifnotnull but insufficient arguments"));
+                };
+
+                match value {
+                    Value::Null(v) => {
+                        Ok(None)
+                    }
+                    Value::Object(_, _) => {
+                        frame_mut.offset += *offset as i32 as u32 - 3;
+                        Ok(None)
+                    }
+                    other => {
+                        panic!("other tpe {:?}", other);
+                        Err(VMError::BadClass("ifnotnull but invalid operand types"))
+                    }
+                }
+            }
             Instruction::ILoad0 => self.interpret_iload(0),
             Instruction::ILoad1 => self.interpret_iload(1),
             Instruction::ILoad2 => self.interpret_iload(2),
