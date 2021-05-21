@@ -217,7 +217,7 @@ fn make_refs<'validation>(
             }
         }
         Instruction::InvokeInterface(_method_idx, _count) => {
-            panic!("invokeinterface is not yet validated");
+//            panic!("invokeinterface is not yet validated");
         }
         Instruction::InvokeDynamic(_method_idx) => {
             panic!("invokedynamic is not yet validated");

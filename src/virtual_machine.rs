@@ -278,7 +278,7 @@ impl VMState {
                         panic!("attempted to call native method with no implementation: {} - note, JNI resolution is not yet supported.", &method_ref.name);
                     }
                 } else {
-                    interpreted_method_call(self, vm, method, target_class, &method_ref.desc)?;
+                    interpreted_method_call(self, vm, method, target_class, &method_ref.desc, true)?;
                     Ok(None)
                 }
             }
@@ -304,7 +304,7 @@ impl VMState {
                         panic!("attempted to call native method with no implementation: {} - note, JNI resolution is not yet supported.", &method_ref.name);
                     }
                 } else {
-                    interpreted_method_call(self, vm, method, target_class, &method_ref.desc)?;
+                    interpreted_method_call(self, vm, method, target_class, &method_ref.desc, false)?;
                     Ok(None)
                 }
             }
@@ -350,9 +350,50 @@ impl VMState {
                         panic!("attempted to call native method with no implementation: {} - note, JNI resolution is not yet supported.", &method_ref.name);
                     }
                 } else {
-                    interpreted_method_call(self, vm, method, target_class, &method_ref.desc)?;
+                    interpreted_method_call(self, vm, method, target_class, &method_ref.desc, true)?;
                     Ok(None)
                 }
+            }
+            Instruction::GetField(field_ref) => {
+                let top = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                let value = match top {
+                    Value::Object(fields, inst_class) => {
+                        println!("getting the field, inst: {}", inst_class.this_class);
+                        vm
+                            .get_instance_field(Rc::clone(&inst_class), Rc::clone(&fields), &field_ref.name, &field_ref.desc)
+                            .unwrap()
+                    }
+                    other => { panic!("should be an object, was {:?}, getting {:?}", other, field_ref); }
+                };
+                self.current_frame_mut().operand_stack.push(value);
+                Ok(None)
+            }
+            Instruction::PutField(field_ref) => {
+                let value = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let top = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                match top {
+                    Value::Object(fields, inst_class) => {
+                        println!("putting the field, inst: {}", inst_class.this_class);
+                        vm
+                            .put_instance_field(Rc::clone(&inst_class), Rc::clone(&fields), &field_ref.name, &field_ref.desc, value);
+                    }
+                    other => { panic!("should be an object, was {:?}, getting {:?}", other, field_ref); }
+                };
+                Ok(None)
             }
             Instruction::NewArray(_tpe) => {
                 let top = self
@@ -1196,8 +1237,8 @@ impl VMState {
                 self.leave();
                 Ok(None)
             }
-            _ => {
-                unimplemented!();
+            other => {
+                todo!("implement {}", other);
             }
         }
     }
@@ -1395,6 +1436,37 @@ impl VirtualMachine {
         }
     }
 
+    fn get_instance_field(
+        &mut self,
+        instance_class: Rc<ClassFile>,
+        fields: Rc<RefCell<HashMap<String, Value>>>,
+        name: &str,
+        ty: &str,
+    ) -> Option<Value> {
+        if self.has_instance_field(&instance_class, name) {
+            Some(fields.borrow_mut().entry(name.to_string()).or_insert_with(
+                || Value::default_of(ty)
+            ).clone())
+        } else {
+            None
+        }
+    }
+
+    fn put_instance_field(
+        &mut self,
+        instance_class: Rc<ClassFile>,
+        fields: Rc<RefCell<HashMap<String, Value>>>,
+        name: &str,
+        ty: &str,
+        value: Value,
+    ) {
+        if self.has_instance_field(&instance_class, name) {
+            fields.borrow_mut().insert(name.to_owned(), value);
+        } else {
+            panic!("no field {} on {}", name, ty);
+        }
+    }
+
     fn get_static_field(
         &mut self,
         class_ref: &Rc<ClassFile>,
@@ -1438,6 +1510,86 @@ impl VirtualMachine {
         }
 
         let new_class = match referent {
+            "java/lang/Throwable" => {
+                let constants = vec![
+                    UnvalidatedConstant::Utf8(b"java/lang/Throwable".to_vec()),
+                    UnvalidatedConstant::Utf8(b"<init>".to_vec()),
+                    UnvalidatedConstant::Utf8(b"()V".to_vec()),
+                    UnvalidatedConstant::Class(ConstantIdx::new(1).unwrap()),
+                ];
+
+                let mut native_methods: HashMap<
+                    String,
+                    fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>,
+                > = HashMap::new();
+                native_methods.insert("<init>()V".to_string(), object_init);
+
+                let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
+                    major_version: 55,
+                    minor_version: 0,
+                    constant_pool: constants,
+                    access_flags: AccessFlags { flags: 0x0001 },
+                    this_class: ConstantIdx::new(4).unwrap(),
+                    super_class: None,
+                    interfaces: Vec::new(),
+                    fields: vec![],
+                    methods: vec![
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(2).unwrap(),
+                            descriptor_index: ConstantIdx::new(3).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                    ],
+                    attributes: vec![],
+                    native_methods,
+                }).unwrap();
+
+                synthetic_class
+            }
+            "java/lang/Object" => {
+                let constants = vec![
+                    UnvalidatedConstant::Utf8(b"java/lang/Object".to_vec()),
+                    UnvalidatedConstant::Utf8(b"<init>".to_vec()),
+                    UnvalidatedConstant::Utf8(b"hashCode".to_vec()),
+                    UnvalidatedConstant::Utf8(b"()I".to_vec()),
+                    UnvalidatedConstant::Utf8(b"()V".to_vec()),
+                    UnvalidatedConstant::Utf8(b"([B)V".to_vec()),
+                    UnvalidatedConstant::Utf8(b"[B".to_vec()),
+                    UnvalidatedConstant::Utf8(b"value".to_vec()),
+                    UnvalidatedConstant::Class(ConstantIdx::new(1).unwrap()),
+                ];
+
+                let mut native_methods: HashMap<
+                    String,
+                    fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>,
+                > = HashMap::new();
+                native_methods.insert("<init>()V".to_string(), object_init);
+                native_methods.insert("hashCode()I".to_string(), object_hashcode);
+
+                let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
+                    major_version: 55,
+                    minor_version: 0,
+                    constant_pool: constants,
+                    access_flags: AccessFlags { flags: 0x0001 },
+                    this_class: ConstantIdx::new(9).unwrap(),
+                    super_class: None,
+                    interfaces: Vec::new(),
+                    fields: vec![],
+                    methods: vec![
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(2).unwrap(),
+                            descriptor_index: ConstantIdx::new(5).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                    ],
+                    attributes: vec![],
+                    native_methods,
+                }).unwrap();
+
+                synthetic_class
+            }
             "java/lang/String" => {
                 let constants = vec![
                     UnvalidatedConstant::Utf8(b"java/lang/String".to_vec()),
@@ -1450,6 +1602,7 @@ impl VirtualMachine {
                     UnvalidatedConstant::Utf8(b"value".to_vec()),
                     UnvalidatedConstant::Utf8(b"(Ljava/lang/String;)Ljava/lang/String;".to_vec()),
                     UnvalidatedConstant::Utf8(b"concat".to_vec()),
+                    UnvalidatedConstant::Class(ConstantIdx::new(1).unwrap()),
                 ];
 
                 let mut native_methods: HashMap<
@@ -1469,7 +1622,7 @@ impl VirtualMachine {
                     minor_version: 0,
                     constant_pool: constants,
                     access_flags: AccessFlags { flags: 0x0001 },
-                    this_class: ConstantIdx::new(1).unwrap(),
+                    this_class: ConstantIdx::new(11).unwrap(),
                     super_class: None,
                     interfaces: Vec::new(),
                     fields: vec![FieldInfo {
@@ -1583,6 +1736,7 @@ impl VirtualMachine {
                     UnvalidatedConstant::Utf8(b"Ljava/io/PrintStream;".to_vec()),
                     UnvalidatedConstant::Utf8(b"exit".to_vec()),
                     UnvalidatedConstant::Utf8(b"(I)V".to_vec()),
+                    UnvalidatedConstant::Class(ConstantIdx::new(1).unwrap()),
                 ];
 
                 let mut native_methods: HashMap<
@@ -1596,7 +1750,7 @@ impl VirtualMachine {
                     minor_version: 0,
                     constant_pool: constants,
                     access_flags: AccessFlags { flags: 0x0001 },
-                    this_class: ConstantIdx::new(1).unwrap(),
+                    this_class: ConstantIdx::new(6).unwrap(),
                     super_class: None,
                     interfaces: Vec::new(),
                     fields: vec![FieldInfo {
@@ -1626,6 +1780,7 @@ impl VirtualMachine {
                     UnvalidatedConstant::Utf8(b"(Ljava/lang/String;)V".to_vec()),
                     UnvalidatedConstant::Utf8(b"(I)V".to_vec()),
                     UnvalidatedConstant::Utf8(b"(J)V".to_vec()),
+                    UnvalidatedConstant::Class(ConstantIdx::new(1).unwrap()),
                 ];
 
                 let mut native_methods: HashMap<
@@ -1641,7 +1796,7 @@ impl VirtualMachine {
                     minor_version: 0,
                     constant_pool: constants,
                     access_flags: AccessFlags { flags: 0x0001 },
-                    this_class: ConstantIdx::new(1).unwrap(),
+                    this_class: ConstantIdx::new(6).unwrap(),
                     super_class: None,
                     interfaces: Vec::new(),
                     fields: vec![],
@@ -1786,6 +1941,7 @@ fn interpreted_method_call(
     method: Rc<MethodHandle>,
     method_class: Rc<ClassFile>,
     method_type: &str,
+    is_virtual: bool,
 ) -> Result<(), VMError> {
     // TODO: parse out arguments from method type, check against available operands, do the call
     //
@@ -1794,24 +1950,83 @@ fn interpreted_method_call(
     if method_type == "(I)I" {
         let frame = state.current_frame_mut();
         let arg = frame.operand_stack.pop().expect("argument is present");
+        let mut args = vec![];
+        if is_virtual {
+            args.push(frame.operand_stack.pop().expect("'this' argument is present"));
+        }
+        args.push(arg);
         state.enter(
             Rc::clone(method.body.as_ref().expect("method has a body")),
             method_class,
-            vec![arg],
+            args,
+        );
+    } else if method_type == "(III)V" {
+        let frame = state.current_frame_mut();
+        let arg3 = frame.operand_stack.pop().expect("argument is present");
+        let arg2 = frame.operand_stack.pop().expect("argument is present");
+        let arg1 = frame.operand_stack.pop().expect("argument is present");
+        let mut args = vec![];
+        if is_virtual {
+            args.push(frame.operand_stack.pop().expect("'this' argument is present"));
+        }
+        args.push(arg1);
+        args.push(arg2);
+        args.push(arg3);
+        state.enter(
+            Rc::clone(method.body.as_ref().expect("method has a body")),
+            method_class,
+            args,
         );
     } else if method_type == "(I)V" {
         let frame = state.current_frame_mut();
         let arg = frame.operand_stack.pop().expect("argument is present");
+        let mut args = vec![];
+        if is_virtual {
+            args.push(frame.operand_stack.pop().expect("'this' argument is present"));
+        }
+        args.push(arg);
         state.enter(
             Rc::clone(method.body.as_ref().expect("method has a body")),
             method_class,
-            vec![arg],
+            args,
+        );
+    } else if method_type == "(Ljava/lang/Object;)V" {
+        let frame = state.current_frame_mut();
+        let arg = frame.operand_stack.pop().expect("argument is present");
+        let mut args = vec![];
+        if is_virtual {
+            args.push(frame.operand_stack.pop().expect("'this' argument is present"));
+        }
+        args.push(arg);
+        state.enter(
+            Rc::clone(method.body.as_ref().expect("method has a body")),
+            method_class,
+            args,
+        );
+    } else if method_type == "(Lscala/collection/generic/GenTraversableFactory;)V" {
+        let frame = state.current_frame_mut();
+        let arg = frame.operand_stack.pop().expect("argument is present");
+        let mut args = vec![];
+        if is_virtual {
+            args.push(frame.operand_stack.pop().expect("'this' argument is present"));
+        }
+        args.push(arg);
+        state.enter(
+            Rc::clone(method.body.as_ref().expect("method has a body")),
+            method_class,
+            args,
         );
     } else {
+        let frame = state.current_frame_mut();
+        eprintln!("interpreting method call with no arguments (lol)");
+        let mut args = vec![];
+        if is_virtual {
+            args.push(frame.operand_stack.pop().expect("'this' argument is present"));
+        }
         state.enter(
             Rc::clone(method.body.as_ref().expect("method has a body")),
             method_class,
-            vec![],
+            args,
         );
     }
     Ok(())
@@ -1986,6 +2201,29 @@ fn stringbuilder_tostring(state: &mut VMState, vm: &mut VirtualMachine) -> Resul
 //                native_methods.insert("append([C)Ljava/lang/StringBuilder".to_string(), stringbuilder_append_chars);
                 native_methods.insert("toString()Ljava/lang/String".to_string(), stringbuilder_tostring);
 */
+
+// "<init>()V"
+fn object_init(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    Ok(())
+}
+// "hashCode()I"
+fn object_hashcode(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    state
+        .current_frame_mut()
+        .operand_stack
+        .push(Value::Integer(0));
+    Ok(())
+}
 
 // "<init>(Ljava/lang/String;)V"
 fn string_init_string(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
