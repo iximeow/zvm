@@ -347,7 +347,10 @@ impl ClassFile {
             unvalidated::Constant::Class(class) => {
                 raw_class.checked_const(*class)
             },
-            _ => { panic!("aaa"); }
+            unvalidated::Constant::Utf8(bytes) => {
+                panic!("const is a utf8 string: {:?}", std::str::from_utf8(bytes).unwrap());
+            },
+            other => { panic!("validate unknown constant {:?}", other); }
         }).and_then(|c| c.as_utf8())?;
         let super_class = match raw_class.super_class.map(|sup| {
             raw_class.checked_const(sup).and_then(|c| match c{
