@@ -2018,89 +2018,97 @@ fn interpreted_method_call(
     // TODO: parse out arguments from method type, check against available operands, do the call
     //
     // today: [...], do the call
+    
+    struct Arg {}
 
-    if method_type == "(I)I" {
-        let frame = state.current_frame_mut();
-        let arg = frame.operand_stack.pop().expect("argument is present");
-        let mut args = vec![];
-        if is_virtual {
-            args.push(frame.operand_stack.pop().expect("'this' argument is present"));
+    fn parse_signature_string(signature: &str) -> Option<(Vec<Arg>, Option<Arg>)> {
+        let mut reading_type = false;
+        let mut reading_array = false;
+        let mut reading_return = false;
+        let mut args = Vec::new();
+        for b in signature.bytes() {
+            match b {
+                b'(' => {
+                    // one day assert that this is the first character
+                }
+                b')' => {
+                    reading_return = true;
+                }
+                b'V' => {
+                    if reading_type {
+                        continue;
+                    }
+                    if !reading_return {
+                        return None;
+                    } else {
+                        return Some((args, None));
+                    }
+                }
+                b'Z' | // boolean
+                b'B' | // byte
+                b'C' | // char
+                b'S' | // short
+                b'I' | // int
+                b'J' | // long
+                b'F' | // float
+                b'D' => { // double
+                    if reading_type {
+                        continue;
+                    }
+                    if reading_return {
+                        return Some((args, Some(Arg {})));
+                    } else {
+                        args.push(Arg {});
+                    }
+                }
+                // not valid inside a type name
+                b'[' => {
+                    reading_array = true;
+                }
+                b'L' => {
+                    if !reading_type {
+                        reading_type = true;
+                    }
+                }
+                b';' => {
+                    if reading_type {
+                        if reading_return {
+                            return Some((args, Some(Arg {})));
+                        } else {
+                            args.push(Arg {});
+                            reading_type = false;
+                        }
+                    }
+                }
+                _ => {
+                    if reading_type {
+                        /* do nothing */
+                    } else {
+                        panic!("invalid type string: {}", signature);
+                    }
+                }
+            }
         }
-        args.push(arg);
-        state.enter(
-            Rc::clone(method.body.as_ref().expect("method has a body")),
-            method_class,
-            args,
-        );
-    } else if method_type == "(III)V" {
-        let frame = state.current_frame_mut();
-        let arg3 = frame.operand_stack.pop().expect("argument is present");
-        let arg2 = frame.operand_stack.pop().expect("argument is present");
-        let arg1 = frame.operand_stack.pop().expect("argument is present");
-        let mut args = vec![];
-        if is_virtual {
-            args.push(frame.operand_stack.pop().expect("'this' argument is present"));
-        }
-        args.push(arg1);
-        args.push(arg2);
-        args.push(arg3);
-        state.enter(
-            Rc::clone(method.body.as_ref().expect("method has a body")),
-            method_class,
-            args,
-        );
-    } else if method_type == "(I)V" {
-        let frame = state.current_frame_mut();
-        let arg = frame.operand_stack.pop().expect("argument is present");
-        let mut args = vec![];
-        if is_virtual {
-            args.push(frame.operand_stack.pop().expect("'this' argument is present"));
-        }
-        args.push(arg);
-        state.enter(
-            Rc::clone(method.body.as_ref().expect("method has a body")),
-            method_class,
-            args,
-        );
-    } else if method_type == "(Ljava/lang/Object;)V" {
-        let frame = state.current_frame_mut();
-        let arg = frame.operand_stack.pop().expect("argument is present");
-        let mut args = vec![];
-        if is_virtual {
-            args.push(frame.operand_stack.pop().expect("'this' argument is present"));
-        }
-        args.push(arg);
-        state.enter(
-            Rc::clone(method.body.as_ref().expect("method has a body")),
-            method_class,
-            args,
-        );
-    } else if method_type == "(Lscala/collection/generic/GenTraversableFactory;)V" {
-        let frame = state.current_frame_mut();
-        let arg = frame.operand_stack.pop().expect("argument is present");
-        let mut args = vec![];
-        if is_virtual {
-            args.push(frame.operand_stack.pop().expect("'this' argument is present"));
-        }
-        args.push(arg);
-        state.enter(
-            Rc::clone(method.body.as_ref().expect("method has a body")),
-            method_class,
-            args,
-        );
-    } else {
-        let frame = state.current_frame_mut();
-        eprintln!("interpreting method call with no arguments (lol)");
-        let mut args = vec![];
-        if is_virtual {
-            args.push(frame.operand_stack.pop().expect("'this' argument is present"));
-        }
-        state.enter(
-            Rc::clone(method.body.as_ref().expect("method has a body")),
-            method_class,
-            args,
-        );
+        panic!("signature strings include return value type (even if it's just [V]oid)");
     }
+
+    let (args, ret) = parse_signature_string(method_type).expect("signature string is valid (not like there's much validation right now, come on!!");
+
+    let frame = state.current_frame_mut();
+
+    let mut real_args = std::collections::VecDeque::new();
+    for _arg in args {
+        real_args.push_front(frame.operand_stack.pop().expect("argument is present"));
+    }
+    if is_virtual {
+        real_args.push_front(frame.operand_stack.pop().expect("argument is present"));
+    }
+
+    state.enter(
+        Rc::clone(method.body.as_ref().expect("method has a body")),
+        method_class,
+        real_args.drain(..).collect(),
+    );
     Ok(())
 }
 
