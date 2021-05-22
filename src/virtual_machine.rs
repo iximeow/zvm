@@ -51,6 +51,7 @@ impl CallFrame {
 pub struct VMState {
     // Attribute is actually a Code (anything else is an error)
     call_stack: Vec<CallFrame>,
+    throwing: bool,
 }
 
 #[allow(dead_code)]
@@ -62,6 +63,7 @@ impl VMState {
     ) -> Self {
         let mut state = VMState {
             call_stack: Vec::new(),
+            throwing: false,
         };
         state
             .call_stack
@@ -101,6 +103,11 @@ impl VMState {
     }
 
     pub fn leave(&mut self) {
+        self.call_stack.pop().expect("stack is non-empty");
+    }
+
+    pub fn throw(&mut self) {
+        self.throwing = true;
         self.call_stack.pop().expect("stack is non-empty");
     }
 
@@ -1533,15 +1540,31 @@ impl VMState {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("ireturn but insufficient arguments"));
+                    return Err(VMError::BadClass("areturn but insufficient arguments"));
                 };
 
                 match value {
-                    Value::Array(_) => {
+                    Value::Object(_, _) => {
                         self.leave();
                         Ok(Some(value))
                     }
-                    _ => Err(VMError::BadClass("ireturn but invalid operand types")),
+                    _ => Err(VMError::BadClass("areturn but invalid operand types")),
+                }
+            }
+            Instruction::AThrow => {
+                let frame_mut = self.current_frame_mut();
+                let value = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("athrow but insufficient arguments"));
+                };
+
+                match value {
+                    Value::Object(_, _) => {
+                        self.throw();
+                        Ok(Some(value))
+                    }
+                    _ => Err(VMError::BadClass("athrow but invalid operand types")),
                 }
             }
             Instruction::Ldc(c) => {
@@ -2324,14 +2347,30 @@ impl VirtualMachine {
             //            let enc = &*state.current_frame().enclosing_class;
             //            println!("Executing {}", instruction);
             if let Some(value) = state.execute(&instruction, self)? {
-                // TODO: type check the return value
-                if state.call_stack.len() == 0 {
-                    // this was a return from the first call frame, so it's the result of the
-                    // entire interpreter execution
-                    return Ok(Some(value));
+                if state.throwing {
+                    while state.call_stack.len() > 0 {
+                        state.leave();
+                    }
+                    if state.call_stack.len() == 0 {
+                        if let Value::Object(fields, cls) = &value {
+                            if let Some(Value::String(msg)) = fields.borrow().get("message") {
+                                eprintln!("unhandled {}: {}", cls.this_class.as_str(), String::from_utf8_lossy(msg));
+                                std::process::exit(1);
+                            }
+                        }
+                        eprintln!("unhandled exception: {:?}", value);
+                        std::process::exit(1);
+                    }
                 } else {
-                    // this was an inner return, so push it onto the caller's operand stack
-                    state.current_frame_mut().operand_stack.push(value);
+                    // TODO: type check the return value
+                    if state.call_stack.len() == 0 {
+                        // this was a return from the first call frame, so it's the result of the
+                        // entire interpreter execution
+                        return Ok(Some(value));
+                    } else {
+                        // this was an inner return, so push it onto the caller's operand stack
+                        state.current_frame_mut().operand_stack.push(value);
+                    }
                 }
             }
             //            println!("Complete!");
