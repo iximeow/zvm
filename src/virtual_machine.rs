@@ -1483,12 +1483,12 @@ pub enum VMError {
 }
 
 impl VirtualMachine {
-    pub fn new(initial_classpath: PathBuf) -> Self {
+    pub fn new(initial_classpath: Vec<PathBuf>) -> Self {
         VirtualMachine {
             classes: HashMap::new(),
             static_instances: HashMap::new(),
             native_instances: HashMap::new(),
-            classpath: vec![initial_classpath],
+            classpath: initial_classpath,
         }
     }
 
