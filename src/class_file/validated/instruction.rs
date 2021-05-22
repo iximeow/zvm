@@ -267,8 +267,8 @@ impl fmt::Display for Instruction {
                 "new {}",
                 tpe
             ),
-            Instruction::NewArray(tpe) => write!(f, "newarray (const {})", tpe),
-            Instruction::ANewArray => write!(f, "anewarray"),
+            Instruction::ANewArray(tpe) => write!(f, "anewarray (const {})", tpe),
+            Instruction::NewArray => write!(f, "newarray"),
             Instruction::ArrayLength => write!(f, "arraylength"),
             Instruction::AThrow => write!(f, "athrow"),
             Instruction::CheckCast(tpe) => write!(
@@ -486,8 +486,8 @@ pub enum Instruction {
     InvokeInterface(ConstantIdx, u8),
     InvokeDynamic(ConstantIdx),
     New(Rc<String>),
-    NewArray(u8),
-    ANewArray,
+    ANewArray(u16),
+    NewArray,
     ArrayLength,
     AThrow,
     CheckCast(Rc<String>),

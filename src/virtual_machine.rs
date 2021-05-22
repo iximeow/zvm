@@ -395,7 +395,7 @@ impl VMState {
                 };
                 Ok(None)
             }
-            Instruction::NewArray(_tpe) => {
+            Instruction::NewArray => {
                 let top = self
                     .current_frame_mut()
                     .operand_stack
@@ -406,6 +406,27 @@ impl VMState {
                 if let Value::Integer(size) = top {
                     for _ in 0..size {
                         elems.push(Value::Integer(0));
+                    }
+                }
+
+                self.current_frame_mut()
+                    .operand_stack
+                    .push(Value::Array(
+                        Rc::new(RefCell::new(elems.into_boxed_slice())),
+                    ));
+                Ok(None)
+            }
+            Instruction::ANewArray(_tpe) => {
+                let top = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                let mut elems = Vec::new();
+                if let Value::Integer(size) = top {
+                    for _ in 0..size {
+                        elems.push(Value::Null(String::new()));
                     }
                 }
 

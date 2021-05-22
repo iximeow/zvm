@@ -222,8 +222,8 @@ fn make_refs<'validation>(
         Instruction::InvokeDynamic(_method_idx) => {
             panic!("invokedynamic is not yet validated");
         }
-        Instruction::NewArray(_tpe) => {
-            panic!("newarray not yet validated");
+        Instruction::ANewArray(_tpe) => {
+//            panic!("newarray not yet validated");
         }
         _ => { /* no validation necessary */ }
     }
