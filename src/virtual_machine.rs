@@ -815,6 +815,13 @@ impl VMState {
                     panic!("arraylength but value is not array");
                 }
             }
+            Instruction::FConst0 => {
+                let frame_mut = self.current_frame_mut();
+                frame_mut
+                    .operand_stack
+                    .push(Value::Float(0.0f32));
+                Ok(None)
+            }
             Instruction::LConst0 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut
@@ -903,6 +910,26 @@ impl VMState {
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
                 }
             }
+            Instruction::IfGt(offset) => {
+                let frame_mut = self.current_frame_mut();
+                let value = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+
+                match value {
+                    Value::Integer(v) => {
+                        if v > 0 {
+                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            Ok(None)
+                        } else {
+                            Ok(None)
+                        }
+                    }
+                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                }
+            }
             Instruction::IfLe(offset) => {
                 let frame_mut = self.current_frame_mut();
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
@@ -963,6 +990,56 @@ impl VMState {
                     _ => Err(VMError::BadClass("ifne but invalid operand types")),
                 }
             }
+            Instruction::IfIcmpLt(offset) => {
+                let frame_mut = self.current_frame_mut();
+                let left = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+                let right = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+
+                match (left, right) {
+                    (Value::Integer(l), Value::Integer(r)) => {
+                        if l < r {
+                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            Ok(None)
+                        } else {
+                            Ok(None)
+                        }
+                    }
+                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                }
+            }
+            Instruction::IfIcmpGt(offset) => {
+                let frame_mut = self.current_frame_mut();
+                let left = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+                let right = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+
+                match (left, right) {
+                    (Value::Integer(l), Value::Integer(r)) => {
+                        if l > r {
+                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            Ok(None)
+                        } else {
+                            Ok(None)
+                        }
+                    }
+                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                }
+            }
             Instruction::IfIcmpNe(offset) => {
                 let frame_mut = self.current_frame_mut();
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
@@ -986,6 +1063,40 @@ impl VMState {
                         }
                     }
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                }
+            }
+            Instruction::LCmp => {
+                let right = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let left = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                match (left, right) {
+                    (Value::Long(left), Value::Long(right)) => {
+                        let left = left as i64;
+                        let right = right as i64;
+                        if left > right {
+                            self.current_frame_mut()
+                                .operand_stack
+                                .push(Value::Integer(1));
+                        } else if left == right {
+                            self.current_frame_mut()
+                                .operand_stack
+                                .push(Value::Integer(0));
+                        } else {
+                            self.current_frame_mut()
+                                .operand_stack
+                                .push(Value::Integer(-1));
+                        }
+                        Ok(None)
+                    }
+                    _ => Err(VMError::BadClass("lcmp but invalid operand types")),
                 }
             }
             Instruction::IfNonNull(offset) => {
@@ -1060,6 +1171,98 @@ impl VMState {
             Instruction::AStore2 => self.interpret_astore(2),
             Instruction::AStore3 => self.interpret_astore(3),
             Instruction::AStore(idx) => self.interpret_astore(*idx),
+            Instruction::LUshr => {
+                let frame_mut = self.current_frame_mut();
+                let amount = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+                let value = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+
+                match (value, amount) {
+                    (Value::Long(value), Value::Integer(amount)) => {
+                        frame_mut
+                            .operand_stack
+                            .push(Value::Long(((value as u64) >> (amount & 0x3f)) as i64));
+                        Ok(None)
+                    }
+                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                }
+            }
+            Instruction::LAnd => {
+                let frame_mut = self.current_frame_mut();
+                let left = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iand but insufficient arguments"));
+                };
+                let right = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iand but insufficient arguments"));
+                };
+
+                match (left, right) {
+                    (Value::Long(l), Value::Long(r)) => {
+                        frame_mut
+                            .operand_stack
+                            .push(Value::Long(l & r));
+                        Ok(None)
+                    }
+                    _ => Err(VMError::BadClass("iand but invalid operand types")),
+                }
+            }
+            Instruction::LOr => {
+                let frame_mut = self.current_frame_mut();
+                let left = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("ior but insufficient arguments"));
+                };
+                let right = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("ior but insufficient arguments"));
+                };
+
+                match (left, right) {
+                    (Value::Long(l), Value::Long(r)) => {
+                        frame_mut
+                            .operand_stack
+                            .push(Value::Long(l | r));
+                        Ok(None)
+                    }
+                    _ => Err(VMError::BadClass("ior but invalid operand types")),
+                }
+            }
+            Instruction::LShl => {
+                let frame_mut = self.current_frame_mut();
+                let amount = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+                let value = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+
+                match (value, amount) {
+                    (Value::Long(value), Value::Integer(amount)) => {
+                        frame_mut
+                            .operand_stack
+                            .push(Value::Long(((value as u64) << (amount & 0x3f)) as i64));
+                        Ok(None)
+                    }
+                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                }
+            }
             Instruction::IAdd => {
                 let frame_mut = self.current_frame_mut();
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
@@ -1221,6 +1424,24 @@ impl VMState {
                     _ => Err(VMError::BadClass("ishl but invalid operand types")),
                 }
             }
+            Instruction::L2I => {
+                let frame_mut = self.current_frame_mut();
+                let value = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+
+                match value {
+                    Value::Long(l) => {
+                        frame_mut
+                            .operand_stack
+                            .push(Value::Integer(l as i32));
+                        Ok(None)
+                    }
+                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                }
+            }
             Instruction::I2B => {
                 let frame_mut = self.current_frame_mut();
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
@@ -1255,6 +1476,40 @@ impl VMState {
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                }
+            }
+            Instruction::I2L => {
+                let frame_mut = self.current_frame_mut();
+                let value = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+
+                match value {
+                    Value::Integer(l) => {
+                        frame_mut
+                            .operand_stack
+                            .push(Value::Long(l as i64));
+                        Ok(None)
+                    }
+                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                }
+            }
+            Instruction::DReturn => {
+                let frame_mut = self.current_frame_mut();
+                let value = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("dreturn but insufficient arguments"));
+                };
+
+                match value {
+                    Value::Double(_) => {
+                        self.leave();
+                        Ok(Some(value))
+                    }
+                    _ => Err(VMError::BadClass("dreturn but invalid operand types")),
                 }
             }
             Instruction::IReturn => {
@@ -1598,12 +1853,16 @@ impl VirtualMachine {
         }
 
         let new_class = match referent {
-            "java/lang/Throwable" => {
+            "java/lang/Class" => {
                 let constants = vec![
-                    UnvalidatedConstant::Utf8(b"java/lang/Throwable".to_vec()),
+                    UnvalidatedConstant::Utf8(b"java/lang/Class".to_vec()),
                     UnvalidatedConstant::Utf8(b"<init>".to_vec()),
                     UnvalidatedConstant::Utf8(b"()V".to_vec()),
                     UnvalidatedConstant::Class(ConstantIdx::new(1).unwrap()),
+                    UnvalidatedConstant::Utf8(b"desiredAssertionStatus".to_vec()),
+                    UnvalidatedConstant::Utf8(b"()Z".to_vec()),
+                    UnvalidatedConstant::Utf8(b"getPrimitiveClass".to_vec()),
+                    UnvalidatedConstant::Utf8(b"(Ljava/lang/String;)Ljava/lang/Class;".to_vec()),
                 ];
 
                 let mut native_methods: HashMap<
@@ -1611,6 +1870,8 @@ impl VirtualMachine {
                     fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>,
                 > = HashMap::new();
                 native_methods.insert("<init>()V".to_string(), object_init);
+                native_methods.insert("desiredAssertionStatus()Z".to_string(), class_desired_assertion_status);
+                native_methods.insert("getPrimitiveClass(Ljava/lang/String;)Ljava/lang/Class;".to_string(), class_get_primitive_class);
 
                 let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
                     major_version: 55,
@@ -1626,6 +1887,63 @@ impl VirtualMachine {
                             access_flags: MethodAccessFlags { flags: 0x0101 },
                             name_index: ConstantIdx::new(2).unwrap(),
                             descriptor_index: ConstantIdx::new(3).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(5).unwrap(),
+                            descriptor_index: ConstantIdx::new(6).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(7).unwrap(),
+                            descriptor_index: ConstantIdx::new(8).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                    ],
+                    attributes: vec![],
+                    native_methods,
+                }).unwrap();
+
+                synthetic_class
+            }
+            "java/lang/Throwable" => {
+                let constants = vec![
+                    UnvalidatedConstant::Utf8(b"java/lang/Throwable".to_vec()),
+                    UnvalidatedConstant::Utf8(b"<init>".to_vec()),
+                    UnvalidatedConstant::Utf8(b"()V".to_vec()),
+                    UnvalidatedConstant::Class(ConstantIdx::new(1).unwrap()),
+                    UnvalidatedConstant::Utf8(b"(Ljava/lang/String;)V".to_vec()),
+                ];
+
+                let mut native_methods: HashMap<
+                    String,
+                    fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>,
+                > = HashMap::new();
+                native_methods.insert("<init>()V".to_string(), object_init);
+                native_methods.insert("<init>(Ljava/lang/String;)V".to_string(), throwable_init_string);
+
+                let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
+                    major_version: 55,
+                    minor_version: 0,
+                    constant_pool: constants,
+                    access_flags: AccessFlags { flags: 0x0001 },
+                    this_class: ConstantIdx::new(4).unwrap(),
+                    super_class: None,
+                    interfaces: Vec::new(),
+                    fields: vec![],
+                    methods: vec![
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(2).unwrap(),
+                            descriptor_index: ConstantIdx::new(3).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(2).unwrap(),
+                            descriptor_index: ConstantIdx::new(5).unwrap(),
                             attributes: Vec::new(),
                         },
                     ],
@@ -1930,6 +2248,7 @@ impl VirtualMachine {
                                         &mut File::open(possible_class).unwrap()
                                     ).unwrap()
                                 ).unwrap();
+                                let class_file = augment_classfile(class_file);
                                 return self.register(referent.to_string(), class_file);
                             }
                         }
@@ -2343,6 +2662,26 @@ fn string_init_string(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(
     }
     Ok(())
 }
+fn throwable_init_string(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let argument = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    let receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    if let (Value::String(_), Value::Object(receiver, _)) =
+        (&argument, &receiver)
+    {
+        receiver.borrow_mut().insert("message".to_string(), argument);
+    } else {
+        panic!("type error, expected string, got {:?}", argument);
+    }
+    Ok(())
+}
 // "<init>([B)"
 fn string_init_bytearray(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
     let argument = state
@@ -2456,4 +2795,135 @@ fn system_exit(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMEr
     } else {
         panic!("attempted to exit with non-int operand");
     }
+}
+
+fn class_desired_assertion_status(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    state
+        .current_frame_mut()
+        .operand_stack
+        .push(Value::Integer(0));
+    Ok(())
+}
+
+fn class_get_primitive_class(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    state
+        .current_frame_mut()
+        .operand_stack
+        .push(Value::Null("some primitive class".to_string()));
+    Ok(())
+}
+
+fn class_object_new(vm: &mut VirtualMachine, class_name: &str) -> Value {
+    let class_class = vm.resolve_class("java/lang/Class").unwrap();
+    let fields = Rc::new(RefCell::new(HashMap::new()));
+    fields.borrow_mut().insert("class".to_string(), Value::String(Rc::new(class_name.bytes().collect())));
+    Value::Object(fields, class_class)
+}
+
+fn float_to_raw_int_bits(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let argument = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+
+    if let Value::Float(f) = argument {
+        state
+            .current_frame_mut()
+            .operand_stack
+            .push(Value::Integer(f.to_bits() as i32));
+    } else {
+        panic!("bad operand type for float_to_raw_int_bits");
+    }
+    Ok(())
+}
+
+fn long_bits_to_double(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let argument = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+
+    if let Value::Long(l) = argument {
+        state
+            .current_frame_mut()
+            .operand_stack
+            .push(Value::Double(f64::from_bits(l as u64)));
+    } else {
+        panic!("bad operand type for double_to_raw_long_bits");
+    }
+    Ok(())
+}
+
+fn int_bits_to_float(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let argument = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+
+    if let Value::Integer(i) = argument {
+        state
+            .current_frame_mut()
+            .operand_stack
+            .push(Value::Float(f32::from_bits(i as u32)));
+    } else {
+        panic!("bad operand type for double_to_raw_long_bits");
+    }
+    Ok(())
+}
+
+fn double_to_raw_long_bits(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let argument = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+
+    if let Value::Double(d) = argument {
+        state
+            .current_frame_mut()
+            .operand_stack
+            .push(Value::Long(d.to_bits() as i64));
+    } else {
+        panic!("bad operand type for double_to_raw_long_bits");
+    }
+    Ok(())
+}
+
+fn double_log(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let argument = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+
+    if let Value::Double(d) = argument {
+        state
+            .current_frame_mut()
+            .operand_stack
+            .push(Value::Double(d.ln()));
+    } else {
+        panic!("bad operand type for double_to_raw_long_bits");
+    }
+    Ok(())
+}
+
+fn augment_classfile(mut class_file: ClassFile) -> ClassFile {
+    match class_file.this_class.as_str() {
+        "java/lang/Float" => {
+            class_file.native_methods.insert("floatToRawIntBits(F)I".to_string(), float_to_raw_int_bits);
+            class_file.native_methods.insert("intBitsToFloat(I)F".to_string(), int_bits_to_float);
+        }
+        "java/lang/Double" => {
+            class_file.native_methods.insert("doubleToRawLongBits(D)J".to_string(), double_to_raw_long_bits);
+            class_file.native_methods.insert("longBitsToDouble(J)D".to_string(), long_bits_to_double);
+        }
+        "java/lang/StrictMath" => {
+            class_file.native_methods.insert("log(D)D".to_string(), double_log);
+        }
+        _ => {}
+    }
+    class_file
 }
