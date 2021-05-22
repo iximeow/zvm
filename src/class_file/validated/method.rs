@@ -125,8 +125,11 @@ fn make_refs<'validation>(
                 unvalidated::Constant::Float(f) => {
                     const_refs.insert(position as u32, Rc::new(Constant::Float(*f)));
                 }
+                unvalidated::Constant::Class(idx) => {
+                    class_refs.insert(position as u32, Rc::new(raw_class.get_str(*idx).unwrap().to_string()));
+                }
                 c => {
-                    return Err(ValidationError::BadConst(c.type_name().to_string(), "String, Integer, or Float".to_string()));
+                    return Err(ValidationError::BadConst(c.type_name().to_string(), "String, Integer, Float, or Class".to_string()));
                 }
             }
         }
