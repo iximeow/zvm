@@ -1292,12 +1292,28 @@ impl VMState {
             Instruction::Ldc(c) => {
                 let value = match &**c {
                     Constant::Integer(i) => Value::Integer(*i as i32),
-                    Constant::Long(l) => Value::Long(*l as i64),
+                    Constant::Float(f) => Value::Float(*f),
                     Constant::String(s) => {
                         Value::String(Rc::new(s.bytes().collect()))
                     }
-                    _ => {
+                    Constant::Class(c) => {
+                        class_object_new(vm, &c)
+                    }
+                    o => {
+                        eprintln!("unsupported ldc: {:?}", o);
                         return Err(VMError::Unsupported("unsupported constant type for ldc"));
+                    }
+                };
+
+                self.current_frame_mut().operand_stack.push(value);
+                Ok(None)
+            }
+            Instruction::Ldc2W(c) => {
+                let value = match &**c {
+                    Constant::Long(l) => Value::Long(*l as i64),
+                    Constant::Double(d) => Value::Double(*d),
+                    _ => {
+                        return Err(VMError::Unsupported("unsupported constant type for ldc2w"));
                     }
                 };
 

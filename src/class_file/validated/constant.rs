@@ -6,6 +6,7 @@ use crate::class_file::validated::ValidationError;
 
 #[derive(Debug)]
 pub enum Constant {
+    Class(String),
     String(String),
     Integer(u32),
     Float(f32),
@@ -33,6 +34,7 @@ impl Constant {
 impl fmt::Display for Constant {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Constant::Class(v) => write!(f, "class<{}>", v),
             Constant::String(v) => write!(f, "{}", v),
             Constant::Integer(v) => write!(f, "{}", v),
             Constant::Float(v) => write!(f, "{}", v),

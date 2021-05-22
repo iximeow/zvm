@@ -135,6 +135,19 @@ fn make_refs<'validation>(
         }
         Instruction::Ldc2W(const_idx) => {
             match raw_class.checked_const(*const_idx)? {
+                unvalidated::Constant::Long(i) => {
+                    const_refs.insert(position as u32, Rc::new(Constant::Long(*i)));
+                }
+                unvalidated::Constant::Double(f) => {
+                    const_refs.insert(position as u32, Rc::new(Constant::Double(*f)));
+                }
+                c => {
+                    return Err(ValidationError::BadConst(c.type_name().to_string(), "Long or Double".to_string()));
+                }
+            }
+        }
+        Instruction::Ldc2W(const_idx) => {
+            match raw_class.checked_const(*const_idx)? {
                 unvalidated::Constant::Long(l) => {
                     const_refs.insert(position as u32, Rc::new(Constant::Long(*l)));
                 }
