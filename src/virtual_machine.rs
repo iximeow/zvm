@@ -1308,6 +1308,7 @@ impl VMState {
                 self.leave();
                 Ok(None)
             }
+            Instruction::Nop => { Ok(None) }
             other => {
                 todo!("implement {}", other);
             }
