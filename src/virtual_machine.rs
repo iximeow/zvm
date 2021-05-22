@@ -395,7 +395,7 @@ impl VMState {
                 };
                 Ok(None)
             }
-            Instruction::NewArray => {
+            Instruction::NewArray(_t) => {
                 let top = self
                     .current_frame_mut()
                     .operand_stack
@@ -762,11 +762,11 @@ impl VMState {
                     .pop()
                     .expect("stack has a value");
 
-                if let (Value::Array(elements), Value::Long(index)) =
-                    (array, index)
+                if let (Value::Array(elements), Value::Integer(index)) =
+                    (&array, &index)
                 {
                     // TODO: homogeneously typed arrays
-                    elements.borrow_mut()[index as usize] = value;
+                    elements.borrow_mut()[*index as usize] = value;
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -786,7 +786,7 @@ impl VMState {
                     .pop()
                     .expect("stack has a value");
 
-                if let (Value::Array(elements), Value::Long(index)) =
+                if let (Value::Array(elements), Value::Integer(index)) =
                     (array, index)
                 {
                     // TODO: homogeneously typed arrays

@@ -177,7 +177,7 @@ fn validate_inst(handle: &MethodBody, position: u32, raw_inst: &unvalidated::Ins
         unvalidated::Instruction::I2B => Instruction::I2B,
         unvalidated::Instruction::I2C => Instruction::I2C,
         unvalidated::Instruction::I2S => Instruction::I2S,
-        unvalidated::Instruction::ICmp => Instruction::ICmp,
+        unvalidated::Instruction::LCmp => Instruction::LCmp,
         unvalidated::Instruction::FCmpL => Instruction::FCmpL,
         unvalidated::Instruction::FCmpG => Instruction::FCmpG,
         unvalidated::Instruction::DCmpL => Instruction::DCmpL,
@@ -218,7 +218,17 @@ fn validate_inst(handle: &MethodBody, position: u32, raw_inst: &unvalidated::Ins
         unvalidated::Instruction::InvokeDynamic(v) => Instruction::InvokeDynamic(*v),
         unvalidated::Instruction::New(_) => Instruction::New(Rc::clone(&handle.class_refs[&position])),
         unvalidated::Instruction::ANewArray(v) => Instruction::ANewArray(*v),
-        unvalidated::Instruction::NewArray => Instruction::NewArray,
+        unvalidated::Instruction::NewArray(v) => {
+            match v {
+                4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 => {
+                    // these are ok atype values (bool through long)
+                }
+                atype => {
+                    panic!("invalid atype for newarray: {}", atype);
+                }
+            }
+            Instruction::NewArray(*v)
+        }
         unvalidated::Instruction::ArrayLength => Instruction::ArrayLength,
         unvalidated::Instruction::AThrow => Instruction::AThrow,
         unvalidated::Instruction::CheckCast(_) => Instruction::CheckCast(Rc::clone(&handle.class_refs[&position])),
