@@ -36,7 +36,7 @@ impl CallFrame {
         mut arguments: Vec<Value>,
     ) -> Self {
         while arguments.len() < (body.max_locals as usize) {
-            arguments.push(Value::Integer(0));
+            arguments.push(Value::Array(Rc::new(RefCell::new(Vec::new().into_boxed_slice()))));
         }
 
         CallFrame {
@@ -265,6 +265,7 @@ impl VMState {
         instruction: &Instruction,
         vm: &mut VirtualMachine,
     ) -> Result<Option<Value>, VMError> {
+//        eprintln!("inst: {}", instruction);
         match instruction {
             Instruction::InvokeVirtual(method_ref) => {
                 let target_class = vm.resolve_class(&method_ref.class_name).unwrap();
@@ -1818,10 +1819,11 @@ impl VirtualMachine {
         instance_class: &Rc<ClassFile>,
         name: &str,
     ) -> bool {
+//        eprintln!("checking class {} for {}", instance_class.this_class, name);
         if instance_class.has_instance_field(name) {
             return true;
         } else if let Some(sup) = instance_class.super_class.as_ref() {
-            eprintln!("checking superclass {} for {}", sup, name);
+//            eprintln!("checking superclass {} for {}", sup, name);
             let sup = self.resolve_class(sup).unwrap();
             return self.has_instance_field(&sup, name);
         } else {
@@ -2339,6 +2341,7 @@ impl VirtualMachine {
         class_name: String,
         class_file: ClassFile,
     ) -> Result<Rc<ClassFile>, VMError> {
+//        eprintln!("registering class {}", class_name);;
         let rc = Rc::new(class_file);
         self.classes.insert(class_name, Rc::clone(&rc));
 
