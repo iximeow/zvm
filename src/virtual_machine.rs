@@ -2251,6 +2251,7 @@ impl VirtualMachine {
                     UnvalidatedConstant::Utf8(b"(Ljava/lang/String;)V".to_vec()),
                     UnvalidatedConstant::Utf8(b"(I)V".to_vec()),
                     UnvalidatedConstant::Utf8(b"(J)V".to_vec()),
+                    UnvalidatedConstant::Utf8(b"(Ljava/lang/Object;)V".to_vec()),
                     UnvalidatedConstant::Class(ConstantIdx::new(1).unwrap()),
                 ];
 
@@ -2259,6 +2260,7 @@ impl VirtualMachine {
                     fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>,
                 > = HashMap::new();
                 native_methods.insert("println(Ljava/lang/String;)V".to_string(), system_out_println_string);
+                native_methods.insert("println(Ljava/lang/Object;)V".to_string(), system_out_println_object);
                 native_methods.insert("println(I)V".to_string(), system_out_println_int);
                 native_methods.insert("println(J)V".to_string(), system_out_println_long);
 
@@ -2267,7 +2269,7 @@ impl VirtualMachine {
                     minor_version: 0,
                     constant_pool: constants,
                     access_flags: AccessFlags { flags: 0x0001 },
-                    this_class: ConstantIdx::new(6).unwrap(),
+                    this_class: ConstantIdx::new(7).unwrap(),
                     super_class: None,
                     interfaces: Vec::new(),
                     fields: vec![],
@@ -2288,6 +2290,12 @@ impl VirtualMachine {
                             access_flags: MethodAccessFlags { flags: 0x0101 },
                             name_index: ConstantIdx::new(2).unwrap(),
                             descriptor_index: ConstantIdx::new(5).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(2).unwrap(),
+                            descriptor_index: ConstantIdx::new(6).unwrap(),
                             attributes: Vec::new(),
                         },
                     ],
@@ -2586,6 +2594,39 @@ fn system_out_println_string(state: &mut VMState, _vm: &mut VirtualMachine) -> R
         } else {
             panic!("string does not contain value");
         }
+    } else {
+        panic!("type error, expected string, got {:?}", argument);
+    }
+    Ok(())
+}
+
+fn system_out_println_object(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let argument = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    let _receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    if let Value::Object(_fields, _) = argument {
+        println!("[object Object]");
+        /*
+        if let Value::Array(elements) = &fields.borrow()["value"] {
+            for el in elements.borrow().iter() {
+                if let Value::Integer(v) = el {
+                    print!("{}", *v as u8 as char);
+                } else {
+                    panic!("string contains non-byte element")
+                }
+            }
+            print!("\n");
+        } else {
+            panic!("string does not contain value");
+        }
+        */
     } else {
         panic!("type error, expected string, got {:?}", argument);
     }
