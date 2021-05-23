@@ -2614,22 +2614,9 @@ fn system_out_println_object(state: &mut VMState, _vm: &mut VirtualMachine) -> R
         .operand_stack
         .pop()
         .expect("argument available");
-    if let Value::Object(_fields, _) = argument {
+    if let Value::Object(_fields, _cls) = argument {
+//        println!("{}: {:?}", cls.this_class, fields);
         println!("[object Object]");
-        /*
-        if let Value::Array(elements) = &fields.borrow()["value"] {
-            for el in elements.borrow().iter() {
-                if let Value::Integer(v) = el {
-                    print!("{}", *v as u8 as char);
-                } else {
-                    panic!("string contains non-byte element")
-                }
-            }
-            print!("\n");
-        } else {
-            panic!("string does not contain value");
-        }
-        */
     } else {
         panic!("type error, expected string, got {:?}", argument);
     }
