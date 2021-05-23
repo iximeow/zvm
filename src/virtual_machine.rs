@@ -499,6 +499,35 @@ impl VMState {
                 self.current_frame_mut().operand_stack.push(top);
                 Ok(None)
             }
+            Instruction::AALoad => {
+                // ok this one is trickier
+                let index = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let array = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                if let (Value::Array(elements), Value::Integer(index)) =
+                    (array, index)
+                {
+                    // TODO: homogeneously typed arrays
+                    if let Some(value) = elements.borrow().get(index as usize) {
+                        self.current_frame_mut()
+                            .operand_stack
+                            .push(value.clone());
+                    } else {
+                        panic!("array index out of bounds exceptions!!");
+                    }
+                } else {
+                    panic!("getting element out of non-array");
+                }
+                Ok(None)
+            }
             Instruction::AAStore => {
                 // ok this one is trickier
                 let value = self
@@ -618,6 +647,60 @@ impl VMState {
             Instruction::CALoad => {
                 // ok this one is trickier
                 // TODO: handle longs/doubles properly
+                let index = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let array = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                if let (Value::Array(elements), Value::Integer(index)) =
+                    (array, index)
+                {
+                    // TODO: homogeneously typed arrays
+                    self
+                        .current_frame_mut()
+                        .operand_stack
+                        .push(elements.borrow()[index as usize].clone());
+                } else {
+                    panic!("storing element into non-array");
+                }
+                Ok(None)
+            }
+            Instruction::DAStore => {
+                // ok this one is trickier
+                let value = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let index = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let array = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                if let (Value::Array(elements), Value::Integer(index)) =
+                    (array, index)
+                {
+                    // TODO: homogeneously typed arrays
+                    elements.borrow_mut()[index as usize] = value;
+                } else {
+                    panic!("storing element into non-array");
+                }
+                Ok(None)
+            }
+            Instruction::DALoad => {
+                // ok this one is trickier
                 let index = self
                     .current_frame_mut()
                     .operand_stack
