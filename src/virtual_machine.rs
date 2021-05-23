@@ -1151,7 +1151,7 @@ impl VMState {
                         frame_mut.offset += *offset as i32 as u32 - 3;
                         Ok(None)
                     }
-                    other => {
+                    _other => {
                         Err(VMError::BadClass("ifnotnull but invalid operand types"))
                     }
                 }
@@ -2477,7 +2477,7 @@ fn interpreted_method_call(
     #[allow(unused_assignments)]
     fn parse_signature_string(signature: &str) -> Option<(Vec<Arg>, Option<Arg>)> {
         let mut reading_type = false;
-        let mut reading_array = false;
+        let mut _reading_array = false;
         let mut reading_return = false;
         let mut args = Vec::new();
         for b in signature.bytes() {
@@ -2517,7 +2517,7 @@ fn interpreted_method_call(
                 }
                 // not valid inside a type name
                 b'[' => {
-                    reading_array = true;
+                    _reading_array = true;
                 }
                 b'L' => {
                     if !reading_type {

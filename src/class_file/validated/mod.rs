@@ -47,16 +47,16 @@ fn validate_inst(handle: &MethodBody, position: u32, raw_inst: &unvalidated::Ins
         unvalidated::Instruction::DConst1 => Instruction::DConst1,
         unvalidated::Instruction::BIPush(v) => Instruction::BIPush(*v),
         unvalidated::Instruction::SIPush(v) => Instruction::SIPush(*v),
-        unvalidated::Instruction::Ldc(idx) => {
+        unvalidated::Instruction::Ldc(_idx) => {
             if let Some(const_ref) = handle.const_refs.get(&position) {
-                Instruction::Ldc(Rc::clone(&handle.const_refs[&position]))
+                Instruction::Ldc(Rc::clone(const_ref))
             } else {
                 Instruction::Ldc(Rc::new(Constant::Class(handle.class_refs[&position].to_string())))
             }
         },
-        unvalidated::Instruction::LdcW(idx) => {
+        unvalidated::Instruction::LdcW(_idx) => {
             if let Some(const_ref) = handle.const_refs.get(&position) {
-                Instruction::LdcW(Rc::clone(&handle.const_refs[&position]))
+                Instruction::LdcW(Rc::clone(&const_ref))
             } else {
                 Instruction::LdcW(Rc::new(Constant::Class(handle.class_refs[&position].to_string())))
             }

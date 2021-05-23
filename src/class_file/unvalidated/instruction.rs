@@ -823,7 +823,7 @@ impl<R: Read + Seek> FromReader<R> for Instruction {
                 }
             };
             Ok(opc)
-        };
+        }
 
         let first = u8::read_from(data)?;
 

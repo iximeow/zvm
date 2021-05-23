@@ -2,7 +2,6 @@ use zvm::class_file::unvalidated::read;
 use zvm::class_file::validated::ClassFile;
 use zvm::{Value, VirtualMachine};
 
-use std::cell::RefCell;
 use std::fs::File;
 use std::path::Path;
 use std::rc::Rc;
