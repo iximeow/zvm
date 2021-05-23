@@ -108,7 +108,9 @@ impl VMState {
 
     pub fn throw(&mut self) {
         self.throwing = true;
-        self.call_stack.pop().expect("stack is non-empty");
+        // do *not* pop the top of the call stack yet - this is how we know what method to start
+        // looking for exception handlers in.
+        // self.call_stack.pop().expect("stack is non-empty");
     }
 
     fn interpret_iload(&mut self, idx: u16) -> Result<Option<Value>, VMError> {
@@ -1802,6 +1804,21 @@ impl VirtualMachine {
         }
     }
 
+    fn is_exception(
+        &mut self,
+        cls: &Rc<ClassFile>,
+        name: &str,
+    ) -> bool {
+        if cls.this_class == name {
+            return true;
+        } else if let Some(sup) = cls.super_class.as_ref() {
+            let sup = self.resolve_class(sup).unwrap();
+            return self.is_exception(&sup, name);
+        } else {
+            return false;
+        }
+    }
+
     fn get_instance_field(
         &mut self,
         instance_class: Rc<ClassFile>,
@@ -2348,10 +2365,37 @@ impl VirtualMachine {
             //            println!("Executing {}", instruction);
             if let Some(value) = state.execute(&instruction, self)? {
                 if state.throwing {
-                    while state.call_stack.len() > 0 {
-                        state.leave();
+                    let mut handler_pc = None;
+                    while state.throwing && state.call_stack.len() > 0 {
+                        for exception_record in state.current_frame().body.exception_info.iter() {
+                            if exception_record.contains(state.current_frame().offset) {
+                                if let Value::Object(_, cls) = &value {
+                                    if self.is_exception(cls, exception_record.catch_type.as_str()) {
+                                        handler_pc = Some(exception_record.handler_pc as u32);
+                                        break;
+                                    }
+                                } else {
+                                    panic!("threw a non-Object: {:?}", value);
+                                }
+                            }
+                        }
+
+                        if handler_pc.is_some() {
+                            state.throwing = false;
+                        } else {
+                            // no catch/finally covering this address in this function, pop the
+                            // record and try again up the stack.
+                            state.leave();
+                        }
                     }
-                    if state.call_stack.len() == 0 {
+
+                    if let Some(pc) = handler_pc {
+                        state.current_frame_mut().offset = pc;
+                        state.current_frame_mut().operand_stack.push(value);
+                    } else {
+                        // if there is no handler and we stopped walking the call stack, we must
+                        // have reached the end of the stack.
+                        assert!(state.call_stack.len() == 0);
                         if let Value::Object(fields, cls) = &value {
                             if let Some(Value::String(msg)) = fields.borrow().get("message") {
                                 eprintln!("unhandled {}: {}", cls.this_class.as_str(), String::from_utf8_lossy(msg));

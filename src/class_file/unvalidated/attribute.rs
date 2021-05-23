@@ -11,10 +11,10 @@ use std::io::{Cursor, Read};
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct ExceptionTableRecord {
-    start_pc: u16,
-    end_pc: u16,
-    handler_pc: u16,
-    catch_type: u16,
+    pub(crate) start_pc: u16,
+    pub(crate) end_pc: u16,
+    pub(crate) handler_pc: u16,
+    pub(crate) catch_type: u16,
 }
 
 impl<R: Read> FromReader<R> for ExceptionTableRecord {

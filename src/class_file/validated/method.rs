@@ -2,9 +2,9 @@ use crate::class_file::unvalidated::read::FromReader;
 use crate::class_file::unvalidated;
 use crate::class_file::unvalidated::AttributeInfo;
 use crate::class_file::unvalidated::{ClassFile as UnvalidatedClassFile};
-use crate::class_file::unvalidated::ExceptionTableRecord;
 use crate::class_file::validated::validate_inst;
 use crate::class_file::validated::Constant;
+use crate::class_file::validated::ConstantIdx;
 use crate::class_file::validated::FieldRef;
 use crate::class_file::validated::Instruction;
 use crate::class_file::validated::ValidationError;
@@ -26,7 +26,7 @@ pub struct MethodBody {
     pub(crate) max_locals: u16,
     bytes: Box<[u8]>,
     // TODO: validate exception table records
-    exception_info: Vec<unvalidated::attribute::ExceptionTableRecord>,
+    pub(crate) exception_info: Vec<ExceptionTableRecord>,
     pub(crate) class_refs: HashMap<u32, Rc<String>>,
     pub(crate) field_refs: HashMap<u32, Rc<FieldRef>>,
     pub(crate) method_refs: HashMap<u32, Rc<MethodRef>>,
@@ -247,6 +247,57 @@ fn make_refs<'validation>(
     Ok(())
 }
 
+#[derive(Debug)]
+pub struct ExceptionTableRecord {
+    start_pc: u16,
+    end_pc: u16,
+    pub(crate) handler_pc: u16,
+    pub(crate) catch_type: String,
+}
+
+impl ExceptionTableRecord {
+    pub(crate) fn contains(&self, addr: u32) -> bool {
+        if addr > (u16::MAX as u32) {
+            false;
+        }
+        let addr = addr as u16;
+        addr >= self.start_pc && addr < self.end_pc
+    }
+
+    fn validate(raw_class: &UnvalidatedClassFile, record: &unvalidated::ExceptionTableRecord, code_length: u32) -> Result<ExceptionTableRecord, ValidationError> {
+        if record.start_pc >= record.end_pc {
+            return Err(ValidationError::BadAttribute("exception start_pc >= end_pc"));
+        }
+        // end_pc is exclusive, so it *can* match code_length
+        if record.end_pc as u32 > code_length {
+            return Err(ValidationError::BadAttribute("exception end_pc > code_length"));
+        }
+        if record.handler_pc as u32 >= code_length {
+            return Err(ValidationError::BadAttribute("exception handler_pc > code_length"));
+        }
+        Ok(ExceptionTableRecord {
+            start_pc: record.start_pc,
+            end_pc: record.end_pc,
+            handler_pc: record.handler_pc,
+            catch_type: if record.catch_type == 0 {
+                 // jvm spec says that "catch_type == 0" the handler should handle any exception.
+                 // "Exception" is on the inheritance chain for every exception, so this ought to
+                 // do.
+                "java/lang/Exception".to_string()
+            } else {
+                match raw_class.checked_const(ConstantIdx::new(record.catch_type).unwrap())? {
+                    unvalidated::Constant::Class(idx) => {
+                        raw_class.get_str(*idx).unwrap().to_string()
+                    }
+                    other => {
+                        panic!("invalid const: {:?}", other);
+                    }
+                }
+            },
+        })
+    }
+}
+
 impl MethodHandle {
     pub fn access(&self) -> &unvalidated::MethodAccessFlags {
         &self.access_flags
@@ -273,7 +324,9 @@ impl MethodHandle {
                 let exceptions_length = u16::read_from(data).unwrap();
                 let mut exceptions: Vec<ExceptionTableRecord> = Vec::new();
                 for _ in 0..exceptions_length {
-                    exceptions.push(ExceptionTableRecord::read_from(data).unwrap());
+                    let record = unvalidated::ExceptionTableRecord::read_from(data).unwrap();
+                    let record = ExceptionTableRecord::validate(raw_class, &record, code_length)?;
+                    exceptions.push(record);
                 }
                 let attr_length = u16::read_from(data).unwrap();
                 let mut attrs: Vec<AttributeInfo> = Vec::new();
