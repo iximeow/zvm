@@ -20,6 +20,7 @@ use crate::class_file::validated::MethodBody;
 use crate::class_file::validated::MethodHandle;
 use crate::class_file::unvalidated::MethodInfo;
 
+#[allow(dead_code)]
 struct CallFrame {
     offset: u32,
     arguments: Vec<Value>,
@@ -1117,7 +1118,7 @@ impl VMState {
                 };
 
                 match value {
-                    Value::Null(v) => {
+                    Value::Null(_v) => {
                         Ok(None)
                     }
                     Value::Object(_, _) => {
@@ -1125,7 +1126,6 @@ impl VMState {
                         Ok(None)
                     }
                     other => {
-                        panic!("other tpe {:?}", other);
                         Err(VMError::BadClass("ifnotnull but invalid operand types"))
                     }
                 }
@@ -2275,13 +2275,13 @@ impl VirtualMachine {
             class_name => {
                 use std::collections::hash_map::Entry;
                 use std::fs::File;
-                println!("Looking up class {}", class_name);
+//                println!("Looking up class {}", class_name);
                 return match self.classes.entry(class_name.to_string()) {
                     Entry::Occupied(oe) => Ok(Rc::clone(oe.get())),
-                    Entry::Vacant(ve) => {
+                    Entry::Vacant(_ve) => {
                         for path in self.classpath.iter() {
                             let possible_class = path.join(PathBuf::from(format!("{}.class", class_name)));
-                            println!("-- checking {}", possible_class.display());
+//                            println!("-- checking {}", possible_class.display());
                             if possible_class.exists() {
                                 let class_file = ClassFile::validate(
                                     &crate::class_file::unvalidated::read::class_header(
@@ -2306,7 +2306,6 @@ impl VirtualMachine {
         class_name: String,
         class_file: ClassFile,
     ) -> Result<Rc<ClassFile>, VMError> {
-        //        println!("Registering class {}", class_name);;
         let rc = Rc::new(class_file);
         self.classes.insert(class_name, Rc::clone(&rc));
 
@@ -2439,6 +2438,7 @@ fn interpreted_method_call(
     
     struct Arg {}
 
+    #[allow(unused_assignments)]
     fn parse_signature_string(signature: &str) -> Option<(Vec<Arg>, Option<Arg>)> {
         let mut reading_type = false;
         let mut reading_array = false;
@@ -2510,7 +2510,8 @@ fn interpreted_method_call(
         panic!("signature strings include return value type (even if it's just [V]oid)");
     }
 
-    let (args, ret) = parse_signature_string(method_type).expect("signature string is valid (not like there's much validation right now, come on!!");
+    // TODO typecheck ret and the returned object type
+    let (args, _ret) = parse_signature_string(method_type).expect("signature string is valid (not like there's much validation right now, come on!!");
 
     let frame = state.current_frame_mut();
 
@@ -2702,7 +2703,7 @@ fn stringbuilder_tostring(state: &mut VMState, vm: &mut VirtualMachine) -> Resul
 
 // "<init>()V"
 fn object_init(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
-    let receiver = state
+    let _receiver = state
         .current_frame_mut()
         .operand_stack
         .pop()
@@ -2711,7 +2712,7 @@ fn object_init(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMEr
 }
 // "hashCode()I"
 fn object_hashcode(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
-    let receiver = state
+    let _receiver = state
         .current_frame_mut()
         .operand_stack
         .pop()
