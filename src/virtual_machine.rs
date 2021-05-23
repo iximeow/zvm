@@ -1044,6 +1044,26 @@ impl VMState {
                     _ => Err(VMError::BadClass("ifle but invalid operand types")),
                 }
             }
+            Instruction::IfLt(offset) => {
+                let frame_mut = self.current_frame_mut();
+                let value = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+
+                match value {
+                    Value::Integer(v) => {
+                        if v < 0 {
+                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            Ok(None)
+                        } else {
+                            Ok(None)
+                        }
+                    }
+                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                }
+            }
             Instruction::IfEq(offset) => {
                 let frame_mut = self.current_frame_mut();
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
@@ -1086,12 +1106,12 @@ impl VMState {
             }
             Instruction::IfIcmpLe(offset) => {
                 let frame_mut = self.current_frame_mut();
-                let left = if let Some(value) = frame_mut.operand_stack.pop() {
+                let right = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
-                let right = if let Some(value) = frame_mut.operand_stack.pop() {
+                let left = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
@@ -1111,12 +1131,12 @@ impl VMState {
             }
             Instruction::IfIcmpLt(offset) => {
                 let frame_mut = self.current_frame_mut();
-                let left = if let Some(value) = frame_mut.operand_stack.pop() {
+                let right = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
-                let right = if let Some(value) = frame_mut.operand_stack.pop() {
+                let left = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
@@ -1134,14 +1154,39 @@ impl VMState {
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
                 }
             }
-            Instruction::IfIcmpGt(offset) => {
+            Instruction::IfIcmpGe(offset) => {
                 let frame_mut = self.current_frame_mut();
+                let right = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
+
+                match (left, right) {
+                    (Value::Integer(l), Value::Integer(r)) => {
+                        if l >= r {
+                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            Ok(None)
+                        } else {
+                            Ok(None)
+                        }
+                    }
+                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                }
+            }
+            Instruction::IfIcmpGt(offset) => {
+                let frame_mut = self.current_frame_mut();
                 let right = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+                let left = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
