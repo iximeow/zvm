@@ -1000,6 +1000,31 @@ impl VMState {
                     _ => Err(VMError::BadClass("ifne but invalid operand types")),
                 }
             }
+            Instruction::IfIcmpLe(offset) => {
+                let frame_mut = self.current_frame_mut();
+                let left = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+                let right = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+
+                match (left, right) {
+                    (Value::Integer(l), Value::Integer(r)) => {
+                        if l <= r {
+                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            Ok(None)
+                        } else {
+                            Ok(None)
+                        }
+                    }
+                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                }
+            }
             Instruction::IfIcmpLt(offset) => {
                 let frame_mut = self.current_frame_mut();
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
