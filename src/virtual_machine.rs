@@ -3779,6 +3779,81 @@ fn augment_classfile(mut class_file: ClassFile) -> ClassFile {
         "java/lang/StrictMath" => {
             class_file.native_methods.insert("log(D)D".to_string(), double_log);
         }
+        "jdk/internal/misc/Unsafe" => {
+            class_file.native_methods.insert("registerNatives()V".to_string(), |_state, _vm| { Ok(()) });
+            class_file.native_methods.insert("arrayBaseOffset0(Ljava/lang/Class;)I".to_string(), |state, _vm| {
+                // the offset from the start of an array object to its first data element is a
+                // constant for all classes
+                let _cls = state
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("argument available");
+                // it's 0.
+                state
+                    .current_frame_mut()
+                    .operand_stack
+                    .push(Value::Integer(0));
+                Ok(())
+            });
+            class_file.native_methods.insert("objectFieldOffset1(Ljava/lang/Class;Ljava/lang/String;)J".to_string(), |state, _vm| {
+                // the offset from the start of an object to its field is .. uh.. well. not
+                // constant... let's hope lying is ok.
+                let _field = state
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("argument available");
+                let _cls = state
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("argument available");
+                // claim that it's 0.
+                state
+                    .current_frame_mut()
+                    .operand_stack
+                    .push(Value::Long(0));
+                Ok(())
+            });
+            class_file.native_methods.insert("arrayIndexScale0(Ljava/lang/Class;)I".to_string(), |state, _vm| {
+                // the scale for each array item iss constant for all classes
+                let _cls = state
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("argument available");
+                // it's the size of an rc.
+                state
+                    .current_frame_mut()
+                    .operand_stack
+                    .push(Value::Integer(std::mem::size_of::<Rc<Value>>() as i32));
+                Ok(())
+            });
+            class_file.native_methods.insert("addressSize0()I".to_string(), |state, _vm| {
+                state
+                    .current_frame_mut()
+                    .operand_stack
+                    .push(Value::Integer(std::mem::size_of::<usize>() as i32));
+                Ok(())
+            });
+            class_file.native_methods.insert("isBigEndian0()Z".to_string(), |state, _vm| {
+                // don't run zvm on a big-endian machine for now thanks
+                state
+                    .current_frame_mut()
+                    .operand_stack
+                    .push(Value::Integer(0));
+                Ok(())
+            });
+            class_file.native_methods.insert("unalignedAccess0()Z".to_string(), |state, _vm| {
+                // sure, x86 allows unaligned access
+                state
+                    .current_frame_mut()
+                    .operand_stack
+                    .push(Value::Integer(1));
+                Ok(())
+            });
+        }
         _ => {}
     }
     class_file
