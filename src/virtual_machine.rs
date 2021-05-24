@@ -1385,7 +1385,7 @@ impl VMState {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("ifnotnull but insufficient arguments"));
+                    return Err(VMError::BadClass("ifnull but insufficient arguments"));
                 };
 
                 match value {
@@ -1401,9 +1401,8 @@ impl VMState {
                         // but strings are not null....
                         Ok(None)
                     }
-                    other => {
-                        panic!("other: {:?}", other);
-                        Err(VMError::BadClass("ifnotnull but invalid operand types"))
+                    _other => {
+                        Err(VMError::BadClass("ifnull but invalid operand types"))
                     }
                 }
             }
