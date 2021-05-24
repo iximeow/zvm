@@ -2849,6 +2849,43 @@ impl VirtualMachine {
 
                 synthetic_class
             }
+            "java/io/InputStreamReader" => {
+                let constants = vec![
+                    UnvalidatedConstant::Utf8(b"java/io/InputStreamReader".to_vec()),
+                    UnvalidatedConstant::Class(ConstantIdx::new(1).unwrap()),
+                    UnvalidatedConstant::Utf8(b"<init>".to_vec()),
+                    UnvalidatedConstant::Utf8(b"(Ljava/io/InputStream;)V".to_vec()),
+                ];
+
+                let mut native_methods: HashMap<
+                    String,
+                    fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>,
+                > = HashMap::new();
+                native_methods.insert("<init>(Ljava/io/InputStream;)V".to_string(), input_stream_reader_init);
+
+                let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
+                    major_version: 55,
+                    minor_version: 0,
+                    constant_pool: constants,
+                    access_flags: AccessFlags { flags: 0x0001 },
+                    this_class: ConstantIdx::new(2).unwrap(),
+                    super_class: None,
+                    interfaces: Vec::new(),
+                    fields: vec![],
+                    methods: vec![
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(3).unwrap(),
+                            descriptor_index: ConstantIdx::new(4).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                    ],
+                    attributes: vec![],
+                    native_methods,
+                }).unwrap();
+
+                synthetic_class
+            }
             class_name => {
                 use std::collections::hash_map::Entry;
                 use std::fs::File;
@@ -3369,6 +3406,27 @@ fn throwable_init_string(state: &mut VMState, _vm: &mut VirtualMachine) -> Resul
         (&argument, &receiver)
     {
         receiver.borrow_mut().insert("message".to_string(), argument);
+    } else {
+        panic!("type error, expected string, got {:?}", argument);
+    }
+    Ok(())
+}
+// "<init>(Ljava/io/InputStream;)V"
+fn input_stream_reader_init(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let argument = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    let receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    if let (Value::Object(_, _), Value::Object(receiver, _)) =
+        (&argument, &receiver)
+    {
+        receiver.borrow_mut().insert("stream".to_string(), argument);
     } else {
         panic!("type error, expected string, got {:?}", argument);
     }
