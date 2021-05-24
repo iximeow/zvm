@@ -2699,13 +2699,28 @@ impl VirtualMachine {
                     UnvalidatedConstant::Utf8(b"exit".to_vec()),
                     UnvalidatedConstant::Utf8(b"(I)V".to_vec()),
                     UnvalidatedConstant::Class(ConstantIdx::new(1).unwrap()),
+                    UnvalidatedConstant::Utf8(b"identityHashCode".to_vec()),
+                    UnvalidatedConstant::Utf8(b"(Ljava/lang/Object;)I".to_vec()),
+                    UnvalidatedConstant::Utf8(b"err".to_vec()),
+                    UnvalidatedConstant::Utf8(b"in".to_vec()),
+                    UnvalidatedConstant::Utf8(b"Ljava/io/InputStream;".to_vec()),
+                    UnvalidatedConstant::Utf8(b"<clinit>".to_vec()),
+                    UnvalidatedConstant::Utf8(b"()V".to_vec()),
+                    UnvalidatedConstant::Utf8(b"getSecurityManager".to_vec()),
+                    UnvalidatedConstant::Utf8(b"()Ljava/lang/SecurityManager;".to_vec()),
+                    UnvalidatedConstant::Utf8(b"getProperty".to_vec()),
+                    UnvalidatedConstant::Utf8(b"(Ljava/lang/String;)Ljava/lang/String".to_vec()),
                 ];
 
                 let mut native_methods: HashMap<
                     String,
                     fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>,
                 > = HashMap::new();
+                native_methods.insert("<clinit>()V".to_string(), system_clinit);
                 native_methods.insert("exit(I)V".to_string(), system_exit);
+                native_methods.insert("identityHashCode(Ljava/lang/Object;)I".to_string(), system_identity_hash_code);
+                native_methods.insert("getSecurityManager()Ljava/lang/SecurityManager;".to_string(), system_get_security_manager);
+                native_methods.insert("getProperty(Ljava/lang/String;)Ljava/lang/String;".to_string(), system_get_property);
 
                 let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
                     major_version: 55,
@@ -2715,17 +2730,55 @@ impl VirtualMachine {
                     this_class: ConstantIdx::new(6).unwrap(),
                     super_class: None,
                     interfaces: Vec::new(),
-                    fields: vec![FieldInfo {
-                        access_flags: FieldAccessFlags { flags: 0x0009 },
-                        name_index: ConstantIdx::new(2).unwrap(),
-                        descriptor_index: ConstantIdx::new(3).unwrap(),
-                        attributes: Vec::new(),
-                    }],
+                    fields: vec![
+                        FieldInfo {
+                            access_flags: FieldAccessFlags { flags: 0x0009 },
+                            name_index: ConstantIdx::new(2).unwrap(),
+                            descriptor_index: ConstantIdx::new(3).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                        FieldInfo {
+                            access_flags: FieldAccessFlags { flags: 0x0009 },
+                            name_index: ConstantIdx::new(9).unwrap(),
+                            descriptor_index: ConstantIdx::new(3).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                        FieldInfo {
+                            access_flags: FieldAccessFlags { flags: 0x0009 },
+                            name_index: ConstantIdx::new(10).unwrap(),
+                            descriptor_index: ConstantIdx::new(11).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                    ],
                     methods: vec![
                         MethodInfo {
                             access_flags: MethodAccessFlags { flags: 0x0101 },
                             name_index: ConstantIdx::new(4).unwrap(),
                             descriptor_index: ConstantIdx::new(5).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(7).unwrap(),
+                            descriptor_index: ConstantIdx::new(8).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(12).unwrap(),
+                            descriptor_index: ConstantIdx::new(13).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(14).unwrap(),
+                            descriptor_index: ConstantIdx::new(15).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(16).unwrap(),
+                            descriptor_index: ConstantIdx::new(17).unwrap(),
                             attributes: Vec::new(),
                         },
                     ],
@@ -3454,6 +3507,23 @@ fn string_substring(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(),
     Ok(())
 }
 
+fn system_clinit(state: &mut VMState, vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let java_lang_system_class = vm.resolve_class("java/lang/System").unwrap();
+    let cls_ref = ClassFileRef::of(&java_lang_system_class);
+    let mut statics = HashMap::new();
+    fn make_fd_instance(vm: &mut VirtualMachine, fd: i32) -> Value {
+        let mut fields = HashMap::new();
+        fields.insert("fd".to_string(), Value::Integer(fd));
+        Value::Object(Rc::new(RefCell::new(fields)), vm.resolve_class("java/io/PrintStream").unwrap())
+    }
+    statics.insert("in".to_string(), make_fd_instance(vm, 0));
+    statics.insert("out".to_string(), make_fd_instance(vm, 1));
+    statics.insert("err".to_string(), make_fd_instance(vm, 2));
+    // shouldn't have run initializers for java/lang/System yet
+    assert!(vm.static_instances.insert(cls_ref, statics).is_none());
+    Ok(())
+}
+
 fn system_exit(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
     let argument = state
         .current_frame_mut()
@@ -3466,6 +3536,63 @@ fn system_exit(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMEr
     } else {
         panic!("attempted to exit with non-int operand");
     }
+}
+
+fn system_identity_hash_code(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let argument = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+
+    if let Value::Object(fields, _cls) = argument {
+        state
+            .current_frame_mut()
+            .operand_stack
+            .push(Value::Integer(fields.as_ptr() as i32));
+        Ok(())
+    } else {
+        panic!("invalid argument for identityHashCode");
+    }
+}
+
+fn system_get_security_manager(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    state
+        .current_frame_mut()
+        .operand_stack
+        .push(Value::Null(String::new()));
+    Ok(())
+}
+
+fn system_get_property(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let argument = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+
+    let property = match argument {
+        Value::String(data) => {
+            match &data[..] {
+                b"file.encoding" => {
+                    Value::String(Rc::new("UTF-8".bytes().collect()))
+                }
+                _ => {
+                    eprintln!("{}", unsafe { std::str::from_utf8_unchecked(&data) });
+                    panic!("get_property {:?}", data);
+                }
+            }
+        }
+        Value::Object(fields, _cls) => {
+            panic!("get_property doesn't get support dynamic strings: {:?}", fields);
+        }
+        argument => {
+            panic!("invalid argument for getProperty {:?}", argument);
+        }
+    };
+
+    state.current_frame_mut().operand_stack.push(property);
+    Ok(())
 }
 
 fn class_desired_assertion_status(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
