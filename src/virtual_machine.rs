@@ -3239,7 +3239,13 @@ fn system_out_println_object(state: &mut VMState, _vm: &mut VirtualMachine) -> R
         .operand_stack
         .pop()
         .expect("argument available");
-    if let Value::Object(_fields, _cls) = argument {
+    if let Value::String(data) = argument {
+        if let Ok(string) = std::str::from_utf8(data.as_slice()) {
+            println!("{}", string);
+        } else {
+            panic!("executing System.out.println(\"{:?}\")", data);
+        }
+    } else if let Value::Object(_fields, _cls) = argument {
 //        println!("{}: {:?}", cls.this_class, fields);
         println!("[object Object]");
     } else {
