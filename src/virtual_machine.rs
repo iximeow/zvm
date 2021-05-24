@@ -760,6 +760,60 @@ impl VMState {
                 }
                 Ok(None)
             }
+            Instruction::FAStore => {
+                // ok this one is trickier
+                let value = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let index = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let array = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                if let (Value::Array(elements), Value::Integer(index)) =
+                    (array, index)
+                {
+                    // TODO: homogeneously typed arrays
+                    elements.borrow_mut()[index as usize] = value;
+                } else {
+                    panic!("storing element into non-array");
+                }
+                Ok(None)
+            }
+            Instruction::FALoad => {
+                // ok this one is trickier
+                let index = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let array = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                if let (Value::Array(elements), Value::Integer(index)) =
+                    (array, index)
+                {
+                    // TODO: homogeneously typed arrays
+                    self
+                        .current_frame_mut()
+                        .operand_stack
+                        .push(elements.borrow()[index as usize].clone());
+                } else {
+                    panic!("storing element into non-array");
+                }
+                Ok(None)
+            }
             Instruction::SAStore => {
                 // ok this one is trickier
                 // TODO: handle longs/doubles properly
