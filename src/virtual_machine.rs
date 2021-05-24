@@ -1977,7 +1977,15 @@ impl VMState {
                 };
 
                 match value {
+                    Value::String(_) => {
+                        self.leave();
+                        Ok(Some(value))
+                    }
                     Value::Object(_, _) => {
+                        self.leave();
+                        Ok(Some(value))
+                    }
+                    Value::Null(_) => {
                         self.leave();
                         Ok(Some(value))
                     }
