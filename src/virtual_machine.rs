@@ -494,6 +494,46 @@ impl VMState {
                 self.current_frame_mut().operand_stack.push(top);
                 Ok(None)
             }
+            Instruction::DupX1 => {
+                let top = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let next = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                self.current_frame_mut().operand_stack.push(top.clone());
+                self.current_frame_mut().operand_stack.push(next);
+                self.current_frame_mut().operand_stack.push(top);
+                Ok(None)
+            }
+            Instruction::DupX2 => {
+                let top = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let next = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let third = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                self.current_frame_mut().operand_stack.push(top.clone());
+                self.current_frame_mut().operand_stack.push(third);
+                self.current_frame_mut().operand_stack.push(next);
+                self.current_frame_mut().operand_stack.push(top);
+                Ok(None)
+            }
             Instruction::AALoad => {
                 // ok this one is trickier
                 let index = self
