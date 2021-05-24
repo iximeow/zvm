@@ -361,7 +361,7 @@ impl VMState {
 
                 let value = match top {
                     Value::Object(fields, inst_class) => {
-                        println!("getting the field, inst: {}", inst_class.this_class);
+//                        println!("getting the field, inst: {}", inst_class.this_class);
                         vm
                             .get_instance_field(Rc::clone(&inst_class), Rc::clone(&fields), &field_ref.name, &field_ref.desc)
                             .unwrap()
@@ -385,7 +385,6 @@ impl VMState {
 
                 match top {
                     Value::Object(fields, inst_class) => {
-                        println!("putting the field, inst: {}", inst_class.this_class);
                         vm
                             .put_instance_field(Rc::clone(&inst_class), Rc::clone(&fields), &field_ref.name, &field_ref.desc, value);
                     }
@@ -2960,7 +2959,7 @@ impl VirtualMachine {
         class_name: String,
         class_file: ClassFile,
     ) -> Result<Rc<ClassFile>, VMError> {
-        eprintln!("registering class {}", class_name);
+//        eprintln!("registering class {}", class_name);
         let rc = Rc::new(class_file);
         self.classes.insert(class_name, Rc::clone(&rc));
 
@@ -3629,7 +3628,7 @@ fn string_substring(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(),
     Ok(())
 }
 
-fn system_clinit(state: &mut VMState, vm: &mut VirtualMachine) -> Result<(), VMError> {
+fn system_clinit(_state: &mut VMState, vm: &mut VirtualMachine) -> Result<(), VMError> {
     let java_lang_system_class = vm.resolve_class("java/lang/System").unwrap();
     let cls_ref = ClassFileRef::of(&java_lang_system_class);
     let mut statics = HashMap::new();
