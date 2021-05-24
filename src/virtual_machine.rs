@@ -2253,6 +2253,9 @@ pub struct VirtualMachine {
     static_instances: HashMap<ClassFileRef, HashMap<String, Value>>,
     native_instances: HashMap<ValueRef, RefCell<NativeObject>>,
     classpath: Vec<PathBuf>,
+    // TODO: actually reuse the VirtualMachine for <clinit> calls - mutually recursive classes
+    // would loop and crash right now, among other issues..
+    first_run: bool,
 }
 
 #[derive(Debug)]
@@ -2272,6 +2275,7 @@ impl VirtualMachine {
             static_instances: HashMap::new(),
             native_instances: HashMap::new(),
             classpath: initial_classpath,
+            first_run: true,
         }
     }
 
@@ -2998,8 +3002,13 @@ impl VirtualMachine {
     }
 
     fn interpret(&mut self, state: &mut VMState) -> Result<Option<Value>, VMError> {
+        let first_run = self.first_run;
+
         // magic incantation to awaken the machine
-        println!("zoom zoom");
+        if self.first_run {
+            println!("zoom zoom");
+            self.first_run = false;
+        }
 
         while let Some(instruction) = state.next_instruction() {
             //            println!("Executing {:?}", instruction);
