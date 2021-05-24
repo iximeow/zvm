@@ -1380,6 +1380,33 @@ impl VMState {
                     _ => Err(VMError::BadClass("lcmp but invalid operand types")),
                 }
             }
+            Instruction::IfNull(offset) => {
+                let frame_mut = self.current_frame_mut();
+                let value = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("ifnotnull but insufficient arguments"));
+                };
+
+                match value {
+                    Value::Null(_v) => {
+                        frame_mut.offset += *offset as i32 as u32 - 3;
+                        Ok(None)
+                    }
+                    Value::Object(_, _) => {
+                        Ok(None)
+                    }
+                    Value::String(_) => {
+                        // TODO: really need to make this an internal String-with-value situation,
+                        // but strings are not null....
+                        Ok(None)
+                    }
+                    other => {
+                        panic!("other: {:?}", other);
+                        Err(VMError::BadClass("ifnotnull but invalid operand types"))
+                    }
+                }
+            }
             Instruction::IfNonNull(offset) => {
                 let frame_mut = self.current_frame_mut();
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
@@ -1601,6 +1628,29 @@ impl VMState {
                         frame_mut
                             .operand_stack
                             .push(Value::Integer(l.wrapping_add(r)));
+                        Ok(None)
+                    }
+                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                }
+            }
+            Instruction::IMul => {
+                let frame_mut = self.current_frame_mut();
+                let left = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("imul but insufficient arguments"));
+                };
+                let right = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("imul but insufficient arguments"));
+                };
+
+                match (left, right) {
+                    (Value::Integer(l), Value::Integer(r)) => {
+                        frame_mut
+                            .operand_stack
+                            .push(Value::Integer(l.wrapping_mul(r)));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
@@ -1902,6 +1952,22 @@ impl VMState {
                     _ => Err(VMError::BadClass("ireturn but invalid operand types")),
                 }
             }
+            Instruction::LReturn => {
+                let frame_mut = self.current_frame_mut();
+                let value = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("lreturn but insufficient arguments"));
+                };
+
+                match value {
+                    Value::Long(_) => {
+                        self.leave();
+                        Ok(Some(value))
+                    }
+                    _ => Err(VMError::BadClass("lreturn but invalid operand types")),
+                }
+            }
             Instruction::AReturn => {
                 let frame_mut = self.current_frame_mut();
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
@@ -1988,6 +2054,13 @@ impl VMState {
                 Ok(None)
             }
             Instruction::Nop => { Ok(None) }
+            Instruction::Pop => {
+                self.current_frame_mut().operand_stack.pop();
+                Ok(None)
+            }
+            // TODO: zvm is not (yet) concurrent so all operations are already thread-safe.
+            Instruction::MonitorEnter => { Ok(None) }
+            Instruction::MonitorExit => { Ok(None) }
             other => {
                 todo!("implement {}", other);
             }
