@@ -36,7 +36,7 @@ impl CallFrame {
         mut arguments: Vec<Value>,
     ) -> Self {
         while arguments.len() < (body.max_locals as usize) {
-            arguments.push(Value::Array(Rc::new(RefCell::new(Vec::new().into_boxed_slice()))));
+            arguments.push(Value::Uninitialized);
         }
 
         CallFrame {
@@ -120,6 +120,9 @@ impl VMState {
         let operand = match argument {
             Some(argument) => match argument {
                 Value::Integer(v) => Value::Integer(*v),
+                Value::Uninitialized => {
+                    Value::default_of("I")
+                }
                 _ => {
                     return Err(VMError::BadClass("iload but not integer"));
                 }
@@ -150,6 +153,9 @@ impl VMState {
         let operand = match argument {
             Some(argument) => match argument {
                 Value::Long(v) => Value::Long(*v),
+                Value::Uninitialized => {
+                    Value::default_of("J")
+                }
                 _ => {
                     return Err(VMError::BadClass("lload but not long"));
                 }
@@ -180,6 +186,9 @@ impl VMState {
         let operand = match argument {
             Some(argument) => match argument {
                 Value::Float(v) => Value::Float(*v),
+                Value::Uninitialized => {
+                    Value::default_of("F")
+                }
                 _ => {
                     return Err(VMError::BadClass("fload but not float"));
                 }
@@ -210,6 +219,9 @@ impl VMState {
         let operand = match argument {
             Some(argument) => match argument {
                 Value::Double(v) => Value::Double(*v),
+                Value::Uninitialized => {
+                    Value::default_of("D")
+                }
                 _ => {
                     return Err(VMError::BadClass("dload but not double"));
                 }
@@ -239,6 +251,9 @@ impl VMState {
         let argument: Option<&Value> = frame_mut.arguments.get(idx as usize);
         let operand = match argument {
             // TODO: type check argument as an object?
+            Some(Value::Uninitialized) => {
+                Value::Null(String::new())
+            }
             Some(argument) => argument.clone(),
             None => {
                 return Err(VMError::BadClass("dload but insufficient arguments"));
@@ -1279,6 +1294,12 @@ impl VMState {
                         frame_mut.offset += *offset as i32 as u32 - 3;
                         Ok(None)
                     }
+                    Value::String(_) => {
+                        // TODO: really need to make this an internal String-with-value situation,
+                        // but strings are not null....
+                        frame_mut.offset += *offset as i32 as u32 - 3;
+                        Ok(None)
+                    }
                     _other => {
                         Err(VMError::BadClass("ifnotnull but invalid operand types"))
                     }
@@ -1887,6 +1908,7 @@ pub enum Value {
     String(Rc<Vec<u8>>),
     Object(Rc<RefCell<HashMap<String, Value>>>, Rc<ClassFile>),
     Null(String), // Null, of type `String`
+    Uninitialized,
 }
 
 impl Clone for Value {
@@ -1900,6 +1922,7 @@ impl Clone for Value {
             Value::String(v) => Value::String(Rc::clone(v)),
             Value::Object(v1, v2) => Value::Object(Rc::clone(v1), Rc::clone(v2)),
             Value::Null(v) => Value::Null(v.clone()),
+            Value::Uninitialized => Value::Uninitialized,
         }
     }
 }
@@ -1993,6 +2016,7 @@ impl Hash for ValueRef {
                 }
             }
             Value::Null(v) => v.hash(state),
+            Value::Uninitialized => 4.hash(state),
         }
     }
 }
@@ -2010,6 +2034,8 @@ impl PartialEq for ValueRef {
             (Value::Object(v1, _), Value::Object(v2, _)) => { Rc::ptr_eq(v1, v2) },
             (Value::String(v1), Value::String(v2)) => { Rc::ptr_eq(v1, v2) },
             (Value::Null(v1), Value::Null(v2)) => { v1 == v2 },
+            (Value::Uninitialized, _) => false,
+            (_, Value::Uninitialized) => false,
             _ => false,
         }
     }
