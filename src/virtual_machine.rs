@@ -2446,6 +2446,8 @@ impl VirtualMachine {
                     UnvalidatedConstant::Utf8(b"<init>".to_vec()),
                     UnvalidatedConstant::Utf8(b"()V".to_vec()),
                     UnvalidatedConstant::Class(ConstantIdx::new(1).unwrap()),
+                    UnvalidatedConstant::Utf8(b"get".to_vec()),
+                    UnvalidatedConstant::Utf8(b"()Ljava/lang/Object;".to_vec()),
                 ];
 
                 let mut native_methods: HashMap<
@@ -2453,6 +2455,7 @@ impl VirtualMachine {
                     fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>,
                 > = HashMap::new();
                 native_methods.insert("<init>()V".to_string(), object_init);
+                native_methods.insert("get()Ljava/lang/Object;".to_string(), thread_local_get);
 
                 let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
                     major_version: 55,
@@ -2468,6 +2471,12 @@ impl VirtualMachine {
                             access_flags: MethodAccessFlags { flags: 0x0101 },
                             name_index: ConstantIdx::new(2).unwrap(),
                             descriptor_index: ConstantIdx::new(3).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(5).unwrap(),
+                            descriptor_index: ConstantIdx::new(6).unwrap(),
                             attributes: Vec::new(),
                         },
                     ],
@@ -3701,6 +3710,30 @@ fn class_object_new(vm: &mut VirtualMachine, class_name: &str) -> Value {
     let fields = Rc::new(RefCell::new(HashMap::new()));
     fields.borrow_mut().insert("class".to_string(), Value::String(Rc::new(class_name.bytes().collect())));
     Value::Object(fields, class_class)
+}
+
+fn thread_local_get(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+
+    if let Value::Object(fields, _) = receiver {
+        if let Some(value) = fields.borrow().get("value") {
+            state
+                .current_frame_mut()
+                .operand_stack
+                .push(value.clone());
+        } else {
+            NULL_COUNT.fetch_add(1, Ordering::SeqCst);
+            state
+                .current_frame_mut()
+                .operand_stack
+                .push(Value::Null(String::new()));
+        }
+    }
+    Ok(())
 }
 
 fn float_to_raw_int_bits(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
