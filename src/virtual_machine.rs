@@ -2418,6 +2418,43 @@ impl VirtualMachine {
 
                 synthetic_class
             }
+            "java/lang/ThreadLocal" => {
+                let constants = vec![
+                    UnvalidatedConstant::Utf8(b"java/lang/ThreadLocal".to_vec()),
+                    UnvalidatedConstant::Utf8(b"<init>".to_vec()),
+                    UnvalidatedConstant::Utf8(b"()V".to_vec()),
+                    UnvalidatedConstant::Class(ConstantIdx::new(1).unwrap()),
+                ];
+
+                let mut native_methods: HashMap<
+                    String,
+                    fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>,
+                > = HashMap::new();
+                native_methods.insert("<init>()V".to_string(), object_init);
+
+                let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
+                    major_version: 55,
+                    minor_version: 0,
+                    constant_pool: constants,
+                    access_flags: AccessFlags { flags: 0x0001 },
+                    this_class: ConstantIdx::new(4).unwrap(),
+                    super_class: None,
+                    interfaces: Vec::new(),
+                    fields: vec![],
+                    methods: vec![
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(2).unwrap(),
+                            descriptor_index: ConstantIdx::new(3).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                    ],
+                    attributes: vec![],
+                    native_methods,
+                }).unwrap();
+
+                synthetic_class
+            }
             "java/lang/Throwable" => {
                 let constants = vec![
                     UnvalidatedConstant::Utf8(b"java/lang/Throwable".to_vec()),
