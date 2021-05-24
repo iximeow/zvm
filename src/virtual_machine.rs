@@ -2042,6 +2042,39 @@ impl VMState {
                 self.current_frame_mut().operand_stack.push(value);
                 Ok(None)
             }
+            Instruction::CheckCast(name) => {
+                let frame_mut = self.current_frame_mut();
+                let stack = &frame_mut.operand_stack;
+                let mut check_class = match &stack[stack.len() - 1] {
+                    Value::Object(_, cls) => {
+                        Rc::clone(cls)
+                    }
+                    Value::String(_) => {
+                        vm.resolve_class("java/lang/String").expect("strings exist")
+                    },
+                    Value::Null(_) => {
+                        return Ok(None);
+                    }
+                    _ => {
+                        return Err(VMError::BadClass("invalid operand for checkcast"))
+                    }
+                };
+
+                loop {
+                    let cls = Rc::clone(&check_class);
+                    if cls.this_class.as_str() == name.as_str() {
+                        return Ok(None);
+                    } else if cls.interfaces.contains(name) {
+                        return Ok(None);
+                    } else if let Some(super_class) = cls.super_class.as_ref() {
+                        // not this class, not an interface, maybe superclass?
+                        check_class = vm.resolve_class(super_class).expect("superclass exists");
+                    } else {
+                        // should be ClassCastException but not right now
+                        return Err(VMError::BadClass("checkclass failed"));
+                    }
+                }
+            }
             Instruction::Return => {
                 self.leave();
                 Ok(None)

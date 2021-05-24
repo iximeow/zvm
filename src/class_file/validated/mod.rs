@@ -261,7 +261,7 @@ pub struct ClassFile {
     pub(crate) this_class: String,
     pub(crate) super_class: Option<String>,
     constants: Vec<Rc<Constant>>,
-    interfaces: Vec<String>,
+    pub(crate) interfaces: Vec<String>,
     pub(crate) fields: Vec<Rc<FieldHandle>>,
     methods: Vec<Rc<MethodHandle>>,
     // currently support no attributes on classes
