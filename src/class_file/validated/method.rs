@@ -41,6 +41,19 @@ impl MethodBody {
             offset: offset as usize
         }
     }
+
+    pub fn native() -> MethodBody {
+        MethodBody {
+            max_stack: 65535,
+            max_locals: 65535,
+            bytes: Box::new([]),
+            exception_info: Vec::new(),
+            class_refs: HashMap::new(),
+            field_refs: HashMap::new(),
+            method_refs: HashMap::new(),
+            const_refs: HashMap::new(),
+        }
+    }
 }
 
 #[derive(Debug)]
