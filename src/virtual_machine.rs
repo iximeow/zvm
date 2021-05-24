@@ -2555,6 +2555,8 @@ impl VirtualMachine {
                     UnvalidatedConstant::Utf8(b"value".to_vec()),
                     UnvalidatedConstant::Utf8(b"(Ljava/lang/String;)Ljava/lang/String;".to_vec()),
                     UnvalidatedConstant::Utf8(b"concat".to_vec()),
+                    UnvalidatedConstant::Utf8(b"(II)Ljava/lang/String;".to_vec()),
+                    UnvalidatedConstant::Utf8(b"substring".to_vec()),
                     UnvalidatedConstant::Class(ConstantIdx::new(1).unwrap()),
                 ];
 
@@ -2569,13 +2571,14 @@ impl VirtualMachine {
                     "concat(Ljava/lang/String;)Ljava/lang/String;".to_string(),
                     string_concat,
                 );
+                native_methods.insert("substring(II)Ljava/lang/String;".to_string(), string_substring);
 
                 let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
                     major_version: 55,
                     minor_version: 0,
                     constant_pool: constants,
                     access_flags: AccessFlags { flags: 0x0001 },
-                    this_class: ConstantIdx::new(11).unwrap(),
+                    this_class: ConstantIdx::new(13).unwrap(),
                     super_class: None,
                     interfaces: Vec::new(),
                     fields: vec![FieldInfo {
@@ -2607,6 +2610,12 @@ impl VirtualMachine {
                             access_flags: MethodAccessFlags { flags: 0x0101 },
                             name_index: ConstantIdx::new(10).unwrap(),
                             descriptor_index: ConstantIdx::new(9).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(12).unwrap(),
+                            descriptor_index: ConstantIdx::new(11).unwrap(),
                             attributes: Vec::new(),
                         },
                     ],
@@ -3409,6 +3418,38 @@ fn string_concat(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VM
             ));
     } else {
         panic!("type error, expected string, string, got {:?}", argument);
+    }
+    Ok(())
+}
+// "substring(II)Ljava/lang/String;"
+fn string_substring(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let end = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    let start = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    let receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    if let (Value::String(s), Value::Integer(base), Value::Integer(end)) = (&receiver, &start, &end) {
+        if *base < 0 || *end < 0 {
+            panic!("invalid base or end in substring");
+        }
+        state
+            .current_frame_mut()
+            .operand_stack
+            .push(Value::String(
+                Rc::new(s[(*base as usize)..(*end as usize)].to_vec())
+            ));
+    } else {
+        panic!("type error, expected string, int, int, got {:?}, {:?}, {:?}", receiver, start, end);
     }
     Ok(())
 }
