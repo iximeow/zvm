@@ -998,11 +998,39 @@ impl VMState {
                     panic!("arraylength but value is not array");
                 }
             }
+            Instruction::AConstNull => {
+                let frame_mut = self.current_frame_mut();
+                frame_mut
+                    .operand_stack
+                    .push(Value::Null(String::new()));
+                Ok(None)
+            }
+            Instruction::DConst0 => {
+                let frame_mut = self.current_frame_mut();
+                frame_mut
+                    .operand_stack
+                    .push(Value::Double(0.0f64));
+                Ok(None)
+            }
+            Instruction::DConst1 => {
+                let frame_mut = self.current_frame_mut();
+                frame_mut
+                    .operand_stack
+                    .push(Value::Double(1.0f64));
+                Ok(None)
+            }
             Instruction::FConst0 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut
                     .operand_stack
                     .push(Value::Float(0.0f32));
+                Ok(None)
+            }
+            Instruction::FConst1 => {
+                let frame_mut = self.current_frame_mut();
+                frame_mut
+                    .operand_stack
+                    .push(Value::Float(1.0f32));
                 Ok(None)
             }
             Instruction::LConst0 => {
