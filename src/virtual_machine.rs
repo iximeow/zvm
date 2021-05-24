@@ -1441,11 +1441,11 @@ impl VMState {
                     Some(argument) => match argument {
                         Value::Integer(v) => { *v = v.wrapping_add(*constant as i32); }
                         _ => {
-                            return Err(VMError::BadClass("iload but not integer"));
+                            return Err(VMError::BadClass("iinc but not integer"));
                         }
                     },
                     None => {
-                        return Err(VMError::BadClass("iload but insufficient arguments"));
+                        return Err(VMError::BadClass("iinc but insufficient arguments"));
                     }
                 };
                 Ok(None)
@@ -1535,7 +1535,7 @@ impl VMState {
                     Value::Long(l) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Long(-l));
+                            .push(Value::Long(l.wrapping_neg()));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("lneg but invalid operand types")),
@@ -1714,7 +1714,7 @@ impl VMState {
                     Value::Integer(l) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Integer(-l));
+                            .push(Value::Integer(l.wrapping_neg()));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("ineg but invalid operand types")),
