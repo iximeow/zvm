@@ -4,6 +4,8 @@ use std::rc::Rc;
 use std::str::FromStr;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 
 use crate::class_file::validated::Instruction;
 use crate::class_file::unvalidated::AccessFlags;
@@ -20,6 +22,9 @@ use crate::class_file::validated::MethodBody;
 use crate::class_file::validated::MethodHandle;
 use crate::class_file::validated::MethodRef;
 use crate::class_file::unvalidated::MethodInfo;
+
+static NULL_COUNT: AtomicUsize = AtomicUsize::new(0);
+static NEW_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 #[allow(dead_code)]
 struct CallFrame {
@@ -259,6 +264,7 @@ impl VMState {
         let operand = match argument {
             // TODO: type check argument as an object?
             Some(Value::Uninitialized) => {
+                NULL_COUNT.fetch_add(1, Ordering::SeqCst);
                 Value::Null(String::new())
             }
             Some(argument) => argument.clone(),
@@ -418,6 +424,7 @@ impl VMState {
                 let mut elems = Vec::new();
                 if let Value::Integer(size) = top {
                     for _ in 0..size {
+                        NULL_COUNT.fetch_add(1, Ordering::SeqCst);
                         elems.push(Value::Null(String::new()));
                     }
                 }
@@ -430,6 +437,7 @@ impl VMState {
                 Ok(None)
             }
             Instruction::New(tpe) => {
+                NEW_COUNT.fetch_add(1, Ordering::SeqCst);
                 self.current_frame_mut()
                     .operand_stack
                     .push(Value::new_inst(
@@ -985,6 +993,7 @@ impl VMState {
                 }
             }
             Instruction::AConstNull => {
+                NULL_COUNT.fetch_add(1, Ordering::SeqCst);
                 let frame_mut = self.current_frame_mut();
                 frame_mut
                     .operand_stack
@@ -3080,6 +3089,19 @@ impl VirtualMachine {
             //            println!("Complete!");
         }
 
+        if first_run {
+            eprintln!("------");
+            eprintln!("STATS:");
+            eprintln!("  loaded {} classes", self.classes.len());
+            eprintln!("  loaded {} scala classes", self.classes.keys().filter(|x| x.starts_with("scala/")).count());
+            eprintln!("  {} static instances across {} classes",
+                self.static_instances.values().map(|values| values.len()).sum::<usize>(),
+                self.static_instances.len()
+            );
+            eprintln!("  {} nulls created", NULL_COUNT.load(Ordering::SeqCst));
+            eprintln!("  {} `new`s", NEW_COUNT.load(Ordering::SeqCst));
+        }
+
         Ok(None)
         //        Ok(state.return_value())
     }
@@ -3657,6 +3679,7 @@ fn system_identity_hash_code(state: &mut VMState, _vm: &mut VirtualMachine) -> R
 }
 
 fn system_get_security_manager(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    NULL_COUNT.fetch_add(1, Ordering::SeqCst);
     state
         .current_frame_mut()
         .operand_stack
