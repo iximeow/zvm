@@ -18,6 +18,7 @@ use crate::class_file::unvalidated::FieldInfo;
 use crate::class_file::unvalidated::MethodAccessFlags;
 use crate::class_file::validated::MethodBody;
 use crate::class_file::validated::MethodHandle;
+use crate::class_file::validated::MethodRef;
 use crate::class_file::unvalidated::MethodInfo;
 
 #[allow(dead_code)]
@@ -47,6 +48,12 @@ impl CallFrame {
             operand_stack: Vec::new(),
         }
     }
+}
+
+#[derive(Debug, Copy, Clone)]
+enum MethodKind {
+    Virtual,
+    Static,
 }
 
 pub struct VMState {
@@ -275,6 +282,31 @@ impl VMState {
         Ok(None)
     }
 
+    fn call_method(&mut self, vm: &mut VirtualMachine, method: &MethodRef, kind: MethodKind) {
+        let mut current_class = vm.resolve_class(&method.class_name).unwrap();
+        loop {
+            let target_class = Rc::clone(&current_class);
+            if let Some(native_method) = target_class.native_methods.get(&format!("{}{}", &method.name, &method.desc)) {
+                native_method(self, vm).expect("native method call works");
+                break;
+            } else if let Some(handle) = target_class.get_method(&method.name, &method.desc) {
+                if handle.access().is_native() {
+                    panic!("attempted to call native method with no implementation: {} - note, JNI resolution is not yet supported.", &method.name);
+                } else {
+                    interpreted_method_call(self, vm, handle, target_class, &method.desc, kind).unwrap();
+                    break;
+                }
+            } else {
+                // well if it's not on this class, maybe somewhere up the inheritance chain?
+                if target_class.super_class.is_none() {
+                    panic!("cannot find method {:?}", method);
+                }
+                let super_class = target_class.super_class.as_ref().expect("superclass exists");
+                current_class = vm.resolve_class(super_class).expect("can resolve superclass");
+            }
+        }
+    }
+
     fn execute(
         &mut self,
         instruction: &Instruction,
@@ -283,41 +315,16 @@ impl VMState {
 //        eprintln!("inst: {}", instruction);
         match instruction {
             Instruction::InvokeVirtual(method_ref) => {
-                let target_class = vm.resolve_class(&method_ref.class_name).unwrap();
-                // get method by name `method_name`
-                if let Some(native_method) = target_class.native_methods.get(&format!("{}{}", &method_ref.name, &method_ref.desc)) {
-                    native_method(self, vm)?;
-                    Ok(None)
-                } else {
-                    let method = target_class
-                        .get_method(&method_ref.name, &method_ref.desc)
-                        .expect("method exists");
-                    if method.access().is_native() {
-                        panic!("attempted to call native method with no implementation: {} - note, JNI resolution is not yet supported.", &method_ref.name);
-                    } else {
-                        interpreted_method_call(self, vm, method, target_class, &method_ref.desc, true)?;
-                    }
-                    Ok(None)
-                }
+                self.call_method(vm, &**method_ref, MethodKind::Virtual);
+                Ok(None)
+            }
+            Instruction::InvokeSpecial(method_ref) => {
+                self.call_method(vm, &**method_ref, MethodKind::Virtual);
+                Ok(None)
             }
             Instruction::InvokeStatic(method_ref) => {
-                let target_class = vm.resolve_class(&method_ref.class_name).unwrap();
-                // get method by name `method_name`
-                if let Some(native_method) = target_class.native_methods.get(&format!("{}{}", &method_ref.name, &method_ref.desc)) {
-                    native_method(self, vm)?;
-                    Ok(None)
-                } else {
-                    let method = target_class
-                        .get_method(&method_ref.name, &method_ref.desc)
-                        .expect("method exists");
-                    // get method by name `method_name`
-                    if method.access().is_native() {
-                        panic!("attempted to call native method with no implementation: {} - note, JNI resolution is not yet supported.", &method_ref.name);
-                    } else {
-                        interpreted_method_call(self, vm, method, target_class, &method_ref.desc, false)?;
-                        Ok(None)
-                    }
-                }
+                self.call_method(vm, &**method_ref, MethodKind::Static);
+                Ok(None)
             }
             Instruction::GetStatic(field_ref) => {
                 let target_class = vm.resolve_class(&field_ref.class_name).unwrap();
@@ -338,27 +345,6 @@ impl VMState {
 
                 vm.put_static_field(&target_class, &field_ref.name, &field_ref.desc, value);
                 Ok(None)
-            }
-            Instruction::InvokeSpecial(method_ref) => {
-                let target_class = vm.resolve_class(&method_ref.class_name).unwrap();
-                let method = target_class
-                    .get_method(&method_ref.name, &method_ref.desc)
-                    .expect("method exists");
-                // get method by name `method_name`
-                if let Some(native_method) = target_class.native_methods.get(&format!("{}{}", &method_ref.name, &method_ref.desc)) {
-                    native_method(self, vm)?;
-                    Ok(None)
-                } else {
-                    let method = target_class
-                        .get_method(&method_ref.name, &method_ref.desc)
-                        .expect("method exists");
-                    if method.access().is_native() {
-                        panic!("attempted to call native method with no implementation: {} - note, JNI resolution is not yet supported.", &method_ref.name);
-                    } else {
-                        interpreted_method_call(self, vm, method, target_class, &method_ref.desc, true)?;
-                    }
-                    Ok(None)
-                }
             }
             Instruction::GetField(field_ref) => {
                 let top = self
@@ -3054,7 +3040,7 @@ fn interpreted_method_call(
     method: Rc<MethodHandle>,
     method_class: Rc<ClassFile>,
     method_type: &str,
-    is_virtual: bool,
+    kind: MethodKind,
 ) -> Result<(), VMError> {
     // TODO: parse out arguments from method type, check against available operands, do the call
     //
@@ -3143,7 +3129,7 @@ fn interpreted_method_call(
     for _arg in args {
         real_args.push_front(frame.operand_stack.pop().expect("argument is present"));
     }
-    if is_virtual {
+    if let MethodKind::Virtual = kind {
         real_args.push_front(frame.operand_stack.pop().expect("argument is present"));
     }
 
