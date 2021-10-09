@@ -1545,6 +1545,10 @@ impl VMState {
                     Value::Null(_v) => {
                         Ok(None)
                     }
+                    Value::Array(_) => {
+                        frame_mut.offset += *offset as i32 as u32 - 3;
+                        Ok(None)
+                    }
                     Value::Object(_, _) => {
                         frame_mut.offset += *offset as i32 as u32 - 3;
                         Ok(None)
@@ -2231,6 +2235,10 @@ impl VMState {
                         self.leave();
                         Ok(Some(value))
                     }
+                    Value::Array(_) => {
+                        self.leave();
+                        Ok(Some(value))
+                    }
                     Value::Object(_, _) => {
                         self.leave();
                         Ok(Some(value))
@@ -2310,10 +2318,15 @@ impl VMState {
             Instruction::CheckCast(name) => {
                 let frame_mut = self.current_frame_mut();
                 let stack = &frame_mut.operand_stack;
+                let mut array = false;
                 let mut check_class = match &stack[stack.len() - 1] {
                     Value::Object(_, cls) => {
                         Rc::clone(cls)
                     }
+                    Value::Array(_) => {
+                        array = true;
+                        vm.resolve_class("java/lang/Object").expect("arrays are objects")
+                    },
                     Value::String(_) => {
                         vm.resolve_class("java/lang/String").expect("strings exist")
                     },
@@ -2325,11 +2338,22 @@ impl VMState {
                     }
                 };
 
+                let name = {
+                    if array {
+                        if !name.starts_with("[") {
+                            panic!("checkcast failed (was array, did not want array)");
+                        }
+                        &name[2..name.len()-1]
+                    } else {
+                        &name[..]
+                    }
+                };
+
                 loop {
                     let cls = Rc::clone(&check_class);
-                    if cls.this_class.as_str() == name.as_str() {
+                    if cls.this_class.as_str() == name {
                         return Ok(None);
-                    } else if cls.interfaces.contains(name) {
+                    } else if cls.interfaces.contains(&name.to_string()) {
                         return Ok(None);
                     } else if let Some(super_class) = cls.super_class.as_ref() {
                         // not this class, not an interface, maybe superclass?
