@@ -403,7 +403,28 @@ impl ClassFile {
                 }
             }
         }
-        let interfaces = Vec::new();
+        let mut interfaces = Vec::new();
+        for raw_interface in raw_class.interfaces.iter() {
+            let interface_const = raw_class.checked_const(*raw_interface)
+                .expect("class file constant pool indices are valid");
+            let interface_name = match interface_const {
+                unvalidated::Constant::Class(class) => {
+                    raw_class.checked_const(*class)
+                        .expect("class file constant pool indices are valid")
+                        .as_utf8()?
+                        .to_string()
+                },
+                other => {
+                    return Err(
+                        ValidationError::BadConst(
+                            format!("{:?}", other),
+                            "Class".to_string()
+                        )
+                    );
+                }
+            };
+            interfaces.push(interface_name);
+        }
         let mut fields = Vec::new();
         for raw_field in raw_class.fields.iter() {
             fields.push(Rc::new(FieldHandle::validate(raw_class, raw_field)?));
