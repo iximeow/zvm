@@ -2825,6 +2825,7 @@ impl VirtualMachine {
                     .with_method("concat", "(Ljava/lang/String;)Ljava/lang/String;", Some(string_concat))
                     .with_method("substring", "(II)Ljava/lang/String;", Some(string_substring))
                     .with_method("length", "()I", Some(string_length))
+                    .with_method("getChars", "(II[CI)V", Some(string_get_chars))
                     .with_field("value", "[B");
                 ClassFile::validate(&cls).unwrap()
             }
@@ -3632,6 +3633,56 @@ fn string_length(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VM
             .push(Value::Integer(s.len() as i32));
     } else {
         panic!("type error, expected string got {:?}", receiver);
+    }
+    Ok(())
+}
+// "getChars(II[CI)V"
+fn string_get_chars(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let dst_start = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    let dst = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    let src_end = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    let src_start = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    let receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    if let (
+        Value::String(src),
+        Value::Integer(src_start),
+        Value::Integer(src_end),
+        Value::Array(dst),
+        Value::Integer(dst_start)
+    ) = (&receiver, &src_start, &src_end, &dst, &dst_start) {
+        let src_start = *src_start;
+        let dst_start = *dst_start;
+        let src_end = *src_end;
+        let mut dst = dst.borrow_mut();
+
+        let count = src_end - src_start;
+
+        for i in 0..count {
+            let i = i as usize;
+            dst[dst_start as usize + i] = Value::Integer(src[src_start as usize + i] as i32);
+        }
+    } else {
+        panic!("type error, expected string, int, int, array, int {:?}, {:?}, {:?}, {:?}, {:?}", receiver, src_start, src_end, dst, dst_start);
     }
     Ok(())
 }
