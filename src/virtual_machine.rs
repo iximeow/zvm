@@ -2865,6 +2865,7 @@ impl VirtualMachine {
                     ],
                     attributes: vec![],
                     native_methods,
+                    patched: true,
                 }).unwrap();
 
                 synthetic_class
@@ -2911,6 +2912,7 @@ impl VirtualMachine {
                     ],
                     attributes: vec![],
                     native_methods,
+                    patched: true,
                 }).unwrap();
 
                 synthetic_class
@@ -2956,61 +2958,17 @@ impl VirtualMachine {
                     ],
                     attributes: vec![],
                     native_methods,
+                    patched: true,
                 }).unwrap();
 
                 synthetic_class
             }
             "java/lang/Object" => {
-                let constants = vec![
-                    UnvalidatedConstant::Utf8(b"java/lang/Object".to_vec()),
-                    UnvalidatedConstant::Utf8(b"<init>".to_vec()),
-                    UnvalidatedConstant::Utf8(b"hashCode".to_vec()),
-                    UnvalidatedConstant::Utf8(b"()I".to_vec()),
-                    UnvalidatedConstant::Utf8(b"()V".to_vec()),
-                    UnvalidatedConstant::Utf8(b"([B)V".to_vec()),
-                    UnvalidatedConstant::Utf8(b"[B".to_vec()),
-                    UnvalidatedConstant::Utf8(b"value".to_vec()),
-                    UnvalidatedConstant::Class(ConstantIdx::new(1).unwrap()),
-                    UnvalidatedConstant::Utf8(b"getClass".to_vec()),
-                    UnvalidatedConstant::Utf8(b"()Ljava/lang/Class;".to_vec()),
-                ];
-
-                let mut native_methods: HashMap<
-                    String,
-                    fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>,
-                > = HashMap::new();
-                native_methods.insert("<init>()V".to_string(), object_init);
-                native_methods.insert("hashCode()I".to_string(), object_hashcode);
-                native_methods.insert("getClass()Ljava/lang/Class;".to_string(), object_getclass);
-
-                let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
-                    major_version: 55,
-                    minor_version: 0,
-                    constant_pool: constants,
-                    access_flags: AccessFlags { flags: 0x0001 },
-                    this_class: ConstantIdx::new(9).unwrap(),
-                    super_class: None,
-                    interfaces: Vec::new(),
-                    fields: vec![],
-                    methods: vec![
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(2).unwrap(),
-                            descriptor_index: ConstantIdx::new(5).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(10).unwrap(),
-                            descriptor_index: ConstantIdx::new(11).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                    ],
-                    attributes: vec![],
-                    native_methods,
-                }).unwrap();
-
-                synthetic_class
+                let mut synthetic_class = UnvalidatedClassFile::synthetic("java/lang/Object")
+                    .with_method("<init>", "()V", Some(object_init))
+                    .with_method("hashCode", "()I", Some(object_hashcode))
+                    .with_method("getClass", "()Ljava/lang/Class;", Some(object_getclass));
+                ClassFile::validate(&synthetic_class).unwrap()
             }
             "java/lang/String" => {
                 let constants = vec![
@@ -3099,6 +3057,7 @@ impl VirtualMachine {
                     ],
                     attributes: vec![],
                     native_methods,
+                    patched: true,
                 }).unwrap();
 
                 synthetic_class
@@ -3165,6 +3124,7 @@ impl VirtualMachine {
                     ],
                     attributes: vec![],
                     native_methods,
+                    patched: true,
                 }).unwrap();
 
                 synthetic_class
@@ -3271,6 +3231,7 @@ impl VirtualMachine {
                     ],
                     attributes: vec![],
                     native_methods,
+                    patched: true,
                 }).unwrap();
 
                 synthetic_class
@@ -3332,6 +3293,7 @@ impl VirtualMachine {
                     ],
                     attributes: vec![],
                     native_methods,
+                    patched: true,
                 }).unwrap();
 
                 synthetic_class
@@ -3369,6 +3331,7 @@ impl VirtualMachine {
                     ],
                     attributes: vec![],
                     native_methods,
+                    patched: true,
                 }).unwrap();
 
                 synthetic_class
