@@ -2566,6 +2566,7 @@ enum NativeObject {
 
 pub struct VirtualMachine {
     classes: HashMap<String, Rc<ClassFile>>,
+    class_instances: HashMap<String, Rc<RefCell<HashMap<String, Value>>>>,
     static_instances: HashMap<ClassFileRef, HashMap<String, Value>>,
     native_instances: HashMap<ValueRef, RefCell<NativeObject>>,
     classpath: Vec<PathBuf>,
@@ -2588,6 +2589,7 @@ impl VirtualMachine {
     pub fn new(initial_classpath: Vec<PathBuf>) -> Self {
         VirtualMachine {
             classes: HashMap::new(),
+            class_instances: HashMap::new(),
             static_instances: HashMap::new(),
             native_instances: HashMap::new(),
             classpath: initial_classpath,
@@ -4066,10 +4068,17 @@ fn class_get_primitive_class(state: &mut VMState, _vm: &mut VirtualMachine) -> R
 }
 
 fn class_object_new(vm: &mut VirtualMachine, class_name: &str) -> Value {
-    let class_class = vm.resolve_class("java/lang/Class").unwrap();
-    let fields = Rc::new(RefCell::new(HashMap::new()));
-    fields.borrow_mut().insert("class".to_string(), Value::String(Rc::new(class_name.bytes().collect())));
-    Value::Object(fields, class_class)
+    let fields = if vm.class_instances.contains_key(class_name) {
+        Rc::clone(&vm.class_instances[class_name])
+    } else {
+        let mut fields = HashMap::new();
+        fields.insert("class".to_string(), Value::String(Rc::new(class_name.bytes().collect())));
+        let fields = Rc::new(RefCell::new(fields));
+        vm.class_instances.insert(class_name.to_string(), Rc::clone(&fields));
+        fields
+    };
+    let resolved = vm.resolve_class("java/lang/Class").unwrap();
+    Value::Object(fields, resolved)
 }
 
 fn thread_local_get(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
