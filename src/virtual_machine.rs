@@ -2347,6 +2347,50 @@ impl VMState {
                 self.current_frame_mut().operand_stack.push(value);
                 Ok(None)
             }
+            Instruction::InstanceOf(name) => {
+                let frame_mut = self.current_frame_mut();
+                let stack = &mut frame_mut.operand_stack;
+
+                let item = stack.pop().expect("operand available");
+
+                let mut item_class = {
+                    if item.is_null() {
+                        stack.push(Value::Integer(0));
+                        return Ok(None);
+                    }
+
+                    match item {
+                        Value::Object(_, cls) => {
+                            cls
+                        },
+                        Value::Array(_) => {
+                            vm.resolve_class("java/lang/Object").expect("object exists")
+                        }
+                        Value::String(_) => {
+                            vm.resolve_class("java/lang/String").expect("string exists")
+                        }
+                        other => {
+                            panic!("cant instanceof a non-reference type: {:?}", other);
+                        }
+                    }
+                };
+                loop {
+                    let cls = Rc::clone(&item_class);
+                    if cls.this_class.as_str() == name.as_str() {
+                        stack.push(Value::Integer(1));
+                        return Ok(None);
+                    } else if cls.interfaces.contains(&name.to_string()) {
+                        stack.push(Value::Integer(1));
+                        return Ok(None);
+                    } else if let Some(super_class) = cls.super_class.as_ref() {
+                        // not this class, not an interface, maybe superclass?
+                        item_class = vm.resolve_class(super_class).expect("superclass exists");
+                    } else {
+                        stack.push(Value::Integer(0));
+                        return Ok(None);
+                    }
+                }
+            }
             Instruction::CheckCast(name) => {
                 let frame_mut = self.current_frame_mut();
                 let stack = &frame_mut.operand_stack;
@@ -2522,6 +2566,14 @@ impl Value {
         }
 
         return None;
+    }
+
+    pub fn is_null(&self) -> bool {
+        if let Value::Null(_) = self {
+            true
+        } else {
+            false
+        }
     }
 }
 
