@@ -2801,6 +2801,8 @@ impl VirtualMachine {
                     UnvalidatedConstant::Utf8(b"()Ljava/lang/ClassLoader;".to_vec()),
                     UnvalidatedConstant::Utf8(b"getName".to_vec()),
                     UnvalidatedConstant::Utf8(b"()Ljava/lang/String;".to_vec()),
+                    UnvalidatedConstant::Utf8(b"getComponentType".to_vec()),
+                    UnvalidatedConstant::Utf8(b"()Ljava/lang/Class;".to_vec()),
                 ];
 
                 let mut native_methods: HashMap<
@@ -2812,6 +2814,7 @@ impl VirtualMachine {
                 native_methods.insert("getPrimitiveClass(Ljava/lang/String;)Ljava/lang/Class;".to_string(), class_get_primitive_class);
                 native_methods.insert("getClassLoader()Ljava/lang/ClassLoader;".to_string(), class_get_classloader);
                 native_methods.insert("getName()Ljava/lang/String;".to_string(), class_get_name);
+                native_methods.insert("getComponentType()Ljava/lang/Class;".to_string(), class_get_componenttype);
 
                 let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
                     major_version: 55,
@@ -2851,6 +2854,12 @@ impl VirtualMachine {
                             access_flags: MethodAccessFlags { flags: 0x0101 },
                             name_index: ConstantIdx::new(11).unwrap(),
                             descriptor_index: ConstantIdx::new(12).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(13).unwrap(),
+                            descriptor_index: ConstantIdx::new(14).unwrap(),
                             attributes: Vec::new(),
                         },
                     ],
@@ -2962,6 +2971,8 @@ impl VirtualMachine {
                     UnvalidatedConstant::Utf8(b"[B".to_vec()),
                     UnvalidatedConstant::Utf8(b"value".to_vec()),
                     UnvalidatedConstant::Class(ConstantIdx::new(1).unwrap()),
+                    UnvalidatedConstant::Utf8(b"getClass".to_vec()),
+                    UnvalidatedConstant::Utf8(b"()Ljava/lang/Class;".to_vec()),
                 ];
 
                 let mut native_methods: HashMap<
@@ -2970,6 +2981,7 @@ impl VirtualMachine {
                 > = HashMap::new();
                 native_methods.insert("<init>()V".to_string(), object_init);
                 native_methods.insert("hashCode()I".to_string(), object_hashcode);
+                native_methods.insert("getClass()Ljava/lang/Class;".to_string(), object_getclass);
 
                 let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
                     major_version: 55,
@@ -2985,6 +2997,12 @@ impl VirtualMachine {
                             access_flags: MethodAccessFlags { flags: 0x0101 },
                             name_index: ConstantIdx::new(2).unwrap(),
                             descriptor_index: ConstantIdx::new(5).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(10).unwrap(),
+                            descriptor_index: ConstantIdx::new(11).unwrap(),
                             attributes: Vec::new(),
                         },
                     ],
@@ -3009,6 +3027,8 @@ impl VirtualMachine {
                     UnvalidatedConstant::Utf8(b"(II)Ljava/lang/String;".to_vec()),
                     UnvalidatedConstant::Utf8(b"substring".to_vec()),
                     UnvalidatedConstant::Class(ConstantIdx::new(1).unwrap()),
+                    UnvalidatedConstant::Utf8(b"length".to_vec()),
+                    UnvalidatedConstant::Utf8(b"()I".to_vec()),
                 ];
 
                 let mut native_methods: HashMap<
@@ -3023,6 +3043,7 @@ impl VirtualMachine {
                     string_concat,
                 );
                 native_methods.insert("substring(II)Ljava/lang/String;".to_string(), string_substring);
+                native_methods.insert("length()I".to_string(), string_length);
 
                 let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
                     major_version: 55,
@@ -3067,6 +3088,12 @@ impl VirtualMachine {
                             access_flags: MethodAccessFlags { flags: 0x0101 },
                             name_index: ConstantIdx::new(12).unwrap(),
                             descriptor_index: ConstantIdx::new(11).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(14).unwrap(),
+                            descriptor_index: ConstantIdx::new(15).unwrap(),
                             attributes: Vec::new(),
                         },
                     ],
@@ -3161,6 +3188,8 @@ impl VirtualMachine {
                     UnvalidatedConstant::Utf8(b"()Ljava/lang/SecurityManager;".to_vec()),
                     UnvalidatedConstant::Utf8(b"getProperty".to_vec()),
                     UnvalidatedConstant::Utf8(b"(Ljava/lang/String;)Ljava/lang/String".to_vec()),
+                    UnvalidatedConstant::Utf8(b"arraycopy".to_vec()),
+                    UnvalidatedConstant::Utf8(b"(Ljava/lang/Object;ILjava/lang/Object;II)V".to_vec()),
                 ];
 
                 let mut native_methods: HashMap<
@@ -3172,6 +3201,7 @@ impl VirtualMachine {
                 native_methods.insert("identityHashCode(Ljava/lang/Object;)I".to_string(), system_identity_hash_code);
                 native_methods.insert("getSecurityManager()Ljava/lang/SecurityManager;".to_string(), system_get_security_manager);
                 native_methods.insert("getProperty(Ljava/lang/String;)Ljava/lang/String;".to_string(), system_get_property);
+                native_methods.insert("arraycopy(Ljava/lang/Object;ILjava/lang/Object;II)V".to_string(), system_arraycopy);
 
                 let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
                     major_version: 55,
@@ -3230,6 +3260,12 @@ impl VirtualMachine {
                             access_flags: MethodAccessFlags { flags: 0x0101 },
                             name_index: ConstantIdx::new(16).unwrap(),
                             descriptor_index: ConstantIdx::new(17).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(18).unwrap(),
+                            descriptor_index: ConstantIdx::new(19).unwrap(),
                             attributes: Vec::new(),
                         },
                     ],
@@ -3854,6 +3890,37 @@ fn object_hashcode(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), 
         .push(Value::Integer(0));
     Ok(())
 }
+fn object_getclass(state: &mut VMState, vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    if let Value::Object(_fields, cls) = receiver {
+        state.current_frame_mut()
+            .operand_stack
+            .push(class_object_new(vm, &cls.this_class));
+    } else if let Value::Array(_) = receiver {
+        // well.. this needs to be right one day
+        state.current_frame_mut()
+            .operand_stack
+            .push(class_object_new(vm, "java/lang/Object"));
+    } else {
+        panic!();
+    }
+    Ok(())
+}
+fn class_get_componenttype(state: &mut VMState, vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let _receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    state.current_frame_mut()
+        .operand_stack
+        .push(class_object_new(vm, "java/lang/Object"));
+    Ok(())
+}
 
 // "<init>(Ljava/lang/String;)V"
 fn string_init_string(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
@@ -4065,6 +4132,23 @@ fn string_substring(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(),
     }
     Ok(())
 }
+// "length()I"
+fn string_length(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    if let Value::String(s) = &receiver {
+        state
+            .current_frame_mut()
+            .operand_stack
+            .push(Value::Integer(s.len() as i32));
+    } else {
+        panic!("type error, expected string got {:?}", receiver);
+    }
+    Ok(())
+}
 
 fn system_clinit(_state: &mut VMState, vm: &mut VirtualMachine) -> Result<(), VMError> {
     let java_lang_system_class = vm.resolve_class("java/lang/System").unwrap();
@@ -4154,6 +4238,88 @@ fn system_get_property(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<
 
     state.current_frame_mut().operand_stack.push(property);
     Ok(())
+}
+
+fn array_newarray(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let count = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    let cls = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+
+    if let (
+        Value::Object(_fields, _cls),
+        Value::Integer(count)
+    ) = (cls, count) {
+        let mut elems = Vec::new();
+        for _ in 0..count {
+            NULL_COUNT.fetch_add(1, Ordering::SeqCst);
+            elems.push(Value::Null(String::new()));
+        }
+
+        state.current_frame_mut()
+            .operand_stack
+            .push(Value::Array(
+                Rc::new(RefCell::new(elems.into_boxed_slice())),
+            ));
+
+        Ok(())
+    } else {
+        panic!("arraycopy with bad types");
+    }
+}
+
+
+fn system_arraycopy(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let count = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    let dest_offset = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    let dest = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    let src_offset = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    let src = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+
+    if let (
+        Value::Array(src_data),
+        Value::Array(dest_data),
+        Value::Integer(src_offset),
+        Value::Integer(dest_offset),
+        Value::Integer(count)
+    ) = (src, dest, src_offset, dest_offset, count) {
+        let src = &mut src_data.borrow_mut()[src_offset as usize..];
+        let dest = &mut dest_data.borrow_mut()[dest_offset as usize..];
+
+        for i in 0..count {
+            let i = i as usize;
+            dest[i] = src[i].clone();
+        }
+        Ok(())
+    } else {
+        panic!("arraycopy with bad types");
+    }
 }
 
 fn class_desired_assertion_status(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
@@ -4367,6 +4533,9 @@ fn augment_classfile(mut class_file: ClassFile) -> ClassFile {
                     .push(new_instance(vm, "org/apache/logging/log4j/Logger")?);
                 Ok(())
             });
+        }
+        "java/lang/reflect/Array" => {
+            class_file.native_methods.insert("newArray(Ljava/lang/Class;I)Ljava/lang/Object;".to_string(), array_newarray);
         }
         "java/lang/Runtime" => {
             class_file.native_methods.insert("availableProcessors()I".to_string(), runtime_availableprocessors);
