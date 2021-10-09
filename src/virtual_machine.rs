@@ -2821,6 +2821,7 @@ impl VirtualMachine {
                 let mut cls = UnvalidatedClassFile::synthetic("java/lang/String")
                     .with_method("<init>", "(Ljava/lang/String;)V", Some(string_init_string))
                     .with_method("<init>", "([B)V", Some(string_init_bytearray))
+                    .with_method("<init>", "([C)V", Some(string_init_chararray))
                     .with_method("hashCode", "()I", Some(string_hashcode))
                     .with_method("concat", "(Ljava/lang/String;)Ljava/lang/String;", Some(string_concat))
                     .with_method("substring", "(II)Ljava/lang/String;", Some(string_substring))
@@ -3510,6 +3511,38 @@ fn string_init_bytearray(state: &mut VMState, _vm: &mut VirtualMachine) -> Resul
                 } else {
                     str_elems.push(Value::Integer(0xfffd));
                 }
+            } else {
+                panic!("bad string");
+            }
+        }
+        fields.borrow_mut().insert(
+            "value".to_string(),
+            Value::Array(Rc::new(RefCell::new(str_elems.into_boxed_slice()))),
+        );
+    } else {
+        panic!("type error, expected string, got {:?}", argument);
+    }
+    Ok(())
+}
+// "<init>([C)"
+fn string_init_chararray(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let argument = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    let receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    if let (Value::Array(new_elems), Value::Object(fields, _)) =
+        (&argument, &receiver)
+    {
+        let mut str_elems = Vec::new();
+        for el in new_elems.borrow().iter() {
+            if let Value::Integer(i) = el {
+                str_elems.push(Value::Integer(*i));
             } else {
                 panic!("bad string");
             }
