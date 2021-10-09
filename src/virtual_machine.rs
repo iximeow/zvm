@@ -3282,7 +3282,15 @@ impl VirtualMachine {
         let rc = Rc::new(class_file);
         self.classes.insert(class_name, Rc::clone(&rc));
 
-        if let Some(method) = rc.get_method("<clinit>", "()V") {
+        if let Some(native_method) = rc.native_methods.get("<clinit>()V") {
+            let mut state = VMState::new(
+                Rc::new(MethodBody::native()),
+                Rc::clone(&rc),
+                "<clinit>".to_string(),
+                vec![],
+            );
+            native_method(&mut state, self)?;
+        } else if let Some(method) = rc.get_method("<clinit>", "()V") {
             if method.access().is_native() {
                 let mut state = VMState::new(
                     Rc::new(MethodBody::native()),
