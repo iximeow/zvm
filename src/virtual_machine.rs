@@ -332,6 +332,32 @@ impl VMState {
                 self.call_method(vm, &**method_ref, MethodKind::Static);
                 Ok(None)
             }
+            Instruction::InvokeInterface(method_ref, count) => {
+                // resolve method, *then* call it...
+                let frame = self.current_frame();
+                let stack = &frame.operand_stack;
+                let this = &stack[stack.len() - (*count) as usize];
+                if let Value::Object(inst, cls) = &this {
+                    let mut current_class = Rc::clone(cls);
+                    let new_ref: MethodRef = loop {
+                        if let Some(handle) = current_class.get_method(&method_ref.name, &method_ref.desc) {
+                            break MethodRef {
+                                class_name: current_class.this_class.to_string(),
+                                name: method_ref.name.to_string(),
+                                desc: method_ref.desc.to_string()
+                            };
+                        } else {
+                            let super_class = current_class.super_class.as_ref().expect("superclass exists");
+                            current_class = vm.resolve_class(super_class).expect("can resolve superclass");
+                        }
+                    };
+
+                    self.call_method(vm, &new_ref, MethodKind::Virtual);
+                } else {
+                    panic!("invokeinterface on non-object: {:?}", this);
+                }
+                Ok(None)
+            }
             Instruction::GetStatic(field_ref) => {
                 let target_class = vm.resolve_class(&field_ref.class_name).unwrap();
                 let value = vm

@@ -232,8 +232,39 @@ fn make_refs<'validation>(
                 method_refs.insert(position as u32, Rc::new(method_ref));
             }
         }
-        Instruction::InvokeInterface(_method_idx, _count) => {
-//            panic!("invokeinterface is not yet validated");
+        Instruction::InvokeInterface(method_idx, _count) => {
+            if let Some(unvalidated::Constant::InterfaceMethodref(class_idx, name_and_type_idx)) =
+                raw_class.get_const(*method_idx)
+            {
+                let referent_class_name = match raw_class.checked_const(*class_idx)? {
+                    unvalidated::Constant::Class(class_name_idx) => {
+                        raw_class.get_str(*class_name_idx).unwrap()
+                    }
+                    o => {
+                        return Err(ValidationError::BadConst(o.type_name().to_string(), "Class".to_string()));
+                    }
+                };
+
+                // and now the name/type
+                let (name, desc) = match raw_class.checked_const(*name_and_type_idx)? {
+                    unvalidated::Constant::NameAndType(name_idx, type_idx) => {
+                        (
+                            raw_class.get_str(*name_idx).unwrap().to_string(),
+                            raw_class.get_str(*type_idx).unwrap().to_string(),
+                        )
+                    }
+                    o => {
+                        return Err(ValidationError::BadConst(o.type_name().to_string(), "NameAndType".to_string()));
+                    }
+                };
+                let method_ref = MethodRef {
+                    class_name: referent_class_name.to_string(),
+                    name,
+                    desc,
+                };
+                // TODO: check position < u32::max
+                method_refs.insert(position as u32, Rc::new(method_ref));
+            }
         }
         Instruction::InvokeDynamic(call_site_idx) => {
             if let Some(unvalidated::Constant::InvokeDynamic(bootstrap_idx, name_and_type_idx)) =

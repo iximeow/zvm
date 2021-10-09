@@ -226,7 +226,7 @@ fn validate_inst(handle: &MethodBody, position: u32, raw_inst: &unvalidated::Ins
         unvalidated::Instruction::InvokeVirtual(_) => Instruction::InvokeVirtual(Rc::clone(&handle.method_refs[&position])),
         unvalidated::Instruction::InvokeSpecial(_) => Instruction::InvokeSpecial(Rc::clone(&handle.method_refs[&position])),
         unvalidated::Instruction::InvokeStatic(_) => Instruction::InvokeStatic(Rc::clone(&handle.method_refs[&position])),
-        unvalidated::Instruction::InvokeInterface(v1, v2) => Instruction::InvokeInterface(*v1, *v2),
+        unvalidated::Instruction::InvokeInterface(_, v2) => Instruction::InvokeInterface(Rc::clone(&handle.method_refs[&position]), *v2),
         unvalidated::Instruction::InvokeDynamic(v) => Instruction::InvokeDynamic(*v),
         unvalidated::Instruction::New(_) => Instruction::New(Rc::clone(&handle.class_refs[&position])),
         unvalidated::Instruction::ANewArray(v) => Instruction::ANewArray(*v),

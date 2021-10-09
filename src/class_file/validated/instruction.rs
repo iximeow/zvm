@@ -251,10 +251,10 @@ impl fmt::Display for Instruction {
                 methodref.name,
                 methodref.desc,
             ),
-            Instruction::InvokeInterface(idx, count) => write!(
+            Instruction::InvokeInterface(methodref, count) => write!(
                 f,
-                "invokeinterface {}, {}",
-                idx.inner(),
+                "invokeinterface ({}.{}: {}), {} args",
+                methodref.class_name, methodref.name, methodref.desc,
                 count
             ),
             Instruction::InvokeDynamic(idx) => write!(
@@ -483,7 +483,7 @@ pub enum Instruction {
     InvokeVirtual(Rc<MethodRef>),
     InvokeSpecial(Rc<MethodRef>),
     InvokeStatic(Rc<MethodRef>),
-    InvokeInterface(ConstantIdx, u8),
+    InvokeInterface(Rc<MethodRef>, u8),
     InvokeDynamic(ConstantIdx),
     New(Rc<String>),
     ANewArray(u16),
