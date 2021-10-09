@@ -2411,7 +2411,11 @@ impl fmt::Debug for Value {
                 write!(f, "Array({:?})", array.borrow().as_ref())
             },
             Value::String(bytes) => {
-                write!(f, "String({:?})", bytes)
+                if let Ok(s) = std::str::from_utf8(bytes) {
+                    write!(f, "String({:?})", s)
+                } else {
+                    write!(f, "String({:?})", bytes)
+                }
             }
             Value::Object(instance, cls) => {
                 write!(f, "Object({:?}, {})", instance.borrow(), &cls.this_class)
