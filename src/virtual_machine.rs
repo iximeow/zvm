@@ -2715,6 +2715,8 @@ impl VirtualMachine {
                     UnvalidatedConstant::Utf8(b"(Ljava/lang/String;)Ljava/lang/Class;".to_vec()),
                     UnvalidatedConstant::Utf8(b"getClassLoader".to_vec()),
                     UnvalidatedConstant::Utf8(b"()Ljava/lang/ClassLoader;".to_vec()),
+                    UnvalidatedConstant::Utf8(b"getName".to_vec()),
+                    UnvalidatedConstant::Utf8(b"()Ljava/lang/String;".to_vec()),
                 ];
 
                 let mut native_methods: HashMap<
@@ -2725,6 +2727,7 @@ impl VirtualMachine {
                 native_methods.insert("desiredAssertionStatus()Z".to_string(), class_desired_assertion_status);
                 native_methods.insert("getPrimitiveClass(Ljava/lang/String;)Ljava/lang/Class;".to_string(), class_get_primitive_class);
                 native_methods.insert("getClassLoader()Ljava/lang/ClassLoader;".to_string(), class_get_classloader);
+                native_methods.insert("getName()Ljava/lang/String;".to_string(), class_get_name);
 
                 let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
                     major_version: 55,
@@ -2758,6 +2761,12 @@ impl VirtualMachine {
                             access_flags: MethodAccessFlags { flags: 0x0101 },
                             name_index: ConstantIdx::new(9).unwrap(),
                             descriptor_index: ConstantIdx::new(10).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(11).unwrap(),
+                            descriptor_index: ConstantIdx::new(12).unwrap(),
                             attributes: Vec::new(),
                         },
                     ],
@@ -4075,6 +4084,26 @@ fn class_get_primitive_class(state: &mut VMState, _vm: &mut VirtualMachine) -> R
         .current_frame_mut()
         .operand_stack
         .push(Value::Null("some primitive class".to_string()));
+    Ok(())
+}
+
+fn class_get_name(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+
+    if let Value::Object(fields, _) = receiver {
+        if let Some(value) = fields.borrow().get("class") {
+            state
+                .current_frame_mut()
+                .operand_stack
+                .push(value.clone());
+        } else {
+            panic!("getName called on class with no class member?");
+        }
+    }
     Ok(())
 }
 
