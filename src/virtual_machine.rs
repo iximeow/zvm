@@ -1160,9 +1160,16 @@ impl VMState {
                 };
 
                 match (left, right) {
+                    (Value::Array(l), Value::Array(r)) => {
+                        if !Rc::ptr_eq(&l, &r) {
+                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            Ok(None)
+                        } else {
+                            Ok(None)
+                        }
+                    }
                     (Value::Object(l, _lcls), Value::Object(r, _rcls)) => {
                         if !Rc::ptr_eq(&l, &r) {
-                            println!("compare ne");
                             frame_mut.offset += *offset as i32 as u32 - 3;
                             Ok(None)
                         } else {
