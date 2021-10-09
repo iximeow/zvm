@@ -4054,8 +4054,9 @@ fn system_get_property(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<
                     Value::String(Rc::new("UTF-8".bytes().collect()))
                 }
                 _ => {
-                    eprintln!("{}", unsafe { std::str::from_utf8_unchecked(&data) });
-                    panic!("get_property {:?}", data);
+                    let property_name = unsafe { std::str::from_utf8_unchecked(&data) };
+                    eprintln!("------------ get_property {:?}", property_name);
+                    Value::Null(String::new())
                 }
             }
         }
