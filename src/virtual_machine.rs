@@ -2782,559 +2782,82 @@ impl VirtualMachine {
     }
 
     pub fn resolve_class(&mut self, referent: &str) -> Result<Rc<ClassFile>, VMError> {
+//        eprintln!("resolve class: {}", referent);
         if let Some(class_file) = self.classes.get(referent) {
             return Ok(Rc::clone(class_file));
         }
 
         let new_class = match referent {
             "java/lang/Class" => {
-                let constants = vec![
-                    UnvalidatedConstant::Utf8(b"java/lang/Class".to_vec()),
-                    UnvalidatedConstant::Utf8(b"<init>".to_vec()),
-                    UnvalidatedConstant::Utf8(b"()V".to_vec()),
-                    UnvalidatedConstant::Class(ConstantIdx::new(1).unwrap()),
-                    UnvalidatedConstant::Utf8(b"desiredAssertionStatus".to_vec()),
-                    UnvalidatedConstant::Utf8(b"()Z".to_vec()),
-                    UnvalidatedConstant::Utf8(b"getPrimitiveClass".to_vec()),
-                    UnvalidatedConstant::Utf8(b"(Ljava/lang/String;)Ljava/lang/Class;".to_vec()),
-                    UnvalidatedConstant::Utf8(b"getClassLoader".to_vec()),
-                    UnvalidatedConstant::Utf8(b"()Ljava/lang/ClassLoader;".to_vec()),
-                    UnvalidatedConstant::Utf8(b"getName".to_vec()),
-                    UnvalidatedConstant::Utf8(b"()Ljava/lang/String;".to_vec()),
-                    UnvalidatedConstant::Utf8(b"getComponentType".to_vec()),
-                    UnvalidatedConstant::Utf8(b"()Ljava/lang/Class;".to_vec()),
-                ];
-
-                let mut native_methods: HashMap<
-                    String,
-                    fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>,
-                > = HashMap::new();
-                native_methods.insert("<init>()V".to_string(), object_init);
-                native_methods.insert("desiredAssertionStatus()Z".to_string(), class_desired_assertion_status);
-                native_methods.insert("getPrimitiveClass(Ljava/lang/String;)Ljava/lang/Class;".to_string(), class_get_primitive_class);
-                native_methods.insert("getClassLoader()Ljava/lang/ClassLoader;".to_string(), class_get_classloader);
-                native_methods.insert("getName()Ljava/lang/String;".to_string(), class_get_name);
-                native_methods.insert("getComponentType()Ljava/lang/Class;".to_string(), class_get_componenttype);
-
-                let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
-                    major_version: 55,
-                    minor_version: 0,
-                    constant_pool: constants,
-                    access_flags: AccessFlags { flags: 0x0001 },
-                    this_class: ConstantIdx::new(4).unwrap(),
-                    super_class: None,
-                    interfaces: Vec::new(),
-                    fields: vec![],
-                    methods: vec![
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(2).unwrap(),
-                            descriptor_index: ConstantIdx::new(3).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(5).unwrap(),
-                            descriptor_index: ConstantIdx::new(6).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(7).unwrap(),
-                            descriptor_index: ConstantIdx::new(8).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(9).unwrap(),
-                            descriptor_index: ConstantIdx::new(10).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(11).unwrap(),
-                            descriptor_index: ConstantIdx::new(12).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(13).unwrap(),
-                            descriptor_index: ConstantIdx::new(14).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                    ],
-                    attributes: vec![],
-                    native_methods,
-                    patched: true,
-                }).unwrap();
-
-                synthetic_class
+                let mut cls = UnvalidatedClassFile::synthetic("java/lang/Class")
+                    .with_method("<init>", "()V", Some(object_init))
+                    .with_method("desiredAssertionStatus", "()Z", Some(class_desired_assertion_status))
+                    .with_method("getPrimitiveClass", "(Ljava/lang/String;)Ljava/lang/Class;", Some(class_get_primitive_class))
+                    .with_method("getClassLoader", "()Ljava/lang/ClassLoader;", Some(class_get_classloader))
+                    .with_method("getName", "()Ljava/lang/String;", Some(class_get_name))
+                    .with_method("getComponentType", "()Ljava/lang/Class;", Some(class_get_componenttype));
+                ClassFile::validate(&cls).unwrap()
             }
             "java/lang/ThreadLocal" => {
-                let constants = vec![
-                    UnvalidatedConstant::Utf8(b"java/lang/ThreadLocal".to_vec()),
-                    UnvalidatedConstant::Utf8(b"<init>".to_vec()),
-                    UnvalidatedConstant::Utf8(b"()V".to_vec()),
-                    UnvalidatedConstant::Class(ConstantIdx::new(1).unwrap()),
-                    UnvalidatedConstant::Utf8(b"get".to_vec()),
-                    UnvalidatedConstant::Utf8(b"()Ljava/lang/Object;".to_vec()),
-                ];
-
-                let mut native_methods: HashMap<
-                    String,
-                    fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>,
-                > = HashMap::new();
-                native_methods.insert("<init>()V".to_string(), object_init);
-                native_methods.insert("get()Ljava/lang/Object;".to_string(), thread_local_get);
-
-                let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
-                    major_version: 55,
-                    minor_version: 0,
-                    constant_pool: constants,
-                    access_flags: AccessFlags { flags: 0x0001 },
-                    this_class: ConstantIdx::new(4).unwrap(),
-                    super_class: None,
-                    interfaces: Vec::new(),
-                    fields: vec![],
-                    methods: vec![
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(2).unwrap(),
-                            descriptor_index: ConstantIdx::new(3).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(5).unwrap(),
-                            descriptor_index: ConstantIdx::new(6).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                    ],
-                    attributes: vec![],
-                    native_methods,
-                    patched: true,
-                }).unwrap();
-
-                synthetic_class
+                let mut cls = UnvalidatedClassFile::synthetic("java/lang/ThreadLocal")
+                    .with_method("<init>", "()V", Some(object_init))
+                    .with_method("get", "()Ljava/lang/Object;", Some(thread_local_get));
+                ClassFile::validate(&cls).unwrap()
             }
             "java/lang/Throwable" => {
-                let constants = vec![
-                    UnvalidatedConstant::Utf8(b"java/lang/Throwable".to_vec()),
-                    UnvalidatedConstant::Utf8(b"<init>".to_vec()),
-                    UnvalidatedConstant::Utf8(b"()V".to_vec()),
-                    UnvalidatedConstant::Class(ConstantIdx::new(1).unwrap()),
-                    UnvalidatedConstant::Utf8(b"(Ljava/lang/String;)V".to_vec()),
-                ];
-
-                let mut native_methods: HashMap<
-                    String,
-                    fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>,
-                > = HashMap::new();
-                native_methods.insert("<init>()V".to_string(), object_init);
-                native_methods.insert("<init>(Ljava/lang/String;)V".to_string(), throwable_init_string);
-
-                let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
-                    major_version: 55,
-                    minor_version: 0,
-                    constant_pool: constants,
-                    access_flags: AccessFlags { flags: 0x0001 },
-                    this_class: ConstantIdx::new(4).unwrap(),
-                    super_class: None,
-                    interfaces: Vec::new(),
-                    fields: vec![],
-                    methods: vec![
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(2).unwrap(),
-                            descriptor_index: ConstantIdx::new(3).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(2).unwrap(),
-                            descriptor_index: ConstantIdx::new(5).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                    ],
-                    attributes: vec![],
-                    native_methods,
-                    patched: true,
-                }).unwrap();
-
-                synthetic_class
+                let mut cls = UnvalidatedClassFile::synthetic("java/lang/Throwable")
+                    .with_method("<init>", "()V", Some(object_init))
+                    .with_method("<init>", "(Ljava/lang/String;)V", Some(throwable_init_string));
+                ClassFile::validate(&cls).unwrap()
             }
             "java/lang/Object" => {
-                let mut synthetic_class = UnvalidatedClassFile::synthetic("java/lang/Object")
+                let mut cls = UnvalidatedClassFile::synthetic("java/lang/Object")
                     .with_method("<init>", "()V", Some(object_init))
                     .with_method("hashCode", "()I", Some(object_hashcode))
                     .with_method("getClass", "()Ljava/lang/Class;", Some(object_getclass));
-                ClassFile::validate(&synthetic_class).unwrap()
+                ClassFile::validate(&cls).unwrap()
             }
             "java/lang/String" => {
-                let constants = vec![
-                    UnvalidatedConstant::Utf8(b"java/lang/String".to_vec()),
-                    UnvalidatedConstant::Utf8(b"<init>".to_vec()),
-                    UnvalidatedConstant::Utf8(b"hashCode".to_vec()),
-                    UnvalidatedConstant::Utf8(b"()I".to_vec()),
-                    UnvalidatedConstant::Utf8(b"(Ljava/lang/String;)".to_vec()),
-                    UnvalidatedConstant::Utf8(b"([B)V".to_vec()),
-                    UnvalidatedConstant::Utf8(b"[B".to_vec()),
-                    UnvalidatedConstant::Utf8(b"value".to_vec()),
-                    UnvalidatedConstant::Utf8(b"(Ljava/lang/String;)Ljava/lang/String;".to_vec()),
-                    UnvalidatedConstant::Utf8(b"concat".to_vec()),
-                    UnvalidatedConstant::Utf8(b"(II)Ljava/lang/String;".to_vec()),
-                    UnvalidatedConstant::Utf8(b"substring".to_vec()),
-                    UnvalidatedConstant::Class(ConstantIdx::new(1).unwrap()),
-                    UnvalidatedConstant::Utf8(b"length".to_vec()),
-                    UnvalidatedConstant::Utf8(b"()I".to_vec()),
-                ];
-
-                let mut native_methods: HashMap<
-                    String,
-                    fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>,
-                > = HashMap::new();
-                native_methods.insert("<init>(Ljava/lang/String;)".to_string(), string_init_string);
-                native_methods.insert("<init>([B)V".to_string(), string_init_bytearray);
-                native_methods.insert("hashCode()I".to_string(), string_hashcode);
-                native_methods.insert(
-                    "concat(Ljava/lang/String;)Ljava/lang/String;".to_string(),
-                    string_concat,
-                );
-                native_methods.insert("substring(II)Ljava/lang/String;".to_string(), string_substring);
-                native_methods.insert("length()I".to_string(), string_length);
-
-                let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
-                    major_version: 55,
-                    minor_version: 0,
-                    constant_pool: constants,
-                    access_flags: AccessFlags { flags: 0x0001 },
-                    this_class: ConstantIdx::new(13).unwrap(),
-                    super_class: None,
-                    interfaces: Vec::new(),
-                    fields: vec![FieldInfo {
-                        access_flags: FieldAccessFlags { flags: 0x0001 },
-                        name_index: ConstantIdx::new(8).unwrap(),
-                        descriptor_index: ConstantIdx::new(7).unwrap(),
-                        attributes: Vec::new(),
-                    }],
-                    methods: vec![
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(2).unwrap(),
-                            descriptor_index: ConstantIdx::new(5).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(2).unwrap(),
-                            descriptor_index: ConstantIdx::new(6).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(3).unwrap(),
-                            descriptor_index: ConstantIdx::new(4).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(10).unwrap(),
-                            descriptor_index: ConstantIdx::new(9).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(12).unwrap(),
-                            descriptor_index: ConstantIdx::new(11).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(14).unwrap(),
-                            descriptor_index: ConstantIdx::new(15).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                    ],
-                    attributes: vec![],
-                    native_methods,
-                    patched: true,
-                }).unwrap();
-
-                synthetic_class
+                let mut cls = UnvalidatedClassFile::synthetic("java/lang/String")
+                    .with_method("<init>", "(Ljava/lang/String;)V", Some(string_init_string))
+                    .with_method("<init>", "([B)V", Some(string_init_bytearray))
+                    .with_method("hashCode", "()I", Some(string_hashcode))
+                    .with_method("concat", "(Ljava/lang/String;)Ljava/lang/String;", Some(string_concat))
+                    .with_method("substring", "(II)Ljava/lang/String;", Some(string_substring))
+                    .with_method("length", "()I", Some(string_length))
+                    .with_field("value", "[B");
+                ClassFile::validate(&cls).unwrap()
             }
             "java/lang/StringBuilder" => {
-                let constants = vec![
-                    UnvalidatedConstant::Utf8(b"java/lang/StringBuilder".to_vec()),
-                    UnvalidatedConstant::Utf8(b"<init>".to_vec()),
-                    UnvalidatedConstant::Utf8(b"()V".to_vec()),
-                    UnvalidatedConstant::Utf8(b"(Ljava/lang/String;)V".to_vec()),
-                    UnvalidatedConstant::Utf8(b"append".to_vec()),
-//                    UnvalidatedConstant::Utf8(b"(B)Ljava/lang/String;".to_vec()),
-//                    UnvalidatedConstant::Utf8(b"(C)Ljava/lang/String;".to_vec()),
-//                    UnvalidatedConstant::Utf8(b"([C)Ljava/lang/String;".to_vec()),
-                    UnvalidatedConstant::Utf8(b"(Ljava/lang/String;)Ljava/lang/StringBuilder;".to_vec()),
-                    UnvalidatedConstant::Utf8(b"toString".to_vec()),
-                    UnvalidatedConstant::Utf8(b"()Ljava/lang/String;".to_vec()),
-                ];
-
-                let mut native_methods: HashMap<
-                    String,
-                    fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>,
-                > = HashMap::new();
-                native_methods.insert("<init>()V".to_string(), stringbuilder_init);
-                native_methods.insert("<init>(Ljava/lang/String;)V".to_string(), string_init_string);
-                native_methods.insert("append(Ljava/lang/String;)Ljava/lang/StringBuilder;".to_string(), stringbuilder_append_string);
-//                native_methods.insert("append([C)Ljava/lang/StringBuilder".to_string(), stringbuilder_append_chars);
-                native_methods.insert("toString()Ljava/lang/String;".to_string(), stringbuilder_tostring);
-
-                let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
-                    major_version: 55,
-                    minor_version: 0,
-                    constant_pool: constants,
-                    access_flags: AccessFlags { flags: 0x0001 },
-                    this_class: ConstantIdx::new(1).unwrap(),
-                    super_class: None,
-                    interfaces: Vec::new(),
-                    fields: vec![],
-                    methods: vec![
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(2).unwrap(),
-                            descriptor_index: ConstantIdx::new(3).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(2).unwrap(),
-                            descriptor_index: ConstantIdx::new(4).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(5).unwrap(),
-                            descriptor_index: ConstantIdx::new(6).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(7).unwrap(),
-                            descriptor_index: ConstantIdx::new(8).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                    ],
-                    attributes: vec![],
-                    native_methods,
-                    patched: true,
-                }).unwrap();
-
-                synthetic_class
+                let mut cls = UnvalidatedClassFile::synthetic("java/lang/StringBuilder")
+                    .with_method("<init>", "()V", Some(stringbuilder_init))
+                    .with_method("<init>", "(Ljava/lang/String;)V", Some(string_init_string))
+                    .with_method("append", "(Ljava/lang/String;)Ljava/lang/StringBuilder;", Some(stringbuilder_append_string))
+                    .with_method("toString", "()Ljava/lang/String;", Some(stringbuilder_tostring));
+                ClassFile::validate(&cls).unwrap()
             }
             "java/lang/System" => {
-                let constants = vec![
-                    UnvalidatedConstant::Utf8(b"java/lang/System".to_vec()),
-                    UnvalidatedConstant::Utf8(b"out".to_vec()),
-                    UnvalidatedConstant::Utf8(b"Ljava/io/PrintStream;".to_vec()),
-                    UnvalidatedConstant::Utf8(b"exit".to_vec()),
-                    UnvalidatedConstant::Utf8(b"(I)V".to_vec()),
-                    UnvalidatedConstant::Class(ConstantIdx::new(1).unwrap()),
-                    UnvalidatedConstant::Utf8(b"identityHashCode".to_vec()),
-                    UnvalidatedConstant::Utf8(b"(Ljava/lang/Object;)I".to_vec()),
-                    UnvalidatedConstant::Utf8(b"err".to_vec()),
-                    UnvalidatedConstant::Utf8(b"in".to_vec()),
-                    UnvalidatedConstant::Utf8(b"Ljava/io/InputStream;".to_vec()),
-                    UnvalidatedConstant::Utf8(b"<clinit>".to_vec()),
-                    UnvalidatedConstant::Utf8(b"()V".to_vec()),
-                    UnvalidatedConstant::Utf8(b"getSecurityManager".to_vec()),
-                    UnvalidatedConstant::Utf8(b"()Ljava/lang/SecurityManager;".to_vec()),
-                    UnvalidatedConstant::Utf8(b"getProperty".to_vec()),
-                    UnvalidatedConstant::Utf8(b"(Ljava/lang/String;)Ljava/lang/String".to_vec()),
-                    UnvalidatedConstant::Utf8(b"arraycopy".to_vec()),
-                    UnvalidatedConstant::Utf8(b"(Ljava/lang/Object;ILjava/lang/Object;II)V".to_vec()),
-                ];
-
-                let mut native_methods: HashMap<
-                    String,
-                    fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>,
-                > = HashMap::new();
-                native_methods.insert("<clinit>()V".to_string(), system_clinit);
-                native_methods.insert("exit(I)V".to_string(), system_exit);
-                native_methods.insert("identityHashCode(Ljava/lang/Object;)I".to_string(), system_identity_hash_code);
-                native_methods.insert("getSecurityManager()Ljava/lang/SecurityManager;".to_string(), system_get_security_manager);
-                native_methods.insert("getProperty(Ljava/lang/String;)Ljava/lang/String;".to_string(), system_get_property);
-                native_methods.insert("arraycopy(Ljava/lang/Object;ILjava/lang/Object;II)V".to_string(), system_arraycopy);
-
-                let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
-                    major_version: 55,
-                    minor_version: 0,
-                    constant_pool: constants,
-                    access_flags: AccessFlags { flags: 0x0001 },
-                    this_class: ConstantIdx::new(6).unwrap(),
-                    super_class: None,
-                    interfaces: Vec::new(),
-                    fields: vec![
-                        FieldInfo {
-                            access_flags: FieldAccessFlags { flags: 0x0009 },
-                            name_index: ConstantIdx::new(2).unwrap(),
-                            descriptor_index: ConstantIdx::new(3).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                        FieldInfo {
-                            access_flags: FieldAccessFlags { flags: 0x0009 },
-                            name_index: ConstantIdx::new(9).unwrap(),
-                            descriptor_index: ConstantIdx::new(3).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                        FieldInfo {
-                            access_flags: FieldAccessFlags { flags: 0x0009 },
-                            name_index: ConstantIdx::new(10).unwrap(),
-                            descriptor_index: ConstantIdx::new(11).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                    ],
-                    methods: vec![
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(4).unwrap(),
-                            descriptor_index: ConstantIdx::new(5).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(7).unwrap(),
-                            descriptor_index: ConstantIdx::new(8).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(12).unwrap(),
-                            descriptor_index: ConstantIdx::new(13).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(14).unwrap(),
-                            descriptor_index: ConstantIdx::new(15).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(16).unwrap(),
-                            descriptor_index: ConstantIdx::new(17).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(18).unwrap(),
-                            descriptor_index: ConstantIdx::new(19).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                    ],
-                    attributes: vec![],
-                    native_methods,
-                    patched: true,
-                }).unwrap();
-
-                synthetic_class
+                let mut cls = UnvalidatedClassFile::synthetic("java/lang/System")
+                    .with_method("<clinit>", "()V", Some(system_clinit))
+                    .with_method("exit", "(I)V", Some(system_exit))
+                    .with_method("identityHashCode", "(Ljava/lang/Object;)I", Some(system_identity_hash_code))
+                    .with_method("getSecurityManager", "()Ljava/lang/SecurityManager;", Some(system_get_security_manager))
+                    .with_method("getProperty", "(Ljava/lang/String;)Ljava/lang/String;", Some(system_get_property))
+                    .with_method("arraycopy", "(Ljava/lang/Object;ILjava/lang/Object;II)V", Some(system_arraycopy));
+                ClassFile::validate(&cls).unwrap()
             }
             "java/io/PrintStream" => {
-                let constants = vec![
-                    UnvalidatedConstant::Utf8(b"java/io/PrintStream".to_vec()),
-                    UnvalidatedConstant::Utf8(b"println".to_vec()),
-                    UnvalidatedConstant::Utf8(b"(Ljava/lang/String;)V".to_vec()),
-                    UnvalidatedConstant::Utf8(b"(I)V".to_vec()),
-                    UnvalidatedConstant::Utf8(b"(J)V".to_vec()),
-                    UnvalidatedConstant::Utf8(b"(Ljava/lang/Object;)V".to_vec()),
-                    UnvalidatedConstant::Class(ConstantIdx::new(1).unwrap()),
-                ];
-
-                let mut native_methods: HashMap<
-                    String,
-                    fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>,
-                > = HashMap::new();
-                native_methods.insert("println(Ljava/lang/String;)V".to_string(), system_out_println_string);
-                native_methods.insert("println(Ljava/lang/Object;)V".to_string(), system_out_println_object);
-                native_methods.insert("println(I)V".to_string(), system_out_println_int);
-                native_methods.insert("println(J)V".to_string(), system_out_println_long);
-
-                let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
-                    major_version: 55,
-                    minor_version: 0,
-                    constant_pool: constants,
-                    access_flags: AccessFlags { flags: 0x0001 },
-                    this_class: ConstantIdx::new(7).unwrap(),
-                    super_class: None,
-                    interfaces: Vec::new(),
-                    fields: vec![],
-                    methods: vec![
-                         MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(2).unwrap(),
-                            descriptor_index: ConstantIdx::new(3).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(2).unwrap(),
-                            descriptor_index: ConstantIdx::new(4).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(2).unwrap(),
-                            descriptor_index: ConstantIdx::new(5).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(2).unwrap(),
-                            descriptor_index: ConstantIdx::new(6).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                    ],
-                    attributes: vec![],
-                    native_methods,
-                    patched: true,
-                }).unwrap();
-
-                synthetic_class
+                let mut cls = UnvalidatedClassFile::synthetic("java/io/PrintStream")
+                    .with_method("println", "(Ljava/lang/String;)V", Some(system_out_println_string))
+                    .with_method("println", "(Ljava/lang/Object;)V", Some(system_out_println_object))
+                    .with_method("println", "(I)V", Some(system_out_println_int))
+                    .with_method("println", "(J)V", Some(system_out_println_long));
+                ClassFile::validate(&cls).unwrap()
             }
             "java/io/InputStreamReader" => {
-                let constants = vec![
-                    UnvalidatedConstant::Utf8(b"java/io/InputStreamReader".to_vec()),
-                    UnvalidatedConstant::Class(ConstantIdx::new(1).unwrap()),
-                    UnvalidatedConstant::Utf8(b"<init>".to_vec()),
-                    UnvalidatedConstant::Utf8(b"(Ljava/io/InputStream;)V".to_vec()),
-                ];
-
-                let mut native_methods: HashMap<
-                    String,
-                    fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>,
-                > = HashMap::new();
-                native_methods.insert("<init>(Ljava/io/InputStream;)V".to_string(), input_stream_reader_init);
-
-                let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
-                    major_version: 55,
-                    minor_version: 0,
-                    constant_pool: constants,
-                    access_flags: AccessFlags { flags: 0x0001 },
-                    this_class: ConstantIdx::new(2).unwrap(),
-                    super_class: None,
-                    interfaces: Vec::new(),
-                    fields: vec![],
-                    methods: vec![
-                        MethodInfo {
-                            access_flags: MethodAccessFlags { flags: 0x0101 },
-                            name_index: ConstantIdx::new(3).unwrap(),
-                            descriptor_index: ConstantIdx::new(4).unwrap(),
-                            attributes: Vec::new(),
-                        },
-                    ],
-                    attributes: vec![],
-                    native_methods,
-                    patched: true,
-                }).unwrap();
-
-                synthetic_class
+                let mut cls = UnvalidatedClassFile::synthetic("java/io/InputStreamReader")
+                    .with_method("<init>", "(Ljava/io/InputStream;)V", Some(input_stream_reader_init));
+                ClassFile::validate(&cls).unwrap()
             }
             class_name => {
                 use std::collections::hash_map::Entry;
