@@ -1411,6 +1411,62 @@ impl VMState {
                     _ => Err(VMError::BadClass("lcmp but invalid operand types")),
                 }
             }
+            Instruction::FCmpL => {
+                let right = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let left = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                match (left, right) {
+                    (Value::Float(left), Value::Float(right)) => {
+                        if left > right {
+                            self.current_frame_mut()
+                                .operand_stack
+                                .push(Value::Integer(1));
+                        } else if left == right {
+                            self.current_frame_mut()
+                                .operand_stack
+                                .push(Value::Integer(0));
+                        } else {
+                            self.current_frame_mut()
+                                .operand_stack
+                                .push(Value::Integer(-1));
+                        }
+                        Ok(None)
+                    }
+                    _ => Err(VMError::BadClass("lcmp but invalid operand types")),
+                }
+            }
+            Instruction::FDiv => {
+                let right = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let left = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                match (left, right) {
+                    // TODO: ensure that division works "correctly" around NaN and zeroes (doesn't
+                    // panic pls)
+                    (Value::Float(left), Value::Float(right)) => {
+                        self.current_frame_mut()
+                            .operand_stack
+                            .push(Value::Float(left / right));
+                        Ok(None)
+                    }
+                    _ => Err(VMError::BadClass("lcmp but invalid operand types")),
+                }
+            }
             Instruction::IfNull(offset) => {
                 let frame_mut = self.current_frame_mut();
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
@@ -1640,6 +1696,52 @@ impl VMState {
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
                 }
             }
+            Instruction::DAdd => {
+                let frame_mut = self.current_frame_mut();
+                let left = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+                let right = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+
+                match (left, right) {
+                    (Value::Double(l), Value::Double(r)) => {
+                        frame_mut
+                            .operand_stack
+                            .push(Value::Double(l + r));
+                        Ok(None)
+                    }
+                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                }
+            }
+            Instruction::FAdd => {
+                let frame_mut = self.current_frame_mut();
+                let left = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+                let right = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+
+                match (left, right) {
+                    (Value::Float(l), Value::Float(r)) => {
+                        frame_mut
+                            .operand_stack
+                            .push(Value::Float(l + r));
+                        Ok(None)
+                    }
+                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                }
+            }
             Instruction::IAdd => {
                 let frame_mut = self.current_frame_mut();
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
@@ -1819,6 +1921,30 @@ impl VMState {
                     _ => Err(VMError::BadClass("ishr but invalid operand types")),
                 }
             }
+            Instruction::IUshr => {
+                let frame_mut = self.current_frame_mut();
+                let value2 = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("ishr but insufficient arguments"));
+                };
+                let value1 = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("ishr but insufficient arguments"));
+                };
+
+                match (value1, value2) {
+                    (Value::Integer(v1), Value::Integer(v2)) => {
+                        let res = (v1 as u32) >> ((v2 as u32) & 0x1f);
+                        frame_mut
+                            .operand_stack
+                            .push(Value::Integer(res as i32));
+                        Ok(None)
+                    }
+                    _ => Err(VMError::BadClass("ishr but invalid operand types")),
+                }
+            }
             Instruction::IShl => {
                 let frame_mut = self.current_frame_mut();
                 let value2 = if let Some(value) = frame_mut.operand_stack.pop() {
@@ -1842,6 +1968,24 @@ impl VMState {
                     _ => Err(VMError::BadClass("ishl but invalid operand types")),
                 }
             }
+            Instruction::F2D => {
+                let frame_mut = self.current_frame_mut();
+                let value = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("i2d but insufficient arguments"));
+                };
+
+                match value {
+                    Value::Float(f) => {
+                        frame_mut
+                            .operand_stack
+                            .push(Value::Double(f as f64));
+                        Ok(None)
+                    }
+                    _ => Err(VMError::BadClass("i2d but invalid operand types")),
+                }
+            }
             Instruction::L2I => {
                 let frame_mut = self.current_frame_mut();
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
@@ -1858,6 +2002,24 @@ impl VMState {
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                }
+            }
+            Instruction::L2F => {
+                let frame_mut = self.current_frame_mut();
+                let value = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("l2f but insufficient arguments"));
+                };
+
+                match value {
+                    Value::Long(l) => {
+                        frame_mut
+                            .operand_stack
+                            .push(Value::Float(l as f32));
+                        Ok(None)
+                    }
+                    _ => Err(VMError::BadClass("l2f but invalid operand types")),
                 }
             }
             Instruction::I2B => {
@@ -1945,6 +2107,24 @@ impl VMState {
                         frame_mut
                             .operand_stack
                             .push(Value::Long(l as i64));
+                        Ok(None)
+                    }
+                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                }
+            }
+            Instruction::D2L => {
+                let frame_mut = self.current_frame_mut();
+                let value = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                };
+
+                match value {
+                    Value::Double(d) => {
+                        frame_mut
+                            .operand_stack
+                            .push(Value::Long(d as i64));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
