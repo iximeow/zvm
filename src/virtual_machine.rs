@@ -1146,6 +1146,32 @@ impl VMState {
                 frame_mut.offset = frame_mut.offset.wrapping_add(*offset as i32 as u32 - 3);
                 Ok(None)
             }
+            Instruction::IfAcmpNe(offset) => {
+                let frame_mut = self.current_frame_mut();
+                let right = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("ifacmpne but insufficient arguments"));
+                };
+                let left = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("ifacmpne but insufficient arguments"));
+                };
+
+                match (left, right) {
+                    (Value::Object(l, _lcls), Value::Object(r, _rcls)) => {
+                        if !Rc::ptr_eq(&l, &r) {
+                            println!("compare ne");
+                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            Ok(None)
+                        } else {
+                            Ok(None)
+                        }
+                    }
+                    _ => Err(VMError::BadClass("ifacmpne but invalid operand types")),
+                }
+            }
             Instruction::IfGe(offset) => {
                 let frame_mut = self.current_frame_mut();
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
