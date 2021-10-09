@@ -46,6 +46,26 @@ impl<R: Read> FromReader<R> for LineNumberEntry {
 
 #[allow(dead_code)]
 #[derive(Debug)]
+pub struct BootstrapMethod {
+    bootstrap_method_ref_idx: u16,
+    arguments: Vec<u16>,
+}
+
+impl<R: Read> FromReader<R> for BootstrapMethod {
+    fn read_from(data: &mut R) -> Result<Self, Error> {
+        let bootstrap_method_ref_idx = u16::read_from(data)?;
+        let num_args = u16::read_from(data)?;
+        let mut arguments = Vec::new();
+        for _ in 0..num_args {
+            arguments.push(u16::read_from(data)?);
+        }
+
+        Ok(BootstrapMethod { bootstrap_method_ref_idx, arguments })
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
 pub enum VerificationTypeInfo {
     Top,
     Integer,
@@ -72,6 +92,7 @@ pub enum StackMapFrame {
 
 #[derive(Debug)]
 pub enum Attribute {
+    BootstrapMethods(Vec<BootstrapMethod>),
     // constantvalue_index
     ConstantValue(ConstantIdx),
     Code(
@@ -103,6 +124,9 @@ pub struct AttributeDisplay<'a, 'b> {
 impl<'a, 'b> fmt::Display for AttributeDisplay<'a, 'b> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.attribute {
+            Attribute::BootstrapMethods(methods) => {
+                writeln!(f, "bootstrap methods {:?}", methods)
+            }
             Attribute::ConstantValue(idx) => {
                 // TODO: .. not debug
                 writeln!(f, "constant {:?}", self.class_file.get_const(*idx).unwrap())
@@ -197,6 +221,15 @@ impl AttributeInfo {
                     entries.push(LineNumberEntry::read_from(data)?);
                 }
                 Ok(Attribute::LineNumberTable(entries))
+            }
+            Some(b"BootstrapMethods") => {
+                let data = &mut self.data.as_slice();
+                let num_bootstrap_methods = u16::read_from(data)?;
+                let mut bootstrap_methods: Vec<BootstrapMethod> = Vec::new();
+                for _ in 0..num_bootstrap_methods {
+                    bootstrap_methods.push(BootstrapMethod::read_from(data)?);
+                }
+                Ok(Attribute::BootstrapMethods(bootstrap_methods))
             }
             Some(_) => Err(Error::Unsupported("unsupported attribute type")),
             None => Err(Error::ClassFileError(

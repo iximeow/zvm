@@ -235,8 +235,22 @@ fn make_refs<'validation>(
         Instruction::InvokeInterface(_method_idx, _count) => {
 //            panic!("invokeinterface is not yet validated");
         }
-        Instruction::InvokeDynamic(_method_idx) => {
-            panic!("invokedynamic is not yet validated");
+        Instruction::InvokeDynamic(call_site_idx) => {
+            if let Some(unvalidated::Constant::InvokeDynamic(bootstrap_idx, name_and_type_idx)) =
+                raw_class.get_const(*call_site_idx)
+            {
+                let (name, desc) = match raw_class.checked_const(*name_and_type_idx)? {
+                    unvalidated::Constant::NameAndType(name_idx, type_idx) => {
+                        (
+                            raw_class.get_str(*name_idx).unwrap().to_string(),
+                            raw_class.get_str(*type_idx).unwrap().to_string(),
+                        )
+                    }
+                    o => {
+                        return Err(ValidationError::BadConst(o.type_name().to_string(), "NameAndType".to_string()));
+                    }
+                };
+            }
         }
         Instruction::ANewArray(_tpe) => {
 //            panic!("newarray not yet validated");

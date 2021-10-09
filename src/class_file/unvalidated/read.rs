@@ -136,8 +136,19 @@ impl<R: Read> FromReader<R> for MethodInfo {
 }
 
 impl<R: Read> FromReader<R> for MethodHandleBehavior {
-    fn read_from(_data: &mut R) -> Result<Self, Error> {
-        Err(Error::Unsupported("MethodHandleBehavior"))
+    fn read_from(data: &mut R) -> Result<Self, Error> {
+        Ok(match data.read_u8()? {
+            1 => MethodHandleBehavior::GetField,
+            2 => MethodHandleBehavior::GetStatic,
+            3 => MethodHandleBehavior::PutField,
+            4 => MethodHandleBehavior::PutStatic,
+            5 => MethodHandleBehavior::InvokeVirtual,
+            6 => MethodHandleBehavior::InvokeStatic,
+            7 => MethodHandleBehavior::InvokeSpecial,
+            8 => MethodHandleBehavior::NewInvokeSpecial,
+            9 => MethodHandleBehavior::InvokeInterface,
+            o => MethodHandleBehavior::Other(o),
+        })
     }
 }
 
