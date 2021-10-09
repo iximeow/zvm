@@ -3287,6 +3287,7 @@ impl VirtualMachine {
                 let mut state = VMState::new(
                     Rc::new(MethodBody::native()),
                     Rc::clone(&rc),
+                    "<clinit>".to_string(),
                     vec![],
                 );
                 let native_method = rc.native_methods.get("<clinit>()V").expect("native clinit has native method impl");
@@ -3295,6 +3296,7 @@ impl VirtualMachine {
                 let mut state = VMState::new(
                     Rc::clone(method.body.as_ref().expect("clinit has a body")),
                     Rc::clone(&rc),
+                    "<clinit>".to_string(),
                     vec![],
                 );
                 let clinit_res = self
@@ -3333,7 +3335,7 @@ impl VirtualMachine {
 
         // TODO: verify arguments? verify that `method` does not take arguments??
 
-        let mut state = VMState::new(Rc::clone(code), Rc::clone(class_ref), args);
+        let mut state = VMState::new(Rc::clone(code), Rc::clone(class_ref), method.name.to_string(), args);
         self.interpret(&mut state)
     }
 
@@ -3527,6 +3529,7 @@ fn interpreted_method_call(
     state.enter(
         Rc::clone(method.body.as_ref().expect("method has a body")),
         method_class,
+        &method.name,
         real_args.drain(..).collect(),
     );
     Ok(())
