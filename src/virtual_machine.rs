@@ -32,7 +32,8 @@ struct CallFrame {
     offset: u32,
     arguments: Vec<Value>,
     body: Rc<MethodBody>,
-    enclosing_class: Rc<ClassFile>,
+    pub enclosing_class: Rc<ClassFile>,
+    pub method_name: String,
     operand_stack: Vec<Value>,
 }
 
@@ -40,6 +41,7 @@ impl CallFrame {
     pub fn new(
         body: Rc<MethodBody>,
         enclosing_class: Rc<ClassFile>,
+        method_name: String,
         mut arguments: Vec<Value>,
     ) -> Self {
         while arguments.len() < (body.max_locals as usize) {
@@ -51,6 +53,7 @@ impl CallFrame {
             arguments,
             body,
             enclosing_class,
+            method_name,
             operand_stack: Vec::new(),
         }
     }
@@ -83,6 +86,7 @@ impl VMState {
     pub fn new(
         code: Rc<MethodBody>,
         method_class: Rc<ClassFile>,
+        method_name: String,
         initial_args: Vec<Value>,
     ) -> Self {
         let mut state = VMState {
@@ -91,7 +95,7 @@ impl VMState {
         };
         state
             .call_stack
-            .push(CallFrame::new(code, method_class, initial_args));
+            .push(CallFrame::new(code, method_class, method_name, initial_args));
         state
     }
 
@@ -120,10 +124,11 @@ impl VMState {
         &mut self,
         body: Rc<MethodBody>,
         enclosing_class: Rc<ClassFile>,
+        method_name: &str,
         arguments: Vec<Value>,
     ) {
         self.call_stack
-            .push(CallFrame::new(body, enclosing_class, arguments));
+            .push(CallFrame::new(body, enclosing_class, method_name.to_string(), arguments));
     }
 
     pub fn leave(&mut self) {
@@ -329,7 +334,16 @@ impl VMState {
         instruction: &Instruction,
         vm: &mut VirtualMachine,
     ) -> Result<Option<Value>, VMError> {
-//        eprintln!("inst: {}", instruction);
+        let frame = self.current_frame();
+        eprintln!("{}.{}: inst {}", &frame.enclosing_class.this_class, &frame.method_name, instruction);
+        {
+            let stack = &frame.operand_stack;
+            for i in 0..5 {
+                if i < stack.len() {
+                    eprintln!("  stack[-{}]: {:?}", i, &stack[stack.len() - i - 1]);
+                }
+            }
+        }
         match instruction {
             Instruction::InvokeVirtual(method_ref) => {
                 self.call_method(vm, &**method_ref, MethodKind::Virtual);
