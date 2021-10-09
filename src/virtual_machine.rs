@@ -4274,6 +4274,16 @@ fn no_op(_state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> 
 
 fn augment_classfile(mut class_file: ClassFile) -> ClassFile {
     match class_file.this_class.as_str() {
+        // log4j please go away
+        "org/apache/logging/log4j/LogManager" => {
+            class_file.native_methods.insert("<clinit>()V".to_string(), no_op);
+            class_file.native_methods.insert("getLogger()Lorg/apache/logging/log4j/Logger;".to_string(), |state, vm| {
+                state.current_frame_mut()
+                    .operand_stack
+                    .push(new_instance(vm, "org/apache/logging/log4j/Logger")?);
+                Ok(())
+            });
+        }
         "java/lang/Runtime" => {
             class_file.native_methods.insert("availableProcessors()I".to_string(), runtime_availableprocessors);
         }
