@@ -4236,25 +4236,39 @@ fn double_log(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMErr
     Ok(())
 }
 
+// TODO: should build a singleton here probably....
 fn thread_currentthread(state: &mut VMState, vm: &mut VirtualMachine) -> Result<(), VMError> {
-    let thread_class = vm.resolve_class("java/lang/Thread").unwrap();
-    let fields = Rc::new(RefCell::new(HashMap::new()));
-//    fields.borrow_mut().insert("class".to_string(), Value::String(Rc::new(class_name.bytes().collect())));
     state
         .current_frame_mut()
         .operand_stack
-        .push(Value::Object(fields, thread_class));
+        .push(new_instance(vm, "java/lang/Thread")?);
     Ok(())
 }
 
+// TODO: should build a singleton here probably....
 fn class_get_classloader(state: &mut VMState, vm: &mut VirtualMachine) -> Result<(), VMError> {
-    let thread_class = vm.resolve_class("java/lang/ClassLoader").unwrap();
-    let fields = Rc::new(RefCell::new(HashMap::new()));
-//    fields.borrow_mut().insert("class".to_string(), Value::String(Rc::new(class_name.bytes().collect())));
     state
         .current_frame_mut()
         .operand_stack
-        .push(Value::Object(fields, thread_class));
+        .pop(); // TODO: should return the classloader that loaded this object's class
+    // TODO: also verify the above was an object...
+    state
+        .current_frame_mut()
+        .operand_stack
+        .push(new_instance(vm, "java/lang/ClassLoader")?);
+    Ok(())
+}
+
+fn new_instance_with_data(vm: &mut VirtualMachine, cls: &str, data: HashMap<String, Value>) -> Result<Value, VMError> {
+    let resolved = vm.resolve_class(cls).unwrap();
+    Ok(Value::Object(Rc::new(RefCell::new(data)), resolved))
+}
+
+fn new_instance(vm: &mut VirtualMachine, cls: &str) -> Result<Value, VMError> {
+    new_instance_with_data(vm, cls, HashMap::new())
+}
+
+fn no_op(_state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
     Ok(())
 }
 
@@ -4275,15 +4289,18 @@ fn augment_classfile(mut class_file: ClassFile) -> ClassFile {
             class_file.native_methods.insert("log(D)D".to_string(), double_log);
         }
         "java/lang/ClassLoader" => {
-            class_file.native_methods.insert("registerNatives()V".to_string(), |_state, _vm| { Ok(()) });
+            class_file.native_methods.insert("registerNatives()V".to_string(), no_op);
         }
         "java/lang/Thread" => {
-            class_file.native_methods.insert("registerNatives()V".to_string(), |_state, _vm| { Ok(()) });
+            class_file.native_methods.insert("registerNatives()V".to_string(), no_op);
             class_file.native_methods.insert("currentThread()Ljava/lang/Thread;".to_string(), thread_currentthread);
         }
+        "jdk/internal/misc/VM" => {
+            class_file.native_methods.insert("initialize()V".to_string(), no_op);
+        }
         "jdk/internal/misc/Unsafe" => {
-            class_file.native_methods.insert("storeFence()V".to_string(), |_state, _vm| { Ok(()) });
-            class_file.native_methods.insert("registerNatives()V".to_string(), |_state, _vm| { Ok(()) });
+            class_file.native_methods.insert("storeFence()V".to_string(), no_op);
+            class_file.native_methods.insert("registerNatives()V".to_string(), no_op);
             class_file.native_methods.insert("arrayBaseOffset0(Ljava/lang/Class;)I".to_string(), |state, _vm| {
                 // the offset from the start of an array object to its first data element is a
                 // constant for all classes
