@@ -2643,6 +2643,8 @@ impl VirtualMachine {
                     UnvalidatedConstant::Utf8(b"()Z".to_vec()),
                     UnvalidatedConstant::Utf8(b"getPrimitiveClass".to_vec()),
                     UnvalidatedConstant::Utf8(b"(Ljava/lang/String;)Ljava/lang/Class;".to_vec()),
+                    UnvalidatedConstant::Utf8(b"getClassLoader".to_vec()),
+                    UnvalidatedConstant::Utf8(b"()Ljava/lang/ClassLoader;".to_vec()),
                 ];
 
                 let mut native_methods: HashMap<
@@ -2652,6 +2654,7 @@ impl VirtualMachine {
                 native_methods.insert("<init>()V".to_string(), object_init);
                 native_methods.insert("desiredAssertionStatus()Z".to_string(), class_desired_assertion_status);
                 native_methods.insert("getPrimitiveClass(Ljava/lang/String;)Ljava/lang/Class;".to_string(), class_get_primitive_class);
+                native_methods.insert("getClassLoader()Ljava/lang/ClassLoader;".to_string(), class_get_classloader);
 
                 let synthetic_class = ClassFile::validate(&UnvalidatedClassFile {
                     major_version: 55,
@@ -2679,6 +2682,12 @@ impl VirtualMachine {
                             access_flags: MethodAccessFlags { flags: 0x0101 },
                             name_index: ConstantIdx::new(7).unwrap(),
                             descriptor_index: ConstantIdx::new(8).unwrap(),
+                            attributes: Vec::new(),
+                        },
+                        MethodInfo {
+                            access_flags: MethodAccessFlags { flags: 0x0101 },
+                            name_index: ConstantIdx::new(9).unwrap(),
+                            descriptor_index: ConstantIdx::new(10).unwrap(),
                             attributes: Vec::new(),
                         },
                     ],
@@ -3694,6 +3703,21 @@ fn string_init_string(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(
     }
     Ok(())
 }
+
+// "availableProcessors()I"
+fn runtime_availableprocessors(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let _receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    state
+        .current_frame_mut()
+        .operand_stack
+        .push(Value::Integer(1));
+    Ok(())
+}
+
 fn throwable_init_string(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
     let argument = state
         .current_frame_mut()
@@ -4094,8 +4118,33 @@ fn double_log(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMErr
     Ok(())
 }
 
+fn thread_currentthread(state: &mut VMState, vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let thread_class = vm.resolve_class("java/lang/Thread").unwrap();
+    let fields = Rc::new(RefCell::new(HashMap::new()));
+//    fields.borrow_mut().insert("class".to_string(), Value::String(Rc::new(class_name.bytes().collect())));
+    state
+        .current_frame_mut()
+        .operand_stack
+        .push(Value::Object(fields, thread_class));
+    Ok(())
+}
+
+fn class_get_classloader(state: &mut VMState, vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let thread_class = vm.resolve_class("java/lang/ClassLoader").unwrap();
+    let fields = Rc::new(RefCell::new(HashMap::new()));
+//    fields.borrow_mut().insert("class".to_string(), Value::String(Rc::new(class_name.bytes().collect())));
+    state
+        .current_frame_mut()
+        .operand_stack
+        .push(Value::Object(fields, thread_class));
+    Ok(())
+}
+
 fn augment_classfile(mut class_file: ClassFile) -> ClassFile {
     match class_file.this_class.as_str() {
+        "java/lang/Runtime" => {
+            class_file.native_methods.insert("availableProcessors()I".to_string(), runtime_availableprocessors);
+        }
         "java/lang/Float" => {
             class_file.native_methods.insert("floatToRawIntBits(F)I".to_string(), float_to_raw_int_bits);
             class_file.native_methods.insert("intBitsToFloat(I)F".to_string(), int_bits_to_float);
@@ -4107,7 +4156,15 @@ fn augment_classfile(mut class_file: ClassFile) -> ClassFile {
         "java/lang/StrictMath" => {
             class_file.native_methods.insert("log(D)D".to_string(), double_log);
         }
+        "java/lang/ClassLoader" => {
+            class_file.native_methods.insert("registerNatives()V".to_string(), |_state, _vm| { Ok(()) });
+        }
+        "java/lang/Thread" => {
+            class_file.native_methods.insert("registerNatives()V".to_string(), |_state, _vm| { Ok(()) });
+            class_file.native_methods.insert("currentThread()Ljava/lang/Thread;".to_string(), thread_currentthread);
+        }
         "jdk/internal/misc/Unsafe" => {
+            class_file.native_methods.insert("storeFence()V".to_string(), |_state, _vm| { Ok(()) });
             class_file.native_methods.insert("registerNatives()V".to_string(), |_state, _vm| { Ok(()) });
             class_file.native_methods.insert("arrayBaseOffset0(Ljava/lang/Class;)I".to_string(), |state, _vm| {
                 // the offset from the start of an array object to its first data element is a
