@@ -267,10 +267,10 @@ fn make_refs<'validation>(
             }
         }
         Instruction::InvokeDynamic(call_site_idx) => {
-            if let Some(unvalidated::Constant::InvokeDynamic(bootstrap_idx, name_and_type_idx)) =
+            if let Some(unvalidated::Constant::InvokeDynamic(_bootstrap_idx, name_and_type_idx)) =
                 raw_class.get_const(*call_site_idx)
             {
-                let (name, desc) = match raw_class.checked_const(*name_and_type_idx)? {
+                let (_name, _desc) = match raw_class.checked_const(*name_and_type_idx)? {
                     unvalidated::Constant::NameAndType(name_idx, type_idx) => {
                         (
                             raw_class.get_str(*name_idx).unwrap().to_string(),

@@ -9,20 +9,13 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
 use crate::class_file::validated::Instruction;
-use crate::class_file::unvalidated::AccessFlags;
 use crate::class_file::unvalidated::{ClassFile as UnvalidatedClassFile};
 use crate::class_file::validated::ClassFile;
 use crate::class_file::validated::ClassFileRef;
-use crate::class_file::unvalidated::{Constant as UnvalidatedConstant};
 use crate::class_file::validated::Constant;
-use crate::class_file::unvalidated::ConstantIdx;
-use crate::class_file::unvalidated::FieldAccessFlags;
-use crate::class_file::unvalidated::FieldInfo;
-use crate::class_file::unvalidated::MethodAccessFlags;
 use crate::class_file::validated::MethodBody;
 use crate::class_file::validated::MethodHandle;
 use crate::class_file::validated::MethodRef;
-use crate::class_file::unvalidated::MethodInfo;
 
 static NULL_COUNT: AtomicUsize = AtomicUsize::new(0);
 static NEW_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -362,10 +355,10 @@ impl VMState {
                 let frame = self.current_frame();
                 let stack = &frame.operand_stack;
                 let this = &stack[stack.len() - (*count) as usize];
-                if let Value::Object(inst, cls) = &this {
+                if let Value::Object(_inst, cls) = &this {
                     let mut current_class = Rc::clone(cls);
                     let new_ref: MethodRef = loop {
-                        if let Some(handle) = current_class.get_method(&method_ref.name, &method_ref.desc) {
+                        if let Some(_handle) = current_class.get_method(&method_ref.name, &method_ref.desc) {
                             break MethodRef {
                                 class_name: current_class.this_class.to_string(),
                                 name: method_ref.name.to_string(),
@@ -2789,7 +2782,7 @@ impl VirtualMachine {
 
         let new_class = match referent {
             "java/lang/Class" => {
-                let mut cls = UnvalidatedClassFile::synthetic("java/lang/Class")
+                let cls = UnvalidatedClassFile::synthetic("java/lang/Class")
                     .with_method("<init>", "()V", Some(object_init))
                     .with_method("desiredAssertionStatus", "()Z", Some(class_desired_assertion_status))
                     .with_method("getPrimitiveClass", "(Ljava/lang/String;)Ljava/lang/Class;", Some(class_get_primitive_class))
@@ -2799,26 +2792,26 @@ impl VirtualMachine {
                 ClassFile::validate(&cls).unwrap()
             }
             "java/lang/ThreadLocal" => {
-                let mut cls = UnvalidatedClassFile::synthetic("java/lang/ThreadLocal")
+                let cls = UnvalidatedClassFile::synthetic("java/lang/ThreadLocal")
                     .with_method("<init>", "()V", Some(object_init))
                     .with_method("get", "()Ljava/lang/Object;", Some(thread_local_get));
                 ClassFile::validate(&cls).unwrap()
             }
             "java/lang/Throwable" => {
-                let mut cls = UnvalidatedClassFile::synthetic("java/lang/Throwable")
+                let cls = UnvalidatedClassFile::synthetic("java/lang/Throwable")
                     .with_method("<init>", "()V", Some(object_init))
                     .with_method("<init>", "(Ljava/lang/String;)V", Some(throwable_init_string));
                 ClassFile::validate(&cls).unwrap()
             }
             "java/lang/Object" => {
-                let mut cls = UnvalidatedClassFile::synthetic("java/lang/Object")
+                let cls = UnvalidatedClassFile::synthetic("java/lang/Object")
                     .with_method("<init>", "()V", Some(object_init))
                     .with_method("hashCode", "()I", Some(object_hashcode))
                     .with_method("getClass", "()Ljava/lang/Class;", Some(object_getclass));
                 ClassFile::validate(&cls).unwrap()
             }
             "java/lang/String" => {
-                let mut cls = UnvalidatedClassFile::synthetic("java/lang/String")
+                let cls = UnvalidatedClassFile::synthetic("java/lang/String")
                     .with_method("<init>", "(Ljava/lang/String;)V", Some(string_init_string))
                     .with_method("<init>", "([B)V", Some(string_init_bytearray))
                     .with_method("<init>", "([C)V", Some(string_init_chararray))
@@ -2831,7 +2824,7 @@ impl VirtualMachine {
                 ClassFile::validate(&cls).unwrap()
             }
             "java/lang/StringBuilder" => {
-                let mut cls = UnvalidatedClassFile::synthetic("java/lang/StringBuilder")
+                let cls = UnvalidatedClassFile::synthetic("java/lang/StringBuilder")
                     .with_method("<init>", "()V", Some(stringbuilder_init))
                     .with_method("<init>", "(Ljava/lang/String;)V", Some(string_init_string))
                     .with_method("append", "(Ljava/lang/String;)Ljava/lang/StringBuilder;", Some(stringbuilder_append_string))
@@ -2839,7 +2832,7 @@ impl VirtualMachine {
                 ClassFile::validate(&cls).unwrap()
             }
             "java/lang/System" => {
-                let mut cls = UnvalidatedClassFile::synthetic("java/lang/System")
+                let cls = UnvalidatedClassFile::synthetic("java/lang/System")
                     .with_method("<clinit>", "()V", Some(system_clinit))
                     .with_method("exit", "(I)V", Some(system_exit))
                     .with_method("identityHashCode", "(Ljava/lang/Object;)I", Some(system_identity_hash_code))
@@ -2849,7 +2842,7 @@ impl VirtualMachine {
                 ClassFile::validate(&cls).unwrap()
             }
             "java/io/PrintStream" => {
-                let mut cls = UnvalidatedClassFile::synthetic("java/io/PrintStream")
+                let cls = UnvalidatedClassFile::synthetic("java/io/PrintStream")
                     .with_method("println", "(Ljava/lang/String;)V", Some(system_out_println_string))
                     .with_method("println", "(Ljava/lang/Object;)V", Some(system_out_println_object))
                     .with_method("println", "(I)V", Some(system_out_println_int))
@@ -2857,7 +2850,7 @@ impl VirtualMachine {
                 ClassFile::validate(&cls).unwrap()
             }
             "java/io/InputStreamReader" => {
-                let mut cls = UnvalidatedClassFile::synthetic("java/io/InputStreamReader")
+                let cls = UnvalidatedClassFile::synthetic("java/io/InputStreamReader")
                     .with_method("<init>", "(Ljava/io/InputStream;)V", Some(input_stream_reader_init));
                 ClassFile::validate(&cls).unwrap()
             }
