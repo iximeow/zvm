@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fmt;
 use std::rc::Rc;
 use std::str::FromStr;
 use std::hash::{Hash, Hasher};
@@ -59,6 +60,16 @@ impl CallFrame {
 enum MethodKind {
     Virtual,
     Static,
+}
+
+impl MethodKind {
+    fn takes_self(&self) -> bool {
+        if let MethodKind::Static = self {
+            false
+        } else {
+            true
+        }
+    }
 }
 
 pub struct VMState {
@@ -2133,7 +2144,6 @@ impl VMState {
     }
 }
 
-#[derive(Debug)]
 pub enum Value {
     Integer(i32),
     Long(i64),
@@ -2144,6 +2154,30 @@ pub enum Value {
     Object(Rc<RefCell<HashMap<String, Value>>>, Rc<ClassFile>),
     Null(String), // Null, of type `String`
     Uninitialized,
+}
+
+impl fmt::Debug for Value {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Value::Integer(i) => { write!(f, "{}", i) },
+            Value::Long(l) => { write!(f, "{}", l) },
+            Value::Float(value) => { write!(f, "{}", value) },
+            Value::Double(d) => { write!(f, "{}", d) },
+            Value::Array(array) => {
+                write!(f, "Array({:?})", array.borrow().as_ref())
+            },
+            Value::String(bytes) => {
+                write!(f, "String({:?})", bytes)
+            }
+            Value::Object(instance, cls) => {
+                write!(f, "Object({:?}, {})", instance.borrow(), &cls.this_class)
+            }
+            Value::Null(cls) => {
+                write!(f, "Null({})", cls)
+            }
+            Value::Uninitialized => { f.write_str("uninitialized") }
+        }
+    }
 }
 
 impl Clone for Value {
@@ -3227,7 +3261,7 @@ fn interpreted_method_call(
     for _arg in args {
         real_args.push_front(frame.operand_stack.pop().expect("argument is present"));
     }
-    if let MethodKind::Virtual = kind {
+    if kind.takes_self() {
         real_args.push_front(frame.operand_stack.pop().expect("argument is present"));
     }
 
