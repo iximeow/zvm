@@ -53,14 +53,15 @@ impl CallFrame {
 }
 
 #[derive(Debug, Copy, Clone)]
-enum MethodKind {
+enum CallKind {
     Virtual,
+    Special,
     Static,
 }
 
-impl MethodKind {
+impl CallKind {
     fn takes_self(&self) -> bool {
-        if let MethodKind::Static = self {
+        if let CallKind::Static = self {
             false
         } else {
             true
@@ -297,8 +298,35 @@ impl VMState {
         Ok(None)
     }
 
-    fn call_method(&mut self, vm: &mut VirtualMachine, method: &MethodRef, kind: MethodKind) {
-        let mut current_class = vm.resolve_class(&method.class_name).unwrap();
+    fn call_method(&mut self, vm: &mut VirtualMachine, method: &MethodRef, kind: CallKind) {
+        let mut current_class = match kind {
+            CallKind::Virtual => {
+    //            let def_cls = vm.resolve_class(method.class_name);
+                // virtual calls can be abstract and resolution has to start at the ref being called on
+                let (args, _ret) = parse_signature_string(&method.desc).expect("signature is valid");
+                let frame = self.current_frame();
+                let stack = &frame.operand_stack;
+                let receiver = &stack[stack.len() - args.len() - 1];
+                match receiver {
+                    Value::Object(_inst, cls) => {
+                        Rc::clone(cls)
+                    }
+                    Value::Array(_) => {
+                        vm.resolve_class("java/lang/Object").unwrap()
+                    }
+                    Value::String(_) => {
+                        vm.resolve_class("java/lang/String").unwrap()
+                    }
+                    other => {
+                        panic!("unexpected receiver {:?}", other);
+                    }
+                }
+            },
+            CallKind::Static | CallKind::Special => {
+                vm.resolve_class(&method.class_name).unwrap()
+            }
+        };
+//        let mut current_class = vm.resolve_class(&method.class_name).unwrap();
         loop {
             let target_class = Rc::clone(&current_class);
             if let Some(native_method) = target_class.native_methods.get(&format!("{}{}", &method.name, &method.desc)) {
@@ -307,6 +335,13 @@ impl VMState {
             } else if let Some(handle) = target_class.get_method(&method.name, &method.desc) {
                 if handle.access().is_native() {
                     panic!("attempted to call native method with no implementation: {} - note, JNI resolution is not yet supported.", &method.name);
+                } else if handle.access().is_abstract() {
+                    // continue up on the chanin...
+                    if target_class.super_class.is_none() {
+                        panic!("cannot find method {:?}", method);
+                    }
+                    let super_class = target_class.super_class.as_ref().expect("superclass exists");
+                    current_class = vm.resolve_class(super_class).expect("can resolve superclass");
                 } else {
                     interpreted_method_call(self, vm, handle, target_class, &method.desc, kind).unwrap();
                     break;
@@ -339,15 +374,15 @@ impl VMState {
         }
         match instruction {
             Instruction::InvokeVirtual(method_ref) => {
-                self.call_method(vm, &**method_ref, MethodKind::Virtual);
+                self.call_method(vm, &**method_ref, CallKind::Virtual);
                 Ok(None)
             }
             Instruction::InvokeSpecial(method_ref) => {
-                self.call_method(vm, &**method_ref, MethodKind::Virtual);
+                self.call_method(vm, &**method_ref, CallKind::Special);
                 Ok(None)
             }
             Instruction::InvokeStatic(method_ref) => {
-                self.call_method(vm, &**method_ref, MethodKind::Static);
+                self.call_method(vm, &**method_ref, CallKind::Static);
                 Ok(None)
             }
             Instruction::InvokeInterface(method_ref, count) => {
@@ -370,7 +405,7 @@ impl VMState {
                         }
                     };
 
-                    self.call_method(vm, &new_ref, MethodKind::Virtual);
+                    self.call_method(vm, &new_ref, CallKind::Virtual);
                 } else {
                     panic!("invokeinterface on non-object: {:?}", this);
                 }
@@ -2486,8 +2521,8 @@ impl fmt::Debug for Value {
                     write!(f, "String({:?})", bytes)
                 }
             }
-            Value::Object(instance, cls) => {
-                write!(f, "Object({:?}, {})", instance.borrow(), &cls.this_class)
+            Value::Object(_instance, cls) => {
+                write!(f, "Object(_, {})", &cls.this_class)
             }
             Value::Null(cls) => {
                 write!(f, "Null({})", cls)
@@ -3045,91 +3080,91 @@ impl VirtualMachine {
     }
 }
 
+struct Arg {}
+
+#[allow(unused_assignments)]
+fn parse_signature_string(signature: &str) -> Option<(Vec<Arg>, Option<Arg>)> {
+    let mut reading_type = false;
+    let mut _reading_array = false;
+    let mut reading_return = false;
+    let mut args = Vec::new();
+    for b in signature.bytes() {
+        match b {
+            b'(' => {
+                // one day assert that this is the first character
+            }
+            b')' => {
+                reading_return = true;
+            }
+            b'V' => {
+                if reading_type {
+                    continue;
+                }
+                if !reading_return {
+                    return None;
+                } else {
+                    return Some((args, None));
+                }
+            }
+            b'Z' | // boolean
+            b'B' | // byte
+            b'C' | // char
+            b'S' | // short
+            b'I' | // int
+            b'J' | // long
+            b'F' | // float
+            b'D' => { // double
+                if reading_type {
+                    continue;
+                }
+                if reading_return {
+                    return Some((args, Some(Arg {})));
+                } else {
+                    args.push(Arg {});
+                }
+            }
+            // not valid inside a type name
+            b'[' => {
+                _reading_array = true;
+            }
+            b'L' => {
+                if !reading_type {
+                    reading_type = true;
+                }
+            }
+            b';' => {
+                if reading_type {
+                    if reading_return {
+                        return Some((args, Some(Arg {})));
+                    } else {
+                        args.push(Arg {});
+                        reading_type = false;
+                    }
+                }
+            }
+            _ => {
+                if reading_type {
+                    /* do nothing */
+                } else {
+                    panic!("invalid type string: {}", signature);
+                }
+            }
+        }
+    }
+    panic!("signature strings include return value type (even if it's just [V]oid)");
+}
+
 fn interpreted_method_call(
     state: &mut VMState,
     _vm: &mut VirtualMachine,
     method: Rc<MethodHandle>,
     method_class: Rc<ClassFile>,
     method_type: &str,
-    kind: MethodKind,
+    kind: CallKind,
 ) -> Result<(), VMError> {
     // TODO: parse out arguments from method type, check against available operands, do the call
     //
     // today: [...], do the call
-    
-    struct Arg {}
-
-    #[allow(unused_assignments)]
-    fn parse_signature_string(signature: &str) -> Option<(Vec<Arg>, Option<Arg>)> {
-        let mut reading_type = false;
-        let mut _reading_array = false;
-        let mut reading_return = false;
-        let mut args = Vec::new();
-        for b in signature.bytes() {
-            match b {
-                b'(' => {
-                    // one day assert that this is the first character
-                }
-                b')' => {
-                    reading_return = true;
-                }
-                b'V' => {
-                    if reading_type {
-                        continue;
-                    }
-                    if !reading_return {
-                        return None;
-                    } else {
-                        return Some((args, None));
-                    }
-                }
-                b'Z' | // boolean
-                b'B' | // byte
-                b'C' | // char
-                b'S' | // short
-                b'I' | // int
-                b'J' | // long
-                b'F' | // float
-                b'D' => { // double
-                    if reading_type {
-                        continue;
-                    }
-                    if reading_return {
-                        return Some((args, Some(Arg {})));
-                    } else {
-                        args.push(Arg {});
-                    }
-                }
-                // not valid inside a type name
-                b'[' => {
-                    _reading_array = true;
-                }
-                b'L' => {
-                    if !reading_type {
-                        reading_type = true;
-                    }
-                }
-                b';' => {
-                    if reading_type {
-                        if reading_return {
-                            return Some((args, Some(Arg {})));
-                        } else {
-                            args.push(Arg {});
-                            reading_type = false;
-                        }
-                    }
-                }
-                _ => {
-                    if reading_type {
-                        /* do nothing */
-                    } else {
-                        panic!("invalid type string: {}", signature);
-                    }
-                }
-            }
-        }
-        panic!("signature strings include return value type (even if it's just [V]oid)");
-    }
 
     // TODO typecheck ret and the returned object type
     let (args, _ret) = parse_signature_string(method_type).expect("signature string is valid (not like there's much validation right now, come on!!");
