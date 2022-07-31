@@ -16,3 +16,7 @@ members = [
 
 [dependencies]
 byteorder = "1.3.2"
+cranelift-codegen = "*"
+cranelift-frontend = "*"
+yaxpeax-x86 = "*"
+yaxpeax-arch = "*"

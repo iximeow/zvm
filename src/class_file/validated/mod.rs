@@ -474,3 +474,329 @@ impl PartialEq for ClassFileRef {
     }
 }
 
+fn assemble_into(inst: crate::class_file::validated::Instruction, bytes: &mut Vec<u8>) {
+    use crate::class_file::validated::Instruction::*;
+
+    match inst {
+        Nop => { bytes.push(0x00) },
+        AConstNull => { bytes.push(0x01) },
+        IConstM1 => { bytes.push(0x02) },
+        IConst0 => { bytes.push(0x03) },
+        IConst1 => { bytes.push(0x04) },
+        IConst2 => { bytes.push(0x05) },
+        IConst3 => { bytes.push(0x06) },
+        IConst4 => { bytes.push(0x07) },
+        IConst5 => { bytes.push(0x08) },
+        LConst0 => { bytes.push(0x09) },
+        LConst1 => { bytes.push(0x0a) },
+        FConst0 => { bytes.push(0x0b) },
+        FConst1 => { bytes.push(0x0c) },
+        FConst2 => { bytes.push(0x0d) },
+        DConst0 => { bytes.push(0x0e) },
+        DConst1 => { bytes.push(0x0f) },
+        /*
+        BIPush(i8::read_from(data)?) => { bytes.push(0x10) },
+        SIPush(i16::read_from(data)?) => { bytes.push(0x11) },
+        Ldc(ConstantIdx::new(u8::read_from(data)? as u16).unwrap()) => { bytes.push(0x12) },
+        LdcW(ConstantIdx::read_from(data)?) => { bytes.push(0x13) },
+        Ldc2W(ConstantIdx::read_from(data)?) => { bytes.push(0x14) },
+        ILoad(read_idx(data, wide)?) => { bytes.push(0x15) },
+        LLoad(read_idx(data, wide)?) => { bytes.push(0x16) },
+        FLoad(read_idx(data, wide)?) => { bytes.push(0x17) },
+        DLoad(read_idx(data, wide)?) => { bytes.push(0x18) },
+        ALoad(read_idx(data, wide)?) => { bytes.push(0x19) },
+        */
+        ILoad0 => { bytes.push(0x1a) },
+        ILoad1 => { bytes.push(0x1b) },
+        ILoad2 => { bytes.push(0x1c) },
+        ILoad3 => { bytes.push(0x1d) },
+        LLoad0 => { bytes.push(0x1e) },
+        LLoad1 => { bytes.push(0x1f) },
+        LLoad2 => { bytes.push(0x20) },
+        LLoad3 => { bytes.push(0x21) },
+        FLoad0 => { bytes.push(0x22) },
+        FLoad1 => { bytes.push(0x23) },
+        FLoad2 => { bytes.push(0x24) },
+        FLoad3 => { bytes.push(0x25) },
+        DLoad0 => { bytes.push(0x26) },
+        DLoad1 => { bytes.push(0x27) },
+        DLoad2 => { bytes.push(0x28) },
+        DLoad3 => { bytes.push(0x29) },
+        ALoad0 => { bytes.push(0x2a) },
+        ALoad1 => { bytes.push(0x2b) },
+        ALoad2 => { bytes.push(0x2c) },
+        ALoad3 => { bytes.push(0x2d) },
+        IALoad => { bytes.push(0x2e) },
+        LALoad => { bytes.push(0x2f) },
+        FALoad => { bytes.push(0x30) },
+        DALoad => { bytes.push(0x31) },
+        AALoad => { bytes.push(0x32) },
+        BALoad => { bytes.push(0x33) },
+        CALoad => { bytes.push(0x34) },
+        SALoad => { bytes.push(0x35) },
+        /*
+        IStore(read_idx(data, wide)?) => { bytes.push(0x36) },
+        LStore(read_idx(data, wide)?) => { bytes.push(0x37) },
+        FStore(read_idx(data, wide)?) => { bytes.push(0x38) },
+        DStore(read_idx(data, wide)?) => { bytes.push(0x39) },
+        AStore(read_idx(data, wide)?) => { bytes.push(0x3a) },
+        */
+        IStore0 => { bytes.push(0x3b) },
+        IStore1 => { bytes.push(0x3c) },
+        IStore2 => { bytes.push(0x3d) },
+        IStore3 => { bytes.push(0x3e) },
+        LStore0 => { bytes.push(0x3f) },
+        LStore1 => { bytes.push(0x40) },
+        LStore2 => { bytes.push(0x41) },
+        LStore3 => { bytes.push(0x42) },
+        FStore0 => { bytes.push(0x43) },
+        FStore1 => { bytes.push(0x44) },
+        FStore2 => { bytes.push(0x45) },
+        FStore3 => { bytes.push(0x46) },
+        DStore0 => { bytes.push(0x47) },
+        DStore1 => { bytes.push(0x48) },
+        DStore2 => { bytes.push(0x49) },
+        DStore3 => { bytes.push(0x4a) },
+        AStore0 => { bytes.push(0x4b) },
+        AStore1 => { bytes.push(0x4c) },
+        AStore2 => { bytes.push(0x4d) },
+        AStore3 => { bytes.push(0x4e) },
+        IAStore => { bytes.push(0x4f) },
+        LAStore => { bytes.push(0x50) },
+        FAStore => { bytes.push(0x51) },
+        DAStore => { bytes.push(0x52) },
+        AAStore => { bytes.push(0x53) },
+        BAStore => { bytes.push(0x54) },
+        CAStore => { bytes.push(0x55) },
+        SAStore => { bytes.push(0x56) },
+        Pop => { bytes.push(0x57) },
+        Pop2 => { bytes.push(0x58) },
+        Dup => { bytes.push(0x59) },
+        DupX1 => { bytes.push(0x5a) },
+        DupX2 => { bytes.push(0x5b) },
+        Dup2 => { bytes.push(0x5c) },
+        Dup2X1 => { bytes.push(0x5d) },
+        Dup2X2 => { bytes.push(0x5e) },
+        Swap => { bytes.push(0x5f) },
+        IAdd => { bytes.push(0x60) },
+        LAdd => { bytes.push(0x61) },
+        FAdd => { bytes.push(0x62) },
+        DAdd => { bytes.push(0x63) },
+        ISub => { bytes.push(0x64) },
+        LSub => { bytes.push(0x65) },
+        FSub => { bytes.push(0x66) },
+        DSub => { bytes.push(0x67) },
+        IMul => { bytes.push(0x68) },
+        LMul => { bytes.push(0x69) },
+        FMul => { bytes.push(0x6a) },
+        DMul => { bytes.push(0x6b) },
+        IDiv => { bytes.push(0x6c) },
+        LDiv => { bytes.push(0x6d) },
+        FDiv => { bytes.push(0x6e) },
+        DDiv => { bytes.push(0x6f) },
+        IRem => { bytes.push(0x70) },
+        LRem => { bytes.push(0x71) },
+        FRem => { bytes.push(0x72) },
+        DRem => { bytes.push(0x73) },
+        INeg => { bytes.push(0x74) },
+        LNeg => { bytes.push(0x75) },
+        FNeg => { bytes.push(0x76) },
+        DNeg => { bytes.push(0x77) },
+        IShl => { bytes.push(0x78) },
+        LShl => { bytes.push(0x79) },
+        IShr => { bytes.push(0x7a) },
+        LShr => { bytes.push(0x7b) },
+        IUshr => { bytes.push(0x7c) },
+        LUshr => { bytes.push(0x7d) },
+        IAnd => { bytes.push(0x7e) },
+        LAnd => { bytes.push(0x7f) },
+        IOr => { bytes.push(0x80) },
+        LOr => { bytes.push(0x81) },
+        IXor => { bytes.push(0x82) },
+        LXor => { bytes.push(0x83) },
+        // IInc(read_idx(data, wide)?, read_idx(data, wide)? as i16) => { bytes.push(0x84) },
+        I2L => { bytes.push(0x85) },
+        I2F => { bytes.push(0x86) },
+        I2D => { bytes.push(0x87) },
+        L2I => { bytes.push(0x88) },
+        L2F => { bytes.push(0x89) },
+        L2D => { bytes.push(0x8a) },
+        F2I => { bytes.push(0x8b) },
+        F2L => { bytes.push(0x8c) },
+        F2D => { bytes.push(0x8d) },
+        D2I => { bytes.push(0x8e) },
+        D2L => { bytes.push(0x8f) },
+        D2F => { bytes.push(0x90) },
+        I2B => { bytes.push(0x91) },
+        I2C => { bytes.push(0x92) },
+        I2S => { bytes.push(0x93) },
+        LCmp => { bytes.push(0x94) },
+        FCmpL => { bytes.push(0x95) },
+        FCmpG => { bytes.push(0x96) },
+        DCmpL => { bytes.push(0x97) },
+        DCmpG => { bytes.push(0x98) },
+        IfEq(offset) => {
+            bytes.push(0x99);
+            bytes.push((offset >> 8) as u8); bytes.push(offset as u8)
+        },
+        IfNe(offset) => {
+            bytes.push(0x9a);
+            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+        },
+        IfLt(offset) => {
+            bytes.push(0x9b);
+            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+        },
+        IfGe(offset) => {
+            bytes.push(0x9c);
+            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+        },
+        IfGt(offset) => {
+            bytes.push(0x9d);
+            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+        },
+        IfLe(offset) => {
+            bytes.push(0x9e);
+            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+        },
+        IfIcmpEq(offset) => {
+            bytes.push(0x9f);
+            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+        },
+        IfIcmpNe(offset) => {
+            bytes.push(0xa0);
+            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+        },
+        IfIcmpLt(offset) => {
+            bytes.push(0xa1);
+            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+        },
+        IfIcmpGe(offset) => {
+            bytes.push(0xa2);
+            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+        },
+        IfIcmpGt(offset) => {
+            bytes.push(0xa3);
+            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+        },
+        IfIcmpLe(offset) => {
+            bytes.push(0xa4);
+            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+        },
+        IfAcmpEq(offset) => {
+            bytes.push(0xa5);
+            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+        },
+        IfAcmpNe(offset) => {
+            bytes.push(0xa6);
+            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+        },
+        Goto(offset) => {
+            bytes.push(0xa7);
+            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+        },
+        Jsr(offset) => {
+            bytes.push(0xa8);
+            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+        },
+        /*
+        Ret(read_idx(data, wide)?) => { bytes.push(0xa9) },
+                0xaa => {
+                    while data.seek(SeekFrom::Current(0))? % 4 != 0 {
+                        let _ = u8::read_from(data)?;
+                    }
+                    let default = i32::read_from(data)?;
+                    let low = i32::read_from(data)?;
+                    let high = i32::read_from(data)?;
+                    let mut entries = Vec::new();
+                    for _ in low..=high {
+                        entries.push(i32::read_from(data)?);
+                    }
+                    Instruction::TableSwitch(default, low, high, entries)
+                }
+                0xab => {
+                    while data.seek(SeekFrom::Current(0))? % 4 != 0 {
+                        let _ = u8::read_from(data)?;
+                    }
+                    let default = i32::read_from(data)?;
+                    // Not a bug!
+                    // "Immediately after the padding follow a series of signed 32-bit
+                    // values: default, npairs, and then npairs pairs of signed 32-bit values."
+                    let count = i32::read_from(data)?;
+                    let mut entries = Vec::new();
+                    for _ in 0..count {
+                        entries.push((u32::read_from(data)?, i32::read_from(data)?));
+                    }
+                    Instruction::LookupSwitch(default, entries)
+                }
+        */
+        IReturn => { bytes.push(0xac) },
+        LReturn => { bytes.push(0xad) },
+        FReturn => { bytes.push(0xae) },
+        DReturn => { bytes.push(0xaf) },
+        AReturn => { bytes.push(0xb0) },
+        Return => { bytes.push(0xb1) },
+        /*
+        GetStatic(ConstantIdx::read_from(data)?) => { bytes.push(0xb2) },
+        PutStatic(ConstantIdx::read_from(data)?) => { bytes.push(0xb3) },
+        GetField(ConstantIdx::read_from(data)?) => { bytes.push(0xb4) },
+        PutField(ConstantIdx::read_from(data)?) => { bytes.push(0xb5) },
+        InvokeVirtual(ConstantIdx::read_from(data)?) => { bytes.push(0xb6) },
+        InvokeSpecial(ConstantIdx::read_from(data)?) => { bytes.push(0xb7) },
+        InvokeStatic(ConstantIdx::read_from(data)?) => { bytes.push(0xb8) },
+                0xb9 => Instruction::InvokeInterface(
+                    ConstantIdx::read_from(data)?,
+                    u8::read_from(data)?,
+                ),
+        InvokeDynamic(ConstantIdx::read_from(data)?) => { bytes.push(0xba) },
+        New(ConstantIdx::read_from(data)?) => { bytes.push(0xbb) },
+        NewArray(u8::read_from(data)?) => { bytes.push(0xbc) },
+        ANewArray(u16::read_from(data)?) => { bytes.push(0xbd) },
+        */
+        ArrayLength => { bytes.push(0xbe) },
+        AThrow => { bytes.push(0xbf) },
+        /*
+        CheckCast(ConstantIdx::read_from(data)?) => { bytes.push(0xc0) },
+        InstanceOf(ConstantIdx::read_from(data)?) => { bytes.push(0xc1) },
+        */
+        MonitorEnter => { bytes.push(0xc2) },
+        MonitorExit => { bytes.push(0xc3) },
+        /*
+                0xc4 => {
+                    return Err(Error::BadInstruction(0xc4, wide));
+                }
+                0xc5 => {
+                    Instruction::MultiANewArray(ConstantIdx::read_from(data)?, u8::read_from(data)?)
+                }
+        */
+        IfNull(offset) => {
+            bytes.push(0xc6);
+            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+        },
+        IfNonNull(offset) => {
+            bytes.push(0xc7);
+            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+        },
+        GotoW(offset) => {
+            bytes.push(0xc8);
+            bytes.push((offset >> 24) as u8); bytes.push((offset >> 16) as u8);
+            bytes.push((offset >> 8) as u8); bytes.push((offset >> 0) as u8);
+        },
+        JsrW(offset) => {
+            bytes.push(0xc9);
+            bytes.push((offset >> 24) as u8); bytes.push((offset >> 16) as u8);
+            bytes.push((offset >> 8) as u8); bytes.push((offset >> 0) as u8);
+        },
+        _other => {
+            panic!("unsupported inst");
+        }
+    }
+}
+
+pub fn assemble(insts: Vec<crate::class_file::validated::Instruction>) -> Box<[u8]> {
+    let mut bytes: Vec<u8> = Vec::new();
+    for inst in insts {
+        assemble_into(inst, &mut bytes);
+    }
+    bytes.into_boxed_slice()
+}

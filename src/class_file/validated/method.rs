@@ -22,9 +22,9 @@ pub struct MethodRef {
 
 #[derive(Debug)]
 pub struct MethodBody {
-    max_stack: u16,
+    pub(crate) max_stack: u16,
     pub(crate) max_locals: u16,
-    bytes: Box<[u8]>,
+    pub(crate) bytes: Box<[u8]>,
     // TODO: validate exception table records
     pub(crate) exception_info: Vec<ExceptionTableRecord>,
     pub(crate) class_refs: HashMap<u32, Rc<String>>,
