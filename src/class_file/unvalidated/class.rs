@@ -135,6 +135,12 @@ impl ClassFile {
         res.this_class = ConstantIdx::new(res.constant_pool.len() as u16).unwrap();
         res
     }
+    pub fn extends(mut self, super_class: &str) -> Self {
+        self.constant_pool.push(Constant::Utf8(super_class.as_bytes().to_vec()));
+        self.constant_pool.push(Constant::Class(ConstantIdx::new(self.constant_pool.len() as u16).unwrap()));
+        self.super_class = Some(ConstantIdx::new(self.constant_pool.len() as u16).unwrap());
+        self
+    }
     pub fn mark_patched(&mut self) {
         self.patched = true;
     }

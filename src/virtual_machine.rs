@@ -50,6 +50,10 @@ impl CallFrame {
             operand_stack: Vec::new(),
         }
     }
+
+    pub fn branch_rel(&mut self, rel: i16) {
+        self.offset = self.offset.wrapping_add(rel as i32 as u32);
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -301,7 +305,6 @@ impl VMState {
     fn call_method(&mut self, vm: &mut VirtualMachine, method: &MethodRef, kind: CallKind) {
         let mut current_class = match kind {
             CallKind::Virtual => {
-    //            let def_cls = vm.resolve_class(method.class_name);
                 // virtual calls can be abstract and resolution has to start at the ref being called on
                 let (args, _ret) = parse_signature_string(&method.desc).expect("signature is valid");
                 let frame = self.current_frame();
@@ -326,7 +329,7 @@ impl VMState {
                 vm.resolve_class(&method.class_name).unwrap()
             }
         };
-//        let mut current_class = vm.resolve_class(&method.class_name).unwrap();
+        let init_class = Rc::clone(&current_class);
         loop {
             let target_class = Rc::clone(&current_class);
             if let Some(native_method) = target_class.native_methods.get(&format!("{}{}", &method.name, &method.desc)) {
@@ -1171,8 +1174,49 @@ impl VMState {
             }
             Instruction::Goto(offset) => {
                 let frame_mut = self.current_frame_mut();
-                frame_mut.offset = frame_mut.offset.wrapping_add(*offset as i32 as u32 - 3);
+                frame_mut.branch_rel(*offset - 3);
                 Ok(None)
+            }
+            Instruction::IfAcmpEq(offset) => {
+                let frame_mut = self.current_frame_mut();
+                let right = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("ifacmpne but insufficient arguments"));
+                };
+                let left = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("ifacmpne but insufficient arguments"));
+                };
+
+                match (left, right) {
+                    (Value::Array(l), Value::Array(r)) => {
+                        if Rc::ptr_eq(&l, &r) {
+                            frame_mut.branch_rel(*offset - 3);
+                            Ok(None)
+                        } else {
+                            Ok(None)
+                        }
+                    }
+                    (Value::Object(l, _lcls), Value::Object(r, _rcls)) => {
+                        if Rc::ptr_eq(&l, &r) {
+                            frame_mut.branch_rel(*offset - 3);
+                            Ok(None)
+                        } else {
+                            Ok(None)
+                        }
+                    }
+                    (Value::Null(_), Value::Null(_)) => {
+                        frame_mut.branch_rel(*offset - 3);
+                        Ok(None)
+                    }
+                    (Value::Null(_), _) |
+                    (_, Value::Null(_)) => {
+                        Ok(None)
+                    }
+                    _ => Err(VMError::BadClass("ifacmpne but invalid operand types")),
+                }
             }
             Instruction::IfAcmpNe(offset) => {
                 let frame_mut = self.current_frame_mut();
@@ -1190,7 +1234,7 @@ impl VMState {
                 match (left, right) {
                     (Value::Array(l), Value::Array(r)) => {
                         if !Rc::ptr_eq(&l, &r) {
-                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            frame_mut.branch_rel(*offset - 3);
                             Ok(None)
                         } else {
                             Ok(None)
@@ -1198,11 +1242,19 @@ impl VMState {
                     }
                     (Value::Object(l, _lcls), Value::Object(r, _rcls)) => {
                         if !Rc::ptr_eq(&l, &r) {
-                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            frame_mut.branch_rel(*offset - 3);
                             Ok(None)
                         } else {
                             Ok(None)
                         }
+                    }
+                    (Value::Null(_), Value::Null(_)) => {
+                        Ok(None)
+                    }
+                    (Value::Null(_), _) |
+                    (_, Value::Null(_)) => {
+                        frame_mut.branch_rel(*offset - 3);
+                        Ok(None)
                     }
                     _ => Err(VMError::BadClass("ifacmpne but invalid operand types")),
                 }
@@ -1218,7 +1270,7 @@ impl VMState {
                 match value {
                     Value::Integer(v) => {
                         if v >= 0 {
-                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            frame_mut.branch_rel(*offset - 3);
                             Ok(None)
                         } else {
                             Ok(None)
@@ -1238,7 +1290,7 @@ impl VMState {
                 match value {
                     Value::Integer(v) => {
                         if v > 0 {
-                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            frame_mut.branch_rel(*offset - 3);
                             Ok(None)
                         } else {
                             Ok(None)
@@ -1258,7 +1310,7 @@ impl VMState {
                 match value {
                     Value::Integer(v) => {
                         if v <= 0 {
-                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            frame_mut.branch_rel(*offset - 3);
                             Ok(None)
                         } else {
                             Ok(None)
@@ -1278,7 +1330,7 @@ impl VMState {
                 match value {
                     Value::Integer(v) => {
                         if v < 0 {
-                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            frame_mut.branch_rel(*offset - 3);
                             Ok(None)
                         } else {
                             Ok(None)
@@ -1298,7 +1350,7 @@ impl VMState {
                 match value {
                     Value::Integer(v) => {
                         if v == 0 {
-                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            frame_mut.branch_rel(*offset - 3);
                             Ok(None)
                         } else {
                             Ok(None)
@@ -1318,7 +1370,7 @@ impl VMState {
                 match value {
                     Value::Integer(v) => {
                         if v != 0 {
-                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            frame_mut.branch_rel(*offset - 3);
                             Ok(None)
                         } else {
                             Ok(None)
@@ -1343,7 +1395,7 @@ impl VMState {
                 match (left, right) {
                     (Value::Integer(l), Value::Integer(r)) => {
                         if l == r {
-                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            frame_mut.branch_rel(*offset - 3);
                             Ok(None)
                         } else {
                             Ok(None)
@@ -1368,7 +1420,7 @@ impl VMState {
                 match (left, right) {
                     (Value::Integer(l), Value::Integer(r)) => {
                         if l <= r {
-                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            frame_mut.branch_rel(*offset - 3);
                             Ok(None)
                         } else {
                             Ok(None)
@@ -1393,7 +1445,7 @@ impl VMState {
                 match (left, right) {
                     (Value::Integer(l), Value::Integer(r)) => {
                         if l < r {
-                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            frame_mut.branch_rel(*offset - 3);
                             Ok(None)
                         } else {
                             Ok(None)
@@ -1418,7 +1470,7 @@ impl VMState {
                 match (left, right) {
                     (Value::Integer(l), Value::Integer(r)) => {
                         if l >= r {
-                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            frame_mut.branch_rel(*offset - 3);
                             Ok(None)
                         } else {
                             Ok(None)
@@ -1443,7 +1495,7 @@ impl VMState {
                 match (left, right) {
                     (Value::Integer(l), Value::Integer(r)) => {
                         if l > r {
-                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            frame_mut.branch_rel(*offset - 3);
                             Ok(None)
                         } else {
                             Ok(None)
@@ -1468,7 +1520,7 @@ impl VMState {
                 match (left, right) {
                     (Value::Integer(l), Value::Integer(r)) => {
                         if l != r {
-                            frame_mut.offset += *offset as i32 as u32 - 3;
+                            frame_mut.branch_rel(*offset - 3);
                             Ok(None)
                         } else {
                             Ok(None)
@@ -1511,7 +1563,7 @@ impl VMState {
                     _ => Err(VMError::BadClass("lcmp but invalid operand types")),
                 }
             }
-            Instruction::FCmpL => {
+            Instruction::FCmpG => {
                 let right = self
                     .current_frame_mut()
                     .operand_stack
@@ -1538,6 +1590,62 @@ impl VMState {
                                 .operand_stack
                                 .push(Value::Integer(-1));
                         }
+                        Ok(None)
+                    }
+                    _ => Err(VMError::BadClass("lcmp but invalid operand types")),
+                }
+            }
+            Instruction::FCmpL => {
+                let right = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let left = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                match (left, right) {
+                    (Value::Float(left), Value::Float(right)) => {
+                        if left < right {
+                            self.current_frame_mut()
+                                .operand_stack
+                                .push(Value::Integer(1));
+                        } else if left == right {
+                            self.current_frame_mut()
+                                .operand_stack
+                                .push(Value::Integer(0));
+                        } else {
+                            self.current_frame_mut()
+                                .operand_stack
+                                .push(Value::Integer(-1));
+                        }
+                        Ok(None)
+                    }
+                    _ => Err(VMError::BadClass("lcmp but invalid operand types")),
+                }
+            }
+            Instruction::FMul => {
+                let right = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+                let left = self
+                    .current_frame_mut()
+                    .operand_stack
+                    .pop()
+                    .expect("stack has a value");
+
+                match (left, right) {
+                    // TODO: ensure that division works "correctly" around NaN and zeroes (doesn't
+                    // panic pls)
+                    (Value::Float(left), Value::Float(right)) => {
+                        self.current_frame_mut()
+                            .operand_stack
+                            .push(Value::Float(left * right));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("lcmp but invalid operand types")),
@@ -1577,7 +1685,10 @@ impl VMState {
 
                 match value {
                     Value::Null(_v) => {
-                        frame_mut.offset += *offset as i32 as u32 - 3;
+                        frame_mut.branch_rel(*offset - 3);
+                        Ok(None)
+                    }
+                    Value::Array(_) => {
                         Ok(None)
                     }
                     Value::Object(_, _) => {
@@ -1606,17 +1717,17 @@ impl VMState {
                         Ok(None)
                     }
                     Value::Array(_) => {
-                        frame_mut.offset += *offset as i32 as u32 - 3;
+                        frame_mut.branch_rel(*offset - 3);
                         Ok(None)
                     }
                     Value::Object(_, _) => {
-                        frame_mut.offset += *offset as i32 as u32 - 3;
+                        frame_mut.branch_rel(*offset - 3);
                         Ok(None)
                     }
                     Value::String(_) => {
                         // TODO: really need to make this an internal String-with-value situation,
                         // but strings are not null....
-                        frame_mut.offset += *offset as i32 as u32 - 3;
+                        frame_mut.branch_rel(*offset - 3);
                         Ok(None)
                     }
                     _other => {
@@ -1956,6 +2067,29 @@ impl VMState {
                     _ => Err(VMError::BadClass("ineg but invalid operand types")),
                 }
             }
+            Instruction::IXor => {
+                let frame_mut = self.current_frame_mut();
+                let left = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iand but insufficient arguments"));
+                };
+                let right = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("iand but insufficient arguments"));
+                };
+
+                match (left, right) {
+                    (Value::Integer(l), Value::Integer(r)) => {
+                        frame_mut
+                            .operand_stack
+                            .push(Value::Integer(l ^ r));
+                        Ok(None)
+                    }
+                    _ => Err(VMError::BadClass("iand but invalid operand types")),
+                }
+            }
             Instruction::IAnd => {
                 let frame_mut = self.current_frame_mut();
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
@@ -2085,6 +2219,24 @@ impl VMState {
                         frame_mut
                             .operand_stack
                             .push(Value::Double(f as f64));
+                        Ok(None)
+                    }
+                    _ => Err(VMError::BadClass("i2d but invalid operand types")),
+                }
+            }
+            Instruction::F2I => {
+                let frame_mut = self.current_frame_mut();
+                let value = if let Some(value) = frame_mut.operand_stack.pop() {
+                    value
+                } else {
+                    return Err(VMError::BadClass("i2d but insufficient arguments"));
+                };
+
+                match value {
+                    Value::Float(f) => {
+                        frame_mut
+                            .operand_stack
+                            .push(Value::Integer(f as i32));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("i2d but invalid operand types")),
@@ -2435,12 +2587,14 @@ impl VMState {
                         vm.resolve_class("java/lang/String").expect("strings exist")
                     },
                     Value::Null(_) => {
+                        // TODO: think this should raise an exception...
                         return Ok(None);
                     }
                     _ => {
                         return Err(VMError::BadClass("invalid operand for checkcast"))
                     }
                 };
+                eprintln!("checking if {:?} can be cast to {}", check_class.this_class, name);
 
                 let name = {
                     if array {
@@ -2818,7 +2972,9 @@ impl VirtualMachine {
         let new_class = match referent {
             "java/lang/Class" => {
                 let cls = UnvalidatedClassFile::synthetic("java/lang/Class")
+                    .extends("java/lang/Object")
                     .with_method("<init>", "()V", Some(object_init))
+                    .with_method("isPrimitive", "()Z", Some(class_isprimitive))
                     .with_method("desiredAssertionStatus", "()Z", Some(class_desired_assertion_status))
                     .with_method("getPrimitiveClass", "(Ljava/lang/String;)Ljava/lang/Class;", Some(class_get_primitive_class))
                     .with_method("getClassLoader", "()Ljava/lang/ClassLoader;", Some(class_get_classloader))
@@ -2828,12 +2984,14 @@ impl VirtualMachine {
             }
             "java/lang/ThreadLocal" => {
                 let cls = UnvalidatedClassFile::synthetic("java/lang/ThreadLocal")
+                    .extends("java/lang/Object")
                     .with_method("<init>", "()V", Some(object_init))
                     .with_method("get", "()Ljava/lang/Object;", Some(thread_local_get));
                 ClassFile::validate(&cls).unwrap()
             }
             "java/lang/Throwable" => {
                 let cls = UnvalidatedClassFile::synthetic("java/lang/Throwable")
+                    .extends("java/lang/Object")
                     .with_method("<init>", "()V", Some(object_init))
                     .with_method("<init>", "(Ljava/lang/String;)V", Some(throwable_init_string));
                 ClassFile::validate(&cls).unwrap()
@@ -2842,14 +3000,24 @@ impl VirtualMachine {
                 let cls = UnvalidatedClassFile::synthetic("java/lang/Object")
                     .with_method("<init>", "()V", Some(object_init))
                     .with_method("hashCode", "()I", Some(object_hashcode))
+                    .with_method("equals", "(Ljava/lang/Object;)Z", Some(object_equals))
                     .with_method("getClass", "()Ljava/lang/Class;", Some(object_getclass));
+                ClassFile::validate(&cls).unwrap()
+            }
+            "java/lang/reflect/Method" => {
+                let cls = UnvalidatedClassFile::synthetic("java/lang/reflect/Method");
                 ClassFile::validate(&cls).unwrap()
             }
             "java/lang/String" => {
                 let cls = UnvalidatedClassFile::synthetic("java/lang/String")
+                    .extends("java/lang/Object")
                     .with_method("<init>", "(Ljava/lang/String;)V", Some(string_init_string))
                     .with_method("<init>", "([B)V", Some(string_init_bytearray))
                     .with_method("<init>", "([C)V", Some(string_init_chararray))
+                    .with_method("valueOf", "([C)Ljava/lang/String;", Some(string_valueof_chararray))
+                    .with_method("valueOf", "(C)Ljava/lang/String;", Some(string_valueof_char))
+                    .with_method("startsWith", "(Ljava/lang/String;)Z", Some(string_startswith))
+                    .with_method("charAt", "(I)C", Some(string_charat))
                     .with_method("hashCode", "()I", Some(string_hashcode))
                     .with_method("concat", "(Ljava/lang/String;)Ljava/lang/String;", Some(string_concat))
                     .with_method("substring", "(II)Ljava/lang/String;", Some(string_substring))
@@ -2860,6 +3028,7 @@ impl VirtualMachine {
             }
             "java/lang/StringBuilder" => {
                 let cls = UnvalidatedClassFile::synthetic("java/lang/StringBuilder")
+                    .extends("java/lang/Object")
                     .with_method("<init>", "()V", Some(stringbuilder_init))
                     .with_method("<init>", "(Ljava/lang/String;)V", Some(string_init_string))
                     .with_method("append", "(Ljava/lang/String;)Ljava/lang/StringBuilder;", Some(stringbuilder_append_string))
@@ -2868,6 +3037,7 @@ impl VirtualMachine {
             }
             "java/lang/System" => {
                 let cls = UnvalidatedClassFile::synthetic("java/lang/System")
+                    .extends("java/lang/Object")
                     .with_method("<clinit>", "()V", Some(system_clinit))
                     .with_method("exit", "(I)V", Some(system_exit))
                     .with_method("identityHashCode", "(Ljava/lang/Object;)I", Some(system_identity_hash_code))
@@ -2878,6 +3048,7 @@ impl VirtualMachine {
             }
             "java/io/PrintStream" => {
                 let cls = UnvalidatedClassFile::synthetic("java/io/PrintStream")
+                    .extends("java/lang/Object")
                     .with_method("println", "(Ljava/lang/String;)V", Some(system_out_println_string))
                     .with_method("println", "(Ljava/lang/Object;)V", Some(system_out_println_object))
                     .with_method("println", "(I)V", Some(system_out_println_int))
@@ -2886,6 +3057,7 @@ impl VirtualMachine {
             }
             "java/io/InputStreamReader" => {
                 let cls = UnvalidatedClassFile::synthetic("java/io/InputStreamReader")
+                    .extends("java/lang/Object")
                     .with_method("<init>", "(Ljava/io/InputStream;)V", Some(input_stream_reader_init));
                 ClassFile::validate(&cls).unwrap()
             }
@@ -3406,6 +3578,33 @@ fn object_hashcode(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), 
         .push(Value::Integer(0));
     Ok(())
 }
+fn object_equals(state: &mut VMState, vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let argument = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    let receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    if let (Value::Object(f1, _cls1), Value::Object(f2, _cls2)) = (&receiver, &argument) {
+        let res = if Rc::ptr_eq(f1, f2) {
+            1
+        } else {
+            0
+        };
+        state.current_frame_mut()
+            .operand_stack
+            .push(Value::Integer(res));
+    } else {
+        state.current_frame_mut()
+            .operand_stack
+            .push(Value::Integer(0));
+    }
+    Ok(())
+}
 fn object_getclass(state: &mut VMState, vm: &mut VirtualMachine) -> Result<(), VMError> {
     let receiver = state
         .current_frame_mut()
@@ -3579,6 +3778,117 @@ fn string_init_chararray(state: &mut VMState, _vm: &mut VirtualMachine) -> Resul
             "value".to_string(),
             Value::Array(Rc::new(RefCell::new(str_elems.into_boxed_slice()))),
         );
+    } else {
+        panic!("type error, expected string, got {:?}", argument);
+    }
+    Ok(())
+}
+// "charAt(I)C"
+fn string_charat(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let argument = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    let receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    if let (Value::String(receiver), Value::Integer(index)) = (&receiver, &argument) {
+        state
+            .current_frame_mut()
+            .operand_stack
+            .push(Value::Integer(receiver[*index as usize] as i32));
+    } else {
+        panic!("type error, expected string, got {:?}", argument);
+    }
+    Ok(())
+}
+// "(Ljava/lang/String;)Z"
+fn string_startswith(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let argument = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    let receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    if let (Value::String(receiver), Value::String(new_elems)) = (&receiver, &argument) {
+        let mut i = 0;
+        let mut beginswith = true;
+        while i < new_elems.len() {
+            if i == receiver.len() {
+                beginswith = false;
+                break;
+            }
+
+            if receiver[i] != new_elems[i] {
+                beginswith = false;
+                break;
+            }
+            i += 1;
+        }
+
+        state
+            .current_frame_mut()
+            .operand_stack
+            .push(Value::Integer(if beginswith { 1 } else { 0 }));
+    } else {
+        panic!("type error, expected string, got {:?}", argument);
+    }
+    Ok(())
+}
+// "valueOf([C)Ljava/lang/String;"
+fn string_valueof_chararray(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let argument = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    if let Value::Array(new_elems) = &argument {
+        let mut str_elems: Vec<u8> = Vec::new();
+        for el in new_elems.borrow().iter() {
+            if let Value::Integer(i) = el {
+                let i = *i;
+                if i > u8::MAX as i32 {
+                    panic!("non-ascii string");
+                }
+                str_elems.push(i as u8);
+            } else {
+                panic!("bad string");
+            }
+        }
+        state
+            .current_frame_mut()
+            .operand_stack
+            .push(Value::String(Rc::new(str_elems)));
+    } else {
+        panic!("type error, expected string, got {:?}", argument);
+    }
+    Ok(())
+}
+// "valueOf(C)Ljava/lang/String;"
+fn string_valueof_char(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let argument = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    if let Value::Integer(elem) = &argument {
+        let mut str_elems: Vec<u8> = Vec::new();
+        let elem = *elem;
+        if elem > u8::MAX as i32 {
+            panic!("non-ascii string");
+        }
+        str_elems.push(elem as u8);
+        state
+            .current_frame_mut()
+            .operand_stack
+            .push(Value::String(Rc::new(str_elems)));
     } else {
         panic!("type error, expected string, got {:?}", argument);
     }
@@ -3920,6 +4230,44 @@ fn system_arraycopy(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(),
     }
 }
 
+fn class_isprimitive(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+
+    if let Value::Object(fields, _) = receiver {
+        if let Some(value) = fields.borrow().get("class") {
+            if let Value::String(value) = value {
+                const PRIMITIVES: &[&[u8]] = &[
+                    b"java/lang/Byte",
+                    b"java/lang/Character",
+                    b"java/lang/Short",
+                    b"java/lang/Integer",
+                    b"java/lang/Long",
+                    b"java/lang/Float",
+                    b"java/lang/Double",
+                ];
+                let value = if PRIMITIVES.contains(&value.as_slice()) {
+                    Value::Integer(1)
+                } else {
+                    Value::Integer(0)
+                };
+                state
+                    .current_frame_mut()
+                    .operand_stack
+                    .push(value);
+            } else {
+                panic!("called isPrimitive on a class with no fields?");
+            }
+        } else {
+            panic!("isPrimitive called on class with no class member?");
+        }
+    }
+    Ok(())
+}
+
 fn class_desired_assertion_status(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
     state
         .current_frame_mut()
@@ -3928,11 +4276,55 @@ fn class_desired_assertion_status(state: &mut VMState, _vm: &mut VirtualMachine)
     Ok(())
 }
 
-fn class_get_primitive_class(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
+// getPrimitiveClass(Ljava/lang/String;)Ljava/lang/Class;
+fn class_get_primitive_class(state: &mut VMState, vm: &mut VirtualMachine) -> Result<(), VMError> {
+    let receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+
+    let primitive = if let Value::String(s) = receiver {
+        match s.as_slice() {
+            b"byte" => {
+                class_object_new(vm, "java/lang/Byte")
+            },
+            b"short" => {
+                class_object_new(vm, "java/lang/Short")
+            },
+            b"int" => {
+                class_object_new(vm, "java/lang/Integer")
+            },
+            b"long" => {
+                class_object_new(vm, "java/lang/Long")
+            },
+            b"char" => {
+                class_object_new(vm, "java/lang/Character")
+            },
+            b"float" => {
+                class_object_new(vm, "java/lang/Float")
+            },
+            b"double" => {
+                class_object_new(vm, "java/lang/Double")
+            },
+            b"boolean" => {
+                class_object_new(vm, "java/lang/Boolean")
+            },
+            b"void" => {
+                class_object_new(vm, "java/lang/Void")
+            },
+            other => {
+                panic!("unsupported class {:?}", other);
+            }
+        }
+    } else {
+        panic!("invalid string for getPrimitiveClass");
+    };
+
     state
         .current_frame_mut()
         .operand_stack
-        .push(Value::Null("some primitive class".to_string()));
+        .push(primitive);
     Ok(())
 }
 

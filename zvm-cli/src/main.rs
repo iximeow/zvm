@@ -22,7 +22,7 @@ fn main() {
     .unwrap();
     let mut classes_dir = Path::new(filename).to_path_buf();
     classes_dir.pop();
-    let classpath = vec![classes_dir, Path::new("../../build/jvm/java.base/").to_path_buf()];
+    let classpath = vec![classes_dir, Path::new("../build/jvm/java.base/").to_path_buf(), Path::new(".").to_path_buf()];
     let mut vm = VirtualMachine::new(classpath);
     let class_file_path = Path::new(filename);
     let class_name = class_file_path.file_stem().unwrap().to_str().unwrap();
