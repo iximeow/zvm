@@ -132,7 +132,7 @@ impl VMState {
     }
 
     pub fn leave(&mut self) {
-        self.call_stack.pop().expect("stack is non-empty");
+        self.call_stack.pop().expect("stack is non-empty , pls check it");
     }
 
     pub fn throw(&mut self) {
