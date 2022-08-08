@@ -3037,41 +3037,39 @@ impl VirtualMachine {
         }
     }
 
-    pub fn resolve_class(&mut self, referent: &str) -> Result<Rc<ClassFile>, VMError> {
+    pub fn resolve_class(&mut self, class_name: &str) -> Result<Rc<ClassFile>, VMError> {
 //        eprintln!("resolve class: {}", referent);
-        if let Some(class_file) = self.classes.get(referent) {
-            return Ok(Rc::clone(class_file));
+        if let Some(cls) = self.classes.get(class_name) {
+            return Ok(Rc::clone(cls));
         }
 
-        let new_class = if let Some(new_class) = jvm::synthetic::build_synthetic_class(referent) {
+        let new_class = if let Some(new_class) = jvm::synthetic::build_synthetic_class(class_name) {
             new_class
         } else {
-            let class_name = referent;
             use std::collections::hash_map::Entry;
             use std::fs::File;
-//                println!("Looking up class {}", class_name);
-            return match self.classes.entry(class_name.to_string()) {
-                Entry::Occupied(oe) => Ok(Rc::clone(oe.get())),
-                Entry::Vacant(_ve) => {
-                    for path in self.classpath.iter() {
-                        let possible_class = path.join(PathBuf::from(format!("{}.class", class_name)));
+            let mut res: Option<ClassFile> = None;
+            for path in self.classpath.iter() {
+                let possible_class = path.join(PathBuf::from(format!("{}.class", class_name)));
 //                            println!("-- checking {}", possible_class.display());
-                        if possible_class.exists() {
-                            let class_file = ClassFile::validate(
-                                &crate::class_file::unvalidated::read::class_header(
-                                    &mut File::open(possible_class).unwrap()
-                                ).unwrap()
-                            ).unwrap();
-                            let class_file = jvm::synthetic::augment_classfile(class_file);
-                            return self.register(referent.to_string(), class_file);
-                        }
-                    }
-                    Err(VMError::BadClass("could not resolve class"))
+                if possible_class.exists() {
+                    let class_file = ClassFile::validate(
+                        &crate::class_file::unvalidated::read::class_header(
+                            &mut File::open(possible_class).unwrap()
+                        ).unwrap()
+                    ).unwrap();
+                    res = Some(jvm::synthetic::augment_classfile(class_file));
+                    break;
                 }
+            }
+            if let Some(res) = res {
+                res
+            } else {
+                return Err(VMError::BadClass("could not resolve class"));
             }
         };
 
-        self.register(referent.to_string(), new_class)
+        self.register(class_name.to_string(), new_class)
     }
 
     pub fn register(
