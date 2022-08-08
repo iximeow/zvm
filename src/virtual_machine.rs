@@ -3252,10 +3252,12 @@ impl VirtualMachine {
     }
 }
 
-struct Arg {}
+use crate::compiler::ir;
+
+pub struct Arg { pub ty: ir::ValueType }
 
 #[allow(unused_assignments)]
-fn parse_signature_string(signature: &str) -> Option<(Vec<Arg>, Option<Arg>)> {
+pub fn parse_signature_string(signature: &str) -> Option<(Vec<Arg>, Option<Arg>)> {
     let mut reading_type = false;
     let mut _reading_array = false;
     let mut reading_return = false;
@@ -3278,21 +3280,49 @@ fn parse_signature_string(signature: &str) -> Option<(Vec<Arg>, Option<Arg>)> {
                     return Some((args, None));
                 }
             }
-            b'Z' | // boolean
-            b'B' | // byte
-            b'C' | // char
-            b'S' | // short
-            b'I' | // int
-            b'J' | // long
-            b'F' | // float
+            b'F' => { // float
+                if reading_type {
+                    continue;
+                }
+                if reading_return {
+                    return Some((args, Some(Arg { ty: ir::ValueType::Float })));
+                } else {
+                    args.push(Arg { ty: ir::ValueType::Float });
+                }
+            }
             b'D' => { // double
                 if reading_type {
                     continue;
                 }
                 if reading_return {
-                    return Some((args, Some(Arg {})));
+                    return Some((args, Some(Arg { ty: ir::ValueType::Double })));
                 } else {
-                    args.push(Arg {});
+                    args.push(Arg { ty: ir::ValueType::Double });
+                }
+            }
+            b'Z' | // boolean
+            b'B' | // byte
+            b'C' | // char
+            b'S' | // short
+            b'I' => { // int
+                if reading_type {
+                    continue;
+                }
+                if reading_return {
+                    return Some((args, Some(Arg { ty: ir::ValueType::Int })));
+                } else {
+                    args.push(Arg { ty: ir::ValueType::Int });
+                }
+
+            }
+            b'J' => { // long
+                if reading_type {
+                    continue;
+                }
+                if reading_return {
+                    return Some((args, Some(Arg { ty: ir::ValueType::Long })));
+                } else {
+                    args.push(Arg { ty: ir::ValueType::Long });
                 }
             }
             // not valid inside a type name
@@ -3307,9 +3337,9 @@ fn parse_signature_string(signature: &str) -> Option<(Vec<Arg>, Option<Arg>)> {
             b';' => {
                 if reading_type {
                     if reading_return {
-                        return Some((args, Some(Arg {})));
+                        return Some((args, Some(Arg { ty: ir::ValueType::Ref })));
                     } else {
-                        args.push(Arg {});
+                        args.push(Arg { ty: ir::ValueType::Ref });
                         reading_type = false;
                     }
                 }

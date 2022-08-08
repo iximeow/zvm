@@ -474,7 +474,7 @@ impl PartialEq for ClassFileRef {
     }
 }
 
-fn assemble_into(inst: crate::class_file::validated::Instruction, bytes: &mut Vec<u8>) {
+fn assemble_into(inst: crate::class_file::validated::Instruction, bytes: &mut Vec<u8>, method_body: &mut MethodBody) {
     use crate::class_file::validated::Instruction::*;
 
     match inst {
@@ -736,10 +736,16 @@ fn assemble_into(inst: crate::class_file::validated::Instruction, bytes: &mut Ve
         DReturn => { bytes.push(0xaf) },
         AReturn => { bytes.push(0xb0) },
         Return => { bytes.push(0xb1) },
+        // TODO: assembly needs to include assembling to a sink that holds fieldrefs etc
+        GetField(fieldref) => {
+            method_body.field_refs.insert(method_body.field_refs.len() as u32 + 1, fieldref);
+            let field_id = method_body.field_refs.len();
+            bytes.push(0xb4);
+            bytes.push(((field_id >> 8) & 0xff) as u8); bytes.push((field_id & 0xff) as u8)
+        },
         /*
         GetStatic(ConstantIdx::read_from(data)?) => { bytes.push(0xb2) },
         PutStatic(ConstantIdx::read_from(data)?) => { bytes.push(0xb3) },
-        GetField(ConstantIdx::read_from(data)?) => { bytes.push(0xb4) },
         PutField(ConstantIdx::read_from(data)?) => { bytes.push(0xb5) },
         InvokeVirtual(ConstantIdx::read_from(data)?) => { bytes.push(0xb6) },
         InvokeSpecial(ConstantIdx::read_from(data)?) => { bytes.push(0xb7) },
@@ -793,10 +799,22 @@ fn assemble_into(inst: crate::class_file::validated::Instruction, bytes: &mut Ve
     }
 }
 
-pub fn assemble(insts: Vec<crate::class_file::validated::Instruction>) -> Box<[u8]> {
+pub fn assemble(insts: Vec<crate::class_file::validated::Instruction>) -> MethodBody {
+    let mut result = MethodBody {
+        max_stack: 65535,
+        max_locals: 65535,
+        bytes: Vec::new().into_boxed_slice(),
+        exception_info: Vec::new(),
+        class_refs: HashMap::new(),
+        field_refs: HashMap::new(),
+        method_refs: HashMap::new(),
+        const_refs: HashMap::new(),
+    };
+
     let mut bytes: Vec<u8> = Vec::new();
     for inst in insts {
-        assemble_into(inst, &mut bytes);
+        assemble_into(inst, &mut bytes, &mut result);
     }
-    bytes.into_boxed_slice()
+    result.bytes = bytes.into_boxed_slice();
+    result
 }

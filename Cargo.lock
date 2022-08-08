@@ -426,6 +426,7 @@ dependencies = [
  "byteorder",
  "cranelift-codegen",
  "cranelift-frontend",
+ "libc",
  "yaxpeax-arch",
  "yaxpeax-x86",
 ]
