@@ -311,8 +311,8 @@ impl VMState {
                 let stack = &frame.operand_stack;
                 let receiver = &stack[stack.len() - args.len() - 1];
                 match receiver {
-                    Value::Object(_inst, cls) => {
-                        Rc::clone(cls)
+                    Value::Object(obj) => {
+                        Rc::clone(obj.cls())
                     }
                     Value::Array(_) => {
                         vm.resolve_class("java/lang/Object").unwrap()
@@ -393,8 +393,8 @@ impl VMState {
                 let frame = self.current_frame();
                 let stack = &frame.operand_stack;
                 let this = &stack[stack.len() - (*count) as usize];
-                if let Value::Object(_inst, cls) = &this {
-                    let mut current_class = Rc::clone(cls);
+                if let Value::Object(obj) = &this {
+                    let mut current_class = Rc::clone(obj.cls());
                     let new_ref: MethodRef = loop {
                         if let Some(_handle) = current_class.get_method(&method_ref.name, &method_ref.desc) {
                             break MethodRef {
@@ -442,11 +442,14 @@ impl VMState {
                     .expect("stack has a value");
 
                 let value = match top {
-                    Value::Object(fields, inst_class) => {
+                    Value::Object(obj) => {
+                        obj.get_field(&field_ref.name)
 //                        println!("getting the field, inst: {}", inst_class.this_class);
+                        /*
                         vm
                             .get_instance_field(Rc::clone(&inst_class), Rc::clone(&fields), &field_ref.name, &field_ref.desc)
                             .unwrap()
+                        */
                     }
                     other => { panic!("should be an object, was {:?}, getting {:?}", other, field_ref); }
                 };
@@ -466,9 +469,12 @@ impl VMState {
                     .expect("stack has a value");
 
                 match top {
-                    Value::Object(fields, inst_class) => {
+                    Value::Object(obj) => {
+                        obj.set_field(&field_ref.name, value);
+                        /*
                         vm
                             .put_instance_field(Rc::clone(&inst_class), Rc::clone(&fields), &field_ref.name, &field_ref.desc, value);
+                        */
                     }
                     other => { panic!("should be an object, was {:?}, getting {:?}", other, field_ref); }
                 };
@@ -1199,8 +1205,8 @@ impl VMState {
                             Ok(None)
                         }
                     }
-                    (Value::Object(l, _lcls), Value::Object(r, _rcls)) => {
-                        if Rc::ptr_eq(&l, &r) {
+                    (Value::Object(obj1), Value::Object(obj2)) => {
+                        if obj1 == obj2 {
                             frame_mut.branch_rel(*offset - 3);
                             Ok(None)
                         } else {
@@ -1240,8 +1246,8 @@ impl VMState {
                             Ok(None)
                         }
                     }
-                    (Value::Object(l, _lcls), Value::Object(r, _rcls)) => {
-                        if !Rc::ptr_eq(&l, &r) {
+                    (Value::Object(obj1), Value::Object(obj2)) => {
+                        if obj1 != obj2 {
                             frame_mut.branch_rel(*offset - 3);
                             Ok(None)
                         } else {
@@ -1691,7 +1697,7 @@ impl VMState {
                     Value::Array(_) => {
                         Ok(None)
                     }
-                    Value::Object(_, _) => {
+                    Value::Object(_) => {
                         Ok(None)
                     }
                     Value::String(_) => {
@@ -1720,7 +1726,7 @@ impl VMState {
                         frame_mut.branch_rel(*offset - 3);
                         Ok(None)
                     }
-                    Value::Object(_, _) => {
+                    Value::Object(_) => {
                         frame_mut.branch_rel(*offset - 3);
                         Ok(None)
                     }
@@ -2451,7 +2457,7 @@ impl VMState {
                         self.leave();
                         Ok(Some(value))
                     }
-                    Value::Object(_, _) => {
+                    Value::Object(_) => {
                         self.leave();
                         Ok(Some(value))
                     }
@@ -2471,7 +2477,7 @@ impl VMState {
                 };
 
                 match value {
-                    Value::Object(_, _) => {
+                    Value::Object(_) => {
                         self.throw();
                         Ok(Some(value))
                     }
@@ -2540,8 +2546,8 @@ impl VMState {
                     }
 
                     match item {
-                        Value::Object(_, cls) => {
-                            cls
+                        Value::Object(obj) => {
+                            Rc::clone(obj.cls())
                         },
                         Value::Array(_) => {
                             vm.resolve_class("java/lang/Object").expect("object exists")
@@ -2576,8 +2582,8 @@ impl VMState {
                 let stack = &frame_mut.operand_stack;
                 let mut array = false;
                 let mut check_class = match &stack[stack.len() - 1] {
-                    Value::Object(_, cls) => {
-                        Rc::clone(cls)
+                    Value::Object(obj) => {
+                        Rc::clone(obj.cls())
                     }
                     Value::Array(_) => {
                         array = true;
@@ -2646,6 +2652,79 @@ impl VMState {
     }
 }
 
+pub struct JvmObject {
+    class: Rc<ClassFile>,
+    // TODO: declare classes to zvm and get layout ids to use here..
+    // zvm_layout_id: LayoutId,
+    fields: Rc<RefCell<HashMap<String, Value>>>,
+}
+
+impl PartialEq for JvmObject {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.fields, &other.fields)
+    }
+}
+
+impl Clone for JvmObject {
+    fn clone(&self) -> Self {
+        JvmObject {
+            class: Rc::clone(&self.class),
+            fields: Rc::clone(&self.fields),
+        }
+    }
+}
+
+impl JvmObject {
+    pub fn new_with_data(class: Rc<ClassFile>, data: HashMap<String, Value>) -> Self {
+        JvmObject {
+            fields: Rc::new(RefCell::new(data)),
+            class,
+        }
+    }
+    pub fn create(class: Rc<ClassFile>) -> Self {
+        JvmObject {
+            fields: Rc::new(RefCell::new(HashMap::new())),
+            class,
+        }
+    }
+
+    pub fn with_field(self, name: &str, value: Value) -> Self {
+        self.fields.borrow_mut().insert(name.to_string(), value);
+        self
+    }
+
+    pub fn cls(&self) -> &Rc<ClassFile> {
+        &self.class
+    }
+
+    pub fn fields_ptr(&self) -> *const u8 {
+        let ptr: *const HashMap<String, Value> = (&*self.fields.borrow()) as *const HashMap<String, Value>;
+        ptr as *const u8
+    }
+
+    pub fn get_field(&self, name: &str) -> Value {
+        self.fields.borrow().get(name).expect("field is defined").clone()
+    }
+
+    pub fn set_field(&self, name: &str, value: Value) {
+        self.fields.borrow_mut().insert(name.to_string(), value);
+    }
+
+    pub fn new_inst(class_file: Rc<ClassFile>) -> JvmObject {
+        let mut fields = HashMap::new();
+        // TODO: respect type and access flags of fields
+        for field in class_file.fields.iter() {
+            fields.insert(
+                field.name.clone(),
+                Value::default_of(
+                    &field.desc,
+                ),
+            );
+        }
+        JvmObject { fields: Rc::new(RefCell::new(fields)), class: class_file }
+    }
+}
+
 pub enum Value {
     Integer(i32),
     Long(i64),
@@ -2653,7 +2732,7 @@ pub enum Value {
     Double(f64),
     Array(Rc<RefCell<Box<[Value]>>>),
     String(Rc<Vec<u8>>),
-    Object(Rc<RefCell<HashMap<String, Value>>>, Rc<ClassFile>),
+    Object(JvmObject),
     Null(String), // Null, of type `String`
     Uninitialized,
 }
@@ -2675,8 +2754,8 @@ impl fmt::Debug for Value {
                     write!(f, "String({:?})", bytes)
                 }
             }
-            Value::Object(_instance, cls) => {
-                write!(f, "Object(_, {})", &cls.this_class)
+            Value::Object(obj) => {
+                write!(f, "Object({})", &obj.cls().this_class)
             }
             Value::Null(cls) => {
                 write!(f, "Null({})", cls)
@@ -2695,7 +2774,7 @@ impl Clone for Value {
             Value::Double(v) => Value::Double(*v),
             Value::Array(v) => Value::Array(Rc::clone(v)),
             Value::String(v) => Value::String(Rc::clone(v)),
-            Value::Object(v1, v2) => Value::Object(Rc::clone(v1), Rc::clone(v2)),
+            Value::Object(obj) => Value::Object(obj.clone()),
             Value::Null(v) => Value::Null(v.clone()),
             Value::Uninitialized => Value::Uninitialized,
         }
@@ -2704,17 +2783,7 @@ impl Clone for Value {
 
 impl Value {
     pub fn new_inst(class_file: Rc<ClassFile>) -> Value {
-        let mut fields = HashMap::new();
-        // TODO: respect type and access flags of fields
-        for field in class_file.fields.iter() {
-            fields.insert(
-                field.name.clone(),
-                Value::default_of(
-                    &field.desc,
-                ),
-            );
-        }
-        Value::Object(Rc::new(RefCell::new(fields)), class_file)
+        Value::Object(JvmObject::new_inst(class_file))
     }
 
     pub fn default_of(s: &str) -> Value {
@@ -2788,7 +2857,9 @@ impl Hash for ValueRef {
                     Rc::from_raw(ptr);
                 }
             },
-            Value::Object(v1, v2) => {
+            Value::Object(obj) => {
+                panic!();
+                /*
                 unsafe {
                     let ptr = Rc::into_raw(Rc::clone(v1));
                     ptr.hash(state);
@@ -2797,6 +2868,7 @@ impl Hash for ValueRef {
                     ptr.hash(state);
                     Rc::from_raw(ptr);
                 }
+                */
             }
             Value::Null(v) => v.hash(state),
             Value::Uninitialized => 4.hash(state),
@@ -2814,7 +2886,7 @@ impl PartialEq for ValueRef {
             (Value::Float(v1), Value::Float(v2)) => { v1 == v2 },
             (Value::Double(v1), Value::Double(v2)) => { v1 == v2 },
             (Value::Array(v1), Value::Array(v2)) => { Rc::ptr_eq(v1, v2) },
-            (Value::Object(v1, _), Value::Object(v2, _)) => { Rc::ptr_eq(v1, v2) },
+            (Value::Object(obj1), Value::Object(obj2)) => { obj1 == obj2 },
             (Value::String(v1), Value::String(v2)) => { Rc::ptr_eq(v1, v2) },
             (Value::Null(v1), Value::Null(v2)) => { v1 == v2 },
             (Value::Uninitialized, _) => false,
@@ -2832,7 +2904,7 @@ enum NativeObject {
 
 pub struct VirtualMachine {
     classes: HashMap<String, Rc<ClassFile>>,
-    class_instances: HashMap<String, Rc<RefCell<HashMap<String, Value>>>>,
+    class_instances: HashMap<String, JvmObject>,
     static_instances: HashMap<ClassFileRef, HashMap<String, Value>>,
     native_instances: HashMap<ValueRef, RefCell<NativeObject>>,
     classpath: Vec<PathBuf>,
@@ -3183,8 +3255,8 @@ impl VirtualMachine {
                     while state.throwing && state.call_stack.len() > 0 {
                         for exception_record in state.current_frame().body.exception_info.iter() {
                             if exception_record.contains(state.current_frame().offset) {
-                                if let Value::Object(_, cls) = &value {
-                                    if self.is_exception(cls, exception_record.catch_type.as_str()) {
+                                if let Value::Object(obj) = &value {
+                                    if self.is_exception(obj.cls(), exception_record.catch_type.as_str()) {
                                         handler_pc = Some(exception_record.handler_pc as u32);
                                         break;
                                     }
@@ -3210,9 +3282,9 @@ impl VirtualMachine {
                         // if there is no handler and we stopped walking the call stack, we must
                         // have reached the end of the stack.
                         assert!(state.call_stack.len() == 0);
-                        if let Value::Object(fields, cls) = &value {
-                            if let Some(Value::String(msg)) = fields.borrow().get("message") {
-                                eprintln!("unhandled {}: {}", cls.this_class.as_str(), String::from_utf8_lossy(msg));
+                        if let Value::Object(obj) = &value {
+                            if let Value::String(msg) = obj.get_field("message") {
+                                eprintln!("unhandled {}: {}", obj.cls().this_class.as_str(), String::from_utf8_lossy(msg.as_ref()));
                                 std::process::exit(1);
                             }
                         }
@@ -3407,8 +3479,8 @@ fn system_out_println_string(state: &mut VMState, _vm: &mut VirtualMachine) -> R
         } else {
             panic!("executing System.out.println(\"{:?}\")", data);
         }
-    } else if let Value::Object(fields, _) = argument {
-        if let Value::Array(elements) = &fields.borrow()["value"] {
+    } else if let Value::Object(obj) = argument {
+        if let Value::Array(elements) = obj.get_field("value") {
             for el in elements.borrow().iter() {
                 if let Value::Integer(v) = el {
                     print!("{}", *v as u8 as char);
@@ -3443,7 +3515,7 @@ fn system_out_println_object(state: &mut VMState, _vm: &mut VirtualMachine) -> R
         } else {
             panic!("executing System.out.println(\"{:?}\")", data);
         }
-    } else if let Value::Object(_fields, _cls) = argument {
+    } else if let Value::Object(_obj) = argument {
 //        println!("{}: {:?}", cls.this_class, fields);
         println!("[object Object]");
     } else {
@@ -3526,9 +3598,9 @@ fn stringbuilder_append_string(state: &mut VMState, vm: &mut VirtualMachine) -> 
             for el in str_data.iter() {
                 data.push(*el as u16);
             }
-        } else if let Value::Object(fields, _) = appendee {
+        } else if let Value::Object(obj) = appendee {
             // do thing
-            if let Value::Array(str_data) = &fields.borrow()["value"] {
+            if let Value::Array(str_data) = obj.get_field("value") {
                 let str_data = str_data.borrow();
                 for el in str_data.iter() {
                     if let Value::Integer(i) = el {
@@ -3570,10 +3642,9 @@ fn stringbuilder_tostring(state: &mut VMState, vm: &mut VirtualMachine) -> Resul
         panic!("native object corresponding to stringbuilder receiver is not stringbuilder data");
     }
 
-    // now make the string to return...
-    let mut string_fields = HashMap::new();
-    string_fields.insert("value".to_string(), Value::Array(Rc::new(RefCell::new(str_data.into_boxed_slice()))));
-    let s = Value::Object(Rc::new(RefCell::new(string_fields)), vm.resolve_class("java/lang/String")?);
+    let obj = JvmObject::create(vm.resolve_class("java/lang/String")?)
+        .with_field("value", Value::Array(Rc::new(RefCell::new(str_data.into_boxed_slice()))));
+    let s = Value::Object(obj);
 
     state.current_frame_mut().operand_stack.push(s);
     Ok(())
@@ -3619,8 +3690,8 @@ fn object_equals(state: &mut VMState, vm: &mut VirtualMachine) -> Result<(), VME
         .operand_stack
         .pop()
         .expect("argument available");
-    if let (Value::Object(f1, _cls1), Value::Object(f2, _cls2)) = (&receiver, &argument) {
-        let res = if Rc::ptr_eq(f1, f2) {
+    if let (Value::Object(obj1), Value::Object(obj2)) = (&receiver, &argument) {
+        let res = if obj1 == obj2 {
             1
         } else {
             0
@@ -3641,10 +3712,10 @@ fn object_getclass(state: &mut VMState, vm: &mut VirtualMachine) -> Result<(), V
         .operand_stack
         .pop()
         .expect("argument available");
-    if let Value::Object(_fields, cls) = receiver {
+    if let Value::Object(obj) = receiver {
         state.current_frame_mut()
             .operand_stack
-            .push(class_object_new(vm, &cls.this_class));
+            .push(class_object_new(vm, &obj.cls().this_class));
     } else if let Value::Array(_) = receiver {
         // well.. this needs to be right one day
         state.current_frame_mut()
@@ -3679,11 +3750,11 @@ fn string_init_string(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(
         .operand_stack
         .pop()
         .expect("argument available");
-    if let (Value::Object(argument, _), Value::Object(receiver, _)) =
+    if let (Value::Object(argument), Value::Object(receiver)) =
         (&argument, &receiver)
     {
-        let new_value = argument.borrow()["value"].clone();
-        receiver.borrow_mut().insert("value".to_string(), new_value);
+        let new_value = argument.get_field("value").clone();
+        receiver.set_field("value", new_value);
     } else {
         panic!("type error, expected string, got {:?}", argument);
     }
@@ -3715,10 +3786,10 @@ fn throwable_init_string(state: &mut VMState, _vm: &mut VirtualMachine) -> Resul
         .operand_stack
         .pop()
         .expect("argument available");
-    if let (Value::String(_), Value::Object(receiver, _)) =
+    if let (Value::String(_), Value::Object(receiver)) =
         (&argument, &receiver)
     {
-        receiver.borrow_mut().insert("message".to_string(), argument);
+        receiver.set_field("message", argument);
     } else {
         panic!("type error, expected string, got {:?}", argument);
     }
@@ -3736,10 +3807,10 @@ fn input_stream_reader_init(state: &mut VMState, _vm: &mut VirtualMachine) -> Re
         .operand_stack
         .pop()
         .expect("argument available");
-    if let (Value::Object(_, _), Value::Object(receiver, _)) =
+    if let (Value::Object(_), Value::Object(receiver)) =
         (&argument, &receiver)
     {
-        receiver.borrow_mut().insert("stream".to_string(), argument);
+        receiver.set_field("stream", argument);
     } else {
         panic!("type error, expected string, got {:?}", argument);
     }
@@ -3757,7 +3828,7 @@ fn string_init_bytearray(state: &mut VMState, _vm: &mut VirtualMachine) -> Resul
         .operand_stack
         .pop()
         .expect("argument available");
-    if let (Value::Array(new_elems), Value::Object(fields, _)) =
+    if let (Value::Array(new_elems), Value::Object(receiver)) =
         (&argument, &receiver)
     {
         let mut str_elems = Vec::new();
@@ -3772,8 +3843,8 @@ fn string_init_bytearray(state: &mut VMState, _vm: &mut VirtualMachine) -> Resul
                 panic!("bad string");
             }
         }
-        fields.borrow_mut().insert(
-            "value".to_string(),
+        receiver.set_field(
+            "value",
             Value::Array(Rc::new(RefCell::new(str_elems.into_boxed_slice()))),
         );
     } else {
@@ -3793,7 +3864,7 @@ fn string_init_chararray(state: &mut VMState, _vm: &mut VirtualMachine) -> Resul
         .operand_stack
         .pop()
         .expect("argument available");
-    if let (Value::Array(new_elems), Value::Object(fields, _)) =
+    if let (Value::Array(new_elems), Value::Object(receiver)) =
         (&argument, &receiver)
     {
         let mut str_elems = Vec::new();
@@ -3804,8 +3875,8 @@ fn string_init_chararray(state: &mut VMState, _vm: &mut VirtualMachine) -> Resul
                 panic!("bad string");
             }
         }
-        fields.borrow_mut().insert(
-            "value".to_string(),
+        receiver.set_field(
+            "value",
             Value::Array(Rc::new(RefCell::new(str_elems.into_boxed_slice()))),
         );
     } else {
@@ -3941,9 +4012,9 @@ fn string_hashcode(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), 
             .current_frame_mut()
             .operand_stack
             .push(Value::Integer(hashcode));
-    } else if let Value::Object(fields, _) = receiver {
+    } else if let Value::Object(obj) = receiver {
         let mut hashcode: i32 = 0;
-        if let Value::Array(elems) = &fields.borrow()["value"] {
+        if let Value::Array(elems) = obj.get_field("value") {
             for c in elems.borrow().iter() {
                 if let Value::Integer(v) = c {
                     // value is actually a char array
@@ -4093,9 +4164,10 @@ fn system_clinit(_state: &mut VMState, vm: &mut VirtualMachine) -> Result<(), VM
     let cls_ref = ClassFileRef::of(&java_lang_system_class);
     let mut statics = HashMap::new();
     fn make_fd_instance(vm: &mut VirtualMachine, fd: i32) -> Value {
-        let mut fields = HashMap::new();
-        fields.insert("fd".to_string(), Value::Integer(fd));
-        Value::Object(Rc::new(RefCell::new(fields)), vm.resolve_class("java/io/PrintStream").unwrap())
+        Value::Object(
+            JvmObject::create(vm.resolve_class("java/io/PrintStream").unwrap())
+                .with_field("fd", Value::Integer(fd))
+        )
     }
     statics.insert("in".to_string(), make_fd_instance(vm, 0));
     statics.insert("out".to_string(), make_fd_instance(vm, 1));
@@ -4126,11 +4198,11 @@ fn system_identity_hash_code(state: &mut VMState, _vm: &mut VirtualMachine) -> R
         .pop()
         .expect("argument available");
 
-    if let Value::Object(fields, _cls) = argument {
+    if let Value::Object(obj) = argument {
         state
             .current_frame_mut()
             .operand_stack
-            .push(Value::Integer(fields.as_ptr() as i32));
+            .push(Value::Integer(obj.fields_ptr() as i32));
         Ok(())
     } else {
         panic!("invalid argument for identityHashCode");
@@ -4166,8 +4238,8 @@ fn system_get_property(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<
                 }
             }
         }
-        Value::Object(fields, _cls) => {
-            panic!("get_property doesn't get support dynamic strings: {:?}", fields);
+        Value::Object(obj) => {
+            panic!("get_property doesn't get support dynamic strings: {:?}", &obj.cls().this_class);
         }
         argument => {
             panic!("invalid argument for getProperty {:?}", argument);
@@ -4191,7 +4263,7 @@ fn array_newarray(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), V
         .expect("argument available");
 
     if let (
-        Value::Object(_fields, _cls),
+        Value::Object(_obj),
         Value::Integer(count)
     ) = (cls, count) {
         let mut elems = Vec::new();
@@ -4267,33 +4339,31 @@ fn class_isprimitive(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<()
         .pop()
         .expect("argument available");
 
-    if let Value::Object(fields, _) = receiver {
-        if let Some(value) = fields.borrow().get("class") {
-            if let Value::String(value) = value {
-                const PRIMITIVES: &[&[u8]] = &[
-                    b"java/lang/Byte",
-                    b"java/lang/Character",
-                    b"java/lang/Short",
-                    b"java/lang/Integer",
-                    b"java/lang/Long",
-                    b"java/lang/Float",
-                    b"java/lang/Double",
-                ];
-                let value = if PRIMITIVES.contains(&value.as_slice()) {
-                    Value::Integer(1)
-                } else {
-                    Value::Integer(0)
-                };
-                state
-                    .current_frame_mut()
-                    .operand_stack
-                    .push(value);
+    if let Value::Object(obj) = receiver {
+        if let Value::String(value) = obj.get_field("class") {
+            const PRIMITIVES: &[&[u8]] = &[
+                b"java/lang/Byte",
+                b"java/lang/Character",
+                b"java/lang/Short",
+                b"java/lang/Integer",
+                b"java/lang/Long",
+                b"java/lang/Float",
+                b"java/lang/Double",
+            ];
+            let value = if PRIMITIVES.contains(&value.as_slice()) {
+                Value::Integer(1)
             } else {
-                panic!("called isPrimitive on a class with no fields?");
-            }
+                Value::Integer(0)
+            };
+            state
+                .current_frame_mut()
+                .operand_stack
+                .push(value);
         } else {
-            panic!("isPrimitive called on class with no class member?");
+            panic!("called isPrimitive on a class with no fields?");
         }
+    } else {
+        panic!("isPrimitive called on non-object value?");
     }
     Ok(())
 }
@@ -4365,31 +4435,26 @@ fn class_get_name(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), V
         .pop()
         .expect("argument available");
 
-    if let Value::Object(fields, _) = receiver {
-        if let Some(value) = fields.borrow().get("class") {
-            state
-                .current_frame_mut()
-                .operand_stack
-                .push(value.clone());
-        } else {
-            panic!("getName called on class with no class member?");
-        }
+    if let Value::Object(obj) = receiver {
+        state
+            .current_frame_mut()
+            .operand_stack
+            .push(obj.get_field("class"));
     }
     Ok(())
 }
 
 fn class_object_new(vm: &mut VirtualMachine, class_name: &str) -> Value {
-    let fields = if vm.class_instances.contains_key(class_name) {
-        Rc::clone(&vm.class_instances[class_name])
+    // TODO: entry api..
+    let obj = if vm.class_instances.contains_key(class_name) {
+        vm.class_instances.get(class_name).unwrap().clone()
     } else {
-        let mut fields = HashMap::new();
-        fields.insert("class".to_string(), Value::String(Rc::new(class_name.bytes().collect())));
-        let fields = Rc::new(RefCell::new(fields));
-        vm.class_instances.insert(class_name.to_string(), Rc::clone(&fields));
-        fields
+        let jvm_obj = JvmObject::create(vm.resolve_class("java/lang/Class").unwrap())
+            .with_field("class", Value::String(Rc::new(class_name.bytes().collect())));
+        vm.class_instances.insert(class_name.to_string(), jvm_obj.clone());
+        jvm_obj
     };
-    let resolved = vm.resolve_class("java/lang/Class").unwrap();
-    Value::Object(fields, resolved)
+    Value::Object(obj)
 }
 
 fn thread_local_get(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(), VMError> {
@@ -4399,19 +4464,11 @@ fn thread_local_get(state: &mut VMState, _vm: &mut VirtualMachine) -> Result<(),
         .pop()
         .expect("argument available");
 
-    if let Value::Object(fields, _) = receiver {
-        if let Some(value) = fields.borrow().get("value") {
-            state
-                .current_frame_mut()
-                .operand_stack
-                .push(value.clone());
-        } else {
-            NULL_COUNT.fetch_add(1, Ordering::SeqCst);
-            state
-                .current_frame_mut()
-                .operand_stack
-                .push(Value::Null(String::new()));
-        }
+    if let Value::Object(obj) = receiver {
+        state
+            .current_frame_mut()
+            .operand_stack
+            .push(obj.get_field("value"));
     }
     Ok(())
 }
@@ -4531,7 +4588,7 @@ fn class_get_classloader(state: &mut VMState, vm: &mut VirtualMachine) -> Result
 
 fn new_instance_with_data(vm: &mut VirtualMachine, cls: &str, data: HashMap<String, Value>) -> Result<Value, VMError> {
     let resolved = vm.resolve_class(cls).unwrap();
-    Ok(Value::Object(Rc::new(RefCell::new(data)), resolved))
+    Ok(Value::Object(JvmObject::new_with_data(resolved, data)))
 }
 
 fn new_instance(vm: &mut VirtualMachine, cls: &str) -> Result<Value, VMError> {
