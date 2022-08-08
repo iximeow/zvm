@@ -2639,6 +2639,11 @@ impl VMState {
                 self.current_frame_mut().operand_stack.pop();
                 Ok(None)
             }
+            Instruction::Pop2 => {
+                self.current_frame_mut().operand_stack.pop();
+                self.current_frame_mut().operand_stack.pop();
+                Ok(None)
+            }
             // TODO: zvm is not (yet) concurrent so all operations are already thread-safe.
             Instruction::MonitorEnter => { Ok(None) }
             Instruction::MonitorExit => { Ok(None) }
