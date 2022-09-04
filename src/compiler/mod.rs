@@ -106,7 +106,7 @@ pub mod ir {
         IntXor { result: ValueRef, left: ValueRef, right: ValueRef },
         IReturn { retval: ValueRef },
         TypeAdjust { value: ValueRef, current_ty: ValueType, result: ValueRef, new_ty: ValueType },
-//        GetField { result: ValueRef, object: ValueRef, fieldref: Rc<crate::class_file::validated::FieldRef> },
+        GetField { result: ValueRef, object: ValueRef, field_desc: LayoutFieldRef },
 // TODO: alloc is where we need to finally introduce some notion of translation state...
 //        Alloc { result: ValueRef, layout_id: LayoutId },
         Return,
@@ -130,6 +130,77 @@ pub mod ir {
 
         pub fn instructions(&self) -> &[Instruction] {
             &self.instructions
+        }
+    }
+
+    #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
+    pub struct LayoutId(usize);
+
+    #[derive(Debug)]
+    pub struct Layout {
+        members: Vec<LayoutFieldRef>,
+    }
+
+    impl Layout {
+        pub fn new() -> Self {
+            Layout {
+                members: Vec::new()
+            }
+        }
+
+        pub fn add_field(&mut self, field_layout: LayoutFieldRef) {
+            self.members.push(field_layout);
+        }
+    }
+    #[derive(Clone, Debug)]
+    pub struct LayoutFieldRef {
+        // TODO: this limits even arrays to 2gb in max size. cranelift field offsets are Offset32.
+        // how troublesome is this..?
+        pub offset: i32,
+        // TODO: record the size of the referenced field. probably not going to be directly useful
+        // (should match `ValueType`'s size) but will probably become interesting if zvm directly
+        // supports inline structs at some point?
+        // pub size: i32,
+        pub ty: ValueType,
+        pub name: String,
+    }
+
+    #[derive(Debug)]
+    pub struct LayoutsInfo {
+        layouts_by_name: std::collections::HashMap<String, LayoutId>,
+        layouts: Vec<Layout>,
+    }
+
+    impl LayoutsInfo {
+        pub fn new() -> Self {
+            LayoutsInfo {
+                layouts_by_name: std::collections::HashMap::new(),
+                layouts: Vec::new(),
+            }
+        }
+
+        pub fn declare(&mut self, layout: Layout, name: String) {
+            let id = self.layouts.len();
+            self.layouts.push(layout);
+            self.layouts_by_name.insert(name, LayoutId(id));
+        }
+
+        pub fn get_layout(&self, layout_id: LayoutId) -> &Layout {
+            self.layouts.get(layout_id.0)
+                .expect("layout id implies the layout exists")
+        }
+
+        pub fn get_layout_id(&self, name: &str) -> Option<LayoutId> {
+            self.layouts_by_name.get(name).cloned()
+        }
+
+        pub fn get_field_in_layout(&self, layout_id: LayoutId, name: &str) -> &LayoutFieldRef {
+            self
+                .get_layout(layout_id)
+                .members
+                .iter()
+                .find(|member| member.name == name)
+                .expect("TODO: compile error; expect field exists..")
         }
     }
 
@@ -178,7 +249,7 @@ impl ZvmMethod {
     pub fn compile(&self) -> Result<Box<[u8]>, ir::CompileError> {
         use cranelift_codegen::entity::EntityRef;
         use cranelift_codegen::ir::types::*;
-        use cranelift_codegen::ir::{AbiParam, ExternalName, Function, InstBuilder, Signature};
+        use cranelift_codegen::ir::{AbiParam, ExternalName, Function, InstBuilder, MemFlags, Signature};
         use cranelift_codegen::isa::CallConv;
         use cranelift_codegen::settings;
         use cranelift_codegen::verifier::verify_function;
@@ -306,39 +377,24 @@ impl ZvmMethod {
                         builder.def_var(*result, value);
                     }
                     */
-                    /*
-                    ir::Instruction::GetField { result, object, fieldref } => {
-                        let load_complete = builder.create_block();
-                        let managed_object_getfield = builder.create_block();
-
+                    ir::Instruction::GetField { result, object, field_desc } => {
                         let object = vars.get(&object).expect("object var is defined");
                         let object_val = builder.use_var(*object);
-                        let low_bit = builder.ins().band_imm(object_val, 1);
-                        builder.ins().brz(low_bit, managed_object_getfield, &[object_val]);
-                        // ok we're doing a load from a native object, `fieldref` tells us what to
-                        // do..
-                        let layout_id = self.get_layout_id(&fieldref.class_name);
-                        let field = self.get_field_in_layout(layout_id, &fieldref);
-                        let out = builder.ins().load(field.ty, idk, object_val, field.offset - 1);
-                        builder.ins().jump(load_complete, &[out]);
 
-                        // alternatively, it was a load from a managed object.. this is more annoying
-                        builder.switch_to_block(managed_object_getfield);
-                        let vm = self.get_vmref();
-                        let (managed_getfield_sig, managed_getfield) = self.get_managed_getfield();
-                        let call = builder.ins().call_indirect(managed_getfield_sig, managed_getfield, &[vm, object_val, layout_id, fieldref]);
-                        let results = builder.inst_results(call);
-                        let out = match results {
-                            &[value] => value,
-                            other => { return Err(ir::CompileError::InvalidLoad("managed getfield returned multiple values?")); }
-                        };
-                        builder.ins().jump(load_complete, &[out]);
+                        let out = builder.ins().load(
+                            ty_zvm_to_cranelift(field_desc.ty),
+                            // zvm requires that layouts uphold alignment requirements and that
+                            // `GetField` is used only for valid references of appropriate type -
+                            // it's the responsibility of client code to ensure that types are not
+                            // confused.
+                            MemFlags::trusted(),
+                            object_val,
+                            field_desc.offset
+                        );
 
-                        builder.switch_to_block(load_complete);
                         let result = vars.get(&result).expect("result var is defined");
                         builder.def_var(*result, out);
                     }
-                    */
                     ir::Instruction::TypeAdjust { value, current_ty, result, new_ty } => {
                         if current_ty == new_ty {
                             eprintln!("bogus typeadjust? converting {} to {}", current_ty, new_ty);
@@ -378,7 +434,7 @@ impl ZvmMethod {
 }
 
 #[derive(Debug)]
-struct TranslatorState {
+struct TranslatorState<'layouts> {
     current_block: ir::Block,
     blocks: Vec<ir::Block>,
     arguments: Vec<ir::Argument>,
@@ -386,14 +442,15 @@ struct TranslatorState {
     jvm_to_native_map: HashMap<usize, ir::ValueRef>,
     returns: Option<ir::ValueRef>,
     operand_stack: Vec<ir::ValueRef>,
+    layouts: &'layouts ir::LayoutsInfo,
 }
 
-impl TranslatorState {
+impl<'layouts> TranslatorState<'layouts> {
     fn inst(&mut self, inst: ir::Instruction) {
         self.current_block.append(inst);
     }
 
-    fn new() -> Self {
+    fn new(layouts: &'layouts ir::LayoutsInfo) -> Self {
         TranslatorState {
             current_block: ir::Block::new(),
             blocks: Vec::new(),
@@ -402,6 +459,7 @@ impl TranslatorState {
             jvm_to_native_map: HashMap::new(),
             returns: None,
             operand_stack: Vec::new(),
+            layouts,
         }
     }
 
@@ -477,10 +535,13 @@ impl TranslatorState {
         if let Some(v) = self.operand_stack.pop() {
             let v_ty = self.type_of(v);
             if v_ty != ty {
+                panic!("type error in ir? popped {}, expected {}", v_ty, ty);
+                /*
                 eprintln!("inserting typecast from {} to {}", v_ty, ty);
                 let result = self.new_local(ty);
                 self.inst(ir::Instruction::TypeAdjust { value: v, current_ty: v_ty, result, new_ty: ty });
                 result
+                */
             } else {
                 v
             }
@@ -500,8 +561,8 @@ impl TranslatorState {
 
 use crate::class_file::validated::{MethodBody, Instruction};
 
-pub fn bytecode2ir(method: &MethodBody, sig: (Vec<Arg>, Option<Arg>)) -> Result<ZvmMethod, ir::TranslationError> {
-    let mut translator = TranslatorState::new();
+pub fn bytecode2ir(layouts: &ir::LayoutsInfo, method: &MethodBody, sig: (Vec<Arg>, Option<Arg>)) -> Result<ZvmMethod, ir::TranslationError> {
+    let mut translator = TranslatorState::new(layouts);
 
     for arg in sig.0.iter() {
         translator.new_argument(arg.ty);
@@ -510,6 +571,18 @@ pub fn bytecode2ir(method: &MethodBody, sig: (Vec<Arg>, Option<Arg>)) -> Result<
     let mut instructions = method.iter_from(0);
     while let Some(instruction) = instructions.next() {
         match instruction {
+            Instruction::ALoad0 => {
+                translator.load_argument(0, ir::ValueType::Ref);
+            }
+            Instruction::ALoad1 => {
+                translator.load_argument(1, ir::ValueType::Ref);
+            }
+            Instruction::ALoad2 => {
+                translator.load_argument(2, ir::ValueType::Ref);
+            }
+            Instruction::ALoad3 => {
+                translator.load_argument(3, ir::ValueType::Ref);
+            }
             Instruction::ILoad0 => {
                 translator.load_argument(0, ir::ValueType::Int);
             }
@@ -577,17 +650,29 @@ pub fn bytecode2ir(method: &MethodBody, sig: (Vec<Arg>, Option<Arg>)) -> Result<
                 translator.inst(ir::Instruction::IntXor { result, left, right });
                 translator.push(result);
             }
-            /*
             Instruction::GetField(fieldref) => {
                 fn desc_to_ir_valuety(desc: &str) -> ir::ValueType {
                     ir::ValueType::Int
                 }
+
+                let layout_id = translator.layouts.get_layout_id(&fieldref.class_name);
+                if layout_id.is_none() {
+                    panic!("layout for '{}' is not declared", &fieldref.class_name);
+                }
+                let layout_id = layout_id.expect("TODO: layout is declared ahead of time");
+                let field = translator.layouts.get_field_in_layout(layout_id, &fieldref.name);
+
+                if desc_to_ir_valuety(&fieldref.desc) != field.ty {
+                    panic!("TODO: inconsistency detected: field's referent is a different type than the declared layout");
+                }
+
                 let object = translator.pop_typed(ir::ValueType::Ref);
-                let result = translator.new_local(desc_to_ir_valuety(&fieldref.desc));
-                translator.inst(ir::Instruction::GetField { result, object, fieldref });
+                let result = translator.new_local(field.ty);
+
+                // TODO: would be nice to not clone the field name, here?
+                translator.inst(ir::Instruction::GetField { result, object, field_desc: field.clone() });
                 translator.push(result);
             }
-            */
             Instruction::Pop => {
                 translator.pop_any();
             }
@@ -632,7 +717,8 @@ fn test_translator() {
         Instruction::IReturn,
     ];
 
-    jit(instructions, "()I");
+    let args = &[];
+    jit(args.as_slice(), instructions, "()I");
 }
 
 #[test]
@@ -646,7 +732,8 @@ fn test_add_args() {
         Instruction::IReturn,
     ];
 
-    jit(instructions, "(II)I");
+    let args = &[20, 4];
+    jit(args.as_slice(), instructions, "(II)I");
 }
 
 #[test]
@@ -654,17 +741,22 @@ fn test_field_access() {
     use crate::class_file::validated;
 
     let instructions: Vec<validated::Instruction> = vec![
-        Instruction::ILoad0,
-//        Instruction::GetField(Rc::new(FieldRef { class_name: "Integer".to_owned(), name: "value".to_owned(), desc: "I".to_owned() })),
+        Instruction::ALoad0,
+        Instruction::GetField(Rc::new(FieldRef { class_name: "java/lang/Integer".to_owned(), name: "value".to_owned(), desc: "I".to_owned() })),
+        Instruction::ILoad1,
+        Instruction::IAdd,
         Instruction::IReturn,
     ];
 
-    jit(instructions, "(II)I");
+    let definitely_an_integer = [0xdeadbeef_cafebabe_u64 as i64, 20i64];
+    let integer_ref: *const [i64; 2] = &definitely_an_integer as *const [i64; 2];
+    let args = &[integer_ref as i64, 4];
+    jit(args.as_slice(), instructions, "(Ljava/lang/Integer;I)I");
 }
 
 use crate::class_file::validated;
 
-fn jit(instructions: Vec<validated::Instruction>, signature: &'static str) {
+fn jit(args: &[i64], instructions: Vec<validated::Instruction>, signature: &'static str) {
     println!("jvm instructions:");
     for inst in instructions.iter() {
         println!("  {}", inst);
@@ -673,7 +765,24 @@ fn jit(instructions: Vec<validated::Instruction>, signature: &'static str) {
     let method = validated::assemble(instructions);
     println!("jvm bytecode: {:02x?}", &method.bytes);
 
-    let result = bytecode2ir(&method, crate::virtual_machine::parse_signature_string(signature).expect("parses")).expect("translates");
+    let mut layouts = ir::LayoutsInfo::new();
+    layouts.declare({
+        let mut layout = ir::Layout::new();
+        layout.add_field(ir::LayoutFieldRef {
+            offset: 0,
+            ty: ir::ValueType::Ref,
+            name: "class".to_string()
+        });
+        layout.add_field(ir::LayoutFieldRef {
+            offset: 8,
+            ty: ir::ValueType::Int,
+            name: "value".to_string()
+        });
+        layout
+    }, "java/lang/Integer".to_string());
+
+
+    let result = bytecode2ir(&layouts, &method, crate::virtual_machine::parse_signature_string(signature).expect("parses")).expect("translates");
     println!("");
     println!("ir form: {:?}", result);
     println!("");
@@ -704,11 +813,12 @@ fn jit(instructions: Vec<validated::Instruction>, signature: &'static str) {
         let res = unsafe { libc::mprotect(page_addr as *mut std::ffi::c_void, prot_len, libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC) };
         eprintln!("mprotect res: {}", res);
     }
-    let res = jitcall(&[20, 4], unsafe { std::mem::transmute(code.as_ptr()) });
+    let res = jitcall(args, unsafe { std::mem::transmute(code.as_ptr()) });
     println!("result: {}", res);
 }
 
 fn jitcall(args: &[i64], code: fn(i64, i64, i64, i64, i64, i64) -> i64) -> i64 {
+    // TODO: it is here that we would translate object arguments and returns to/from native impls
     let mut actual_args = [0i64; 6];
     for i in 0..args.len() {
         actual_args[i] = args[i];
