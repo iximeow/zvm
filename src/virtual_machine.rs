@@ -23,21 +23,21 @@ static NULL_COUNT: AtomicUsize = AtomicUsize::new(0);
 static NEW_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 #[allow(dead_code)]
-struct CallFrame {
+struct CallFrame<ObjectImpl: JvmObject, ArrayImpl: JvmArray> {
     offset: u32,
-    arguments: Vec<Value>,
+    arguments: Vec<Value<ObjectImpl, ArrayImpl>>,
     body: Rc<MethodBody>,
     pub enclosing_class: Rc<ClassFile>,
     pub method_name: String,
-    operand_stack: Vec<Value>,
+    operand_stack: Vec<Value<ObjectImpl, ArrayImpl>>,
 }
 
-impl CallFrame {
+impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> CallFrame<ObjectImpl, ArrayImpl> {
     pub fn new(
         body: Rc<MethodBody>,
         enclosing_class: Rc<ClassFile>,
         method_name: String,
-        mut arguments: Vec<Value>,
+        mut arguments: Vec<Value<ObjectImpl, ArrayImpl>>,
     ) -> Self {
         while arguments.len() < (body.max_locals as usize) {
             arguments.push(Value::Uninitialized);
@@ -75,19 +75,19 @@ impl CallKind {
     }
 }
 
-pub struct VMState {
+pub struct VMState<ObjectImpl: JvmObject, ArrayImpl: JvmArray> {
     // Attribute is actually a Code (anything else is an error)
-    call_stack: Vec<CallFrame>,
+    call_stack: Vec<CallFrame<ObjectImpl, ArrayImpl>>,
     throwing: bool,
 }
 
 #[allow(dead_code)]
-impl VMState {
+impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> {
     pub fn new(
         code: Rc<MethodBody>,
         method_class: Rc<ClassFile>,
         method_name: String,
-        initial_args: Vec<Value>,
+        initial_args: Vec<Value<ObjectImpl, ArrayImpl>>,
     ) -> Self {
         let mut state = VMState {
             call_stack: Vec::new(),
@@ -125,7 +125,7 @@ impl VMState {
         body: Rc<MethodBody>,
         enclosing_class: Rc<ClassFile>,
         method_name: &str,
-        arguments: Vec<Value>,
+        arguments: Vec<Value<ObjectImpl, ArrayImpl>>,
     ) {
         self.call_stack
             .push(CallFrame::new(body, enclosing_class, method_name.to_string(), arguments));
@@ -142,9 +142,9 @@ impl VMState {
         // self.call_stack.pop().expect("stack is non-empty");
     }
 
-    fn interpret_iload(&mut self, idx: u16) -> Result<Option<Value>, VMError> {
+    fn interpret_iload(&mut self, idx: u16) -> Result<Option<Value<ObjectImpl, ArrayImpl>>, VMError> {
         let frame_mut = self.current_frame_mut();
-        let argument: Option<&Value> = frame_mut.arguments.get(idx as usize);
+        let argument: Option<&Value<ObjectImpl, ArrayImpl>> = frame_mut.arguments.get(idx as usize);
         let operand = match argument {
             Some(argument) => match argument {
                 Value::Integer(v) => Value::Integer(*v),
@@ -164,7 +164,7 @@ impl VMState {
         Ok(None)
     }
 
-    fn interpret_istore(&mut self, idx: u16) -> Result<Option<Value>, VMError> {
+    fn interpret_istore(&mut self, idx: u16) -> Result<Option<Value<ObjectImpl, ArrayImpl>>, VMError> {
         let frame_mut = self.current_frame_mut();
         let value = frame_mut
             .operand_stack
@@ -175,9 +175,9 @@ impl VMState {
         Ok(None)
     }
 
-    fn interpret_lload(&mut self, idx: u16) -> Result<Option<Value>, VMError> {
+    fn interpret_lload(&mut self, idx: u16) -> Result<Option<Value<ObjectImpl, ArrayImpl>>, VMError> {
         let frame_mut = self.current_frame_mut();
-        let argument: Option<&Value> = frame_mut.arguments.get(idx as usize);
+        let argument: Option<&Value<ObjectImpl, ArrayImpl>> = frame_mut.arguments.get(idx as usize);
         let operand = match argument {
             Some(argument) => match argument {
                 Value::Long(v) => Value::Long(*v),
@@ -197,7 +197,7 @@ impl VMState {
         Ok(None)
     }
 
-    fn interpret_lstore(&mut self, idx: u16) -> Result<Option<Value>, VMError> {
+    fn interpret_lstore(&mut self, idx: u16) -> Result<Option<Value<ObjectImpl, ArrayImpl>>, VMError> {
         let frame_mut = self.current_frame_mut();
         let value = frame_mut
             .operand_stack
@@ -208,9 +208,9 @@ impl VMState {
         Ok(None)
     }
 
-    fn interpret_fload(&mut self, idx: u16) -> Result<Option<Value>, VMError> {
+    fn interpret_fload(&mut self, idx: u16) -> Result<Option<Value<ObjectImpl, ArrayImpl>>, VMError> {
         let frame_mut = self.current_frame_mut();
-        let argument: Option<&Value> = frame_mut.arguments.get(idx as usize);
+        let argument: Option<&Value<ObjectImpl, ArrayImpl>> = frame_mut.arguments.get(idx as usize);
         let operand = match argument {
             Some(argument) => match argument {
                 Value::Float(v) => Value::Float(*v),
@@ -230,7 +230,7 @@ impl VMState {
         Ok(None)
     }
 
-    fn interpret_fstore(&mut self, idx: u16) -> Result<Option<Value>, VMError> {
+    fn interpret_fstore(&mut self, idx: u16) -> Result<Option<Value<ObjectImpl, ArrayImpl>>, VMError> {
         let frame_mut = self.current_frame_mut();
         let value = frame_mut
             .operand_stack
@@ -241,9 +241,9 @@ impl VMState {
         Ok(None)
     }
 
-    fn interpret_dload(&mut self, idx: u16) -> Result<Option<Value>, VMError> {
+    fn interpret_dload(&mut self, idx: u16) -> Result<Option<Value<ObjectImpl, ArrayImpl>>, VMError> {
         let frame_mut = self.current_frame_mut();
-        let argument: Option<&Value> = frame_mut.arguments.get(idx as usize);
+        let argument: Option<&Value<ObjectImpl, ArrayImpl>> = frame_mut.arguments.get(idx as usize);
         let operand = match argument {
             Some(argument) => match argument {
                 Value::Double(v) => Value::Double(*v),
@@ -263,7 +263,7 @@ impl VMState {
         Ok(None)
     }
 
-    fn interpret_dstore(&mut self, idx: u16) -> Result<Option<Value>, VMError> {
+    fn interpret_dstore(&mut self, idx: u16) -> Result<Option<Value<ObjectImpl, ArrayImpl>>, VMError> {
         let frame_mut = self.current_frame_mut();
         let value = frame_mut
             .operand_stack
@@ -274,9 +274,9 @@ impl VMState {
         Ok(None)
     }
 
-    fn interpret_aload(&mut self, idx: u16) -> Result<Option<Value>, VMError> {
+    fn interpret_aload(&mut self, idx: u16) -> Result<Option<Value<ObjectImpl, ArrayImpl>>, VMError> {
         let frame_mut = self.current_frame_mut();
-        let argument: Option<&Value> = frame_mut.arguments.get(idx as usize);
+        let argument: Option<&Value<ObjectImpl, ArrayImpl>> = frame_mut.arguments.get(idx as usize);
         let operand = match argument {
             // TODO: type check argument as an object?
             Some(Value::Uninitialized) => {
@@ -293,7 +293,7 @@ impl VMState {
         Ok(None)
     }
 
-    fn interpret_astore(&mut self, idx: u16) -> Result<Option<Value>, VMError> {
+    fn interpret_astore(&mut self, idx: u16) -> Result<Option<Value<ObjectImpl, ArrayImpl>>, VMError> {
         let frame_mut = self.current_frame_mut();
         let value = frame_mut
             .operand_stack
@@ -304,7 +304,7 @@ impl VMState {
         Ok(None)
     }
 
-    fn call_method(&mut self, vm: &mut VirtualMachine, method: &MethodRef, kind: CallKind) {
+    fn call_method(&mut self, vm: &mut VirtualMachine<ObjectImpl, ArrayImpl>, method: &MethodRef, kind: CallKind) {
         let mut current_class = match kind {
             CallKind::Virtual => {
                 // virtual calls can be abstract and resolution has to start at the ref being called on
@@ -343,6 +343,7 @@ impl VMState {
                 } else if handle.access().is_abstract() {
                     // continue up on the chanin...
                     if target_class.super_class.is_none() {
+                        eprintln!("started at {:?}", init_class);
                         panic!("cannot find method {:?}", method);
                     }
                     let super_class = target_class.super_class.as_ref().expect("superclass exists");
@@ -354,6 +355,7 @@ impl VMState {
             } else {
                 // well if it's not on this class, maybe somewhere up the inheritance chain?
                 if target_class.super_class.is_none() {
+                    eprintln!("started at {:?}", init_class);
                     panic!("cannot find method {:?}", method);
                 }
                 let super_class = target_class.super_class.as_ref().expect("superclass exists");
@@ -365,8 +367,8 @@ impl VMState {
     fn execute(
         &mut self,
         instruction: &Instruction,
-        vm: &mut VirtualMachine,
-    ) -> Result<Option<Value>, VMError> {
+        vm: &mut VirtualMachine<ObjectImpl, ArrayImpl>,
+    ) -> Result<Option<Value<ObjectImpl, ArrayImpl>>, VMError> {
         let frame = self.current_frame();
         eprintln!("{}.{}: inst {}", &frame.enclosing_class.this_class, &frame.method_name, instruction);
         {
@@ -1745,7 +1747,7 @@ impl VMState {
             }
             Instruction::IInc(idx, constant) => {
                 let frame_mut = self.current_frame_mut();
-                let argument: Option<&mut Value> = frame_mut.arguments.get_mut(*idx as usize);
+                let argument: Option<&mut Value<ObjectImpl, ArrayImpl>> = frame_mut.arguments.get_mut(*idx as usize);
                 match argument {
                     Some(argument) => match argument {
                         Value::Integer(v) => { *v = v.wrapping_add(*constant as i32); }
@@ -2617,6 +2619,7 @@ impl VMState {
 
                 loop {
                     let cls = Rc::clone(&check_class);
+                    eprintln!("checking {}, interfaces {:?}, super={:?}", cls.this_class, cls.interfaces, cls.super_class);
                     if cls.this_class.as_str() == name {
                         return Ok(None);
                     } else if cls.interfaces.contains(&name.to_string()) {
@@ -2653,7 +2656,7 @@ impl VMState {
         }
     }
     #[allow(dead_code)]
-    fn return_value(&mut self) -> Option<Value> {
+    fn return_value(&mut self) -> Option<Value<ObjectImpl, ArrayImpl>> {
         // panic!("Hello there");
         None
     }
@@ -2663,7 +2666,7 @@ pub struct JvmObject {
     class: Rc<ClassFile>,
     // TODO: declare classes to zvm and get layout ids to use here..
     // zvm_layout_id: LayoutId,
-    fields: Rc<RefCell<HashMap<String, Value>>>,
+    fields: Rc<RefCell<HashMap<String, Value<ObjectImpl, ArrayImpl>>>>,
 }
 
 impl PartialEq for JvmObject {
@@ -2682,7 +2685,7 @@ impl Clone for JvmObject {
 }
 
 impl JvmObject {
-    pub fn new_with_data(class: Rc<ClassFile>, data: HashMap<String, Value>) -> Self {
+    pub fn new_with_data(class: Rc<ClassFile>, data: HashMap<String, Value<ObjectImpl, ArrayImpl>>) -> Self {
         JvmObject {
             fields: Rc::new(RefCell::new(data)),
             class,
@@ -2705,7 +2708,7 @@ impl JvmObject {
     }
 
     pub fn fields_ptr(&self) -> *const u8 {
-        let ptr: *const HashMap<String, Value> = (&*self.fields.borrow()) as *const HashMap<String, Value>;
+        let ptr: *const HashMap<String, Value<ObjectImpl, ArrayImpl>> = (&*self.fields.borrow()) as *const HashMap<String, Value<ObjectImpl, ArrayImpl>>;
         ptr as *const u8
     }
 
@@ -2732,14 +2735,15 @@ impl JvmObject {
     }
 }
 
-pub enum Value {
+pub enum Value<ObjectImpl: JvmObject, ArrayImpl: JvmArray> {
     Integer(i32),
     Long(i64),
     Float(f32),
     Double(f64),
-    Array(Rc<RefCell<Box<[Value]>>>),
+    // Array(Rc<RefCell<Box<[Value]>>>),
+    Array(ArrayImpl),
     String(Rc<Vec<u8>>),
-    Object(JvmObject),
+    Object(ObjectImpl),
     Null(String), // Null, of type `String`
     Uninitialized,
 }
@@ -2752,7 +2756,7 @@ impl fmt::Debug for Value {
             Value::Float(value) => { write!(f, "{}", value) },
             Value::Double(d) => { write!(f, "{}", d) },
             Value::Array(array) => {
-                write!(f, "Array({:?})", array.borrow().as_ref())
+                write!(f, "Array({:?})", array)
             },
             Value::String(bytes) => {
                 if let Ok(s) = std::str::from_utf8(bytes) {
@@ -2762,7 +2766,7 @@ impl fmt::Debug for Value {
                 }
             }
             Value::Object(obj) => {
-                write!(f, "Object({})", &obj.cls().this_class)
+                write!(f, "Object({})", obj.cls())
             }
             Value::Null(cls) => {
                 write!(f, "Null({})", cls)
@@ -2779,7 +2783,7 @@ impl Clone for Value {
             Value::Long(v) => Value::Long(*v),
             Value::Float(v) => Value::Float(*v),
             Value::Double(v) => Value::Double(*v),
-            Value::Array(v) => Value::Array(Rc::clone(v)),
+            Value::Array(v) => Value::Array(v.clone()),
             Value::String(v) => Value::String(Rc::clone(v)),
             Value::Object(obj) => Value::Object(obj.clone()),
             Value::Null(v) => Value::Null(v.clone()),
@@ -2788,9 +2792,9 @@ impl Clone for Value {
     }
 }
 
-impl Value {
+impl Value<ObjectImpl: JvmObject, ArrayImpl: JvmArray> {
     pub fn new_inst(class_file: Rc<ClassFile>) -> Value {
-        Value::Object(JvmObject::new_inst(class_file))
+        Value::Object(ObjectImpl::new_inst(class_file))
     }
 
     pub fn default_of(s: &str) -> Value {
@@ -2806,7 +2810,7 @@ impl Value {
         }
     }
 
-    pub fn parse_from(s: &str) -> Option<Value> {
+    pub fn parse_from(s: &str) -> Option<Value<ObjectImpl, ArrayImpl>> {
         if s == "null" {
             return Some(Value::Null("Object".to_string()));
         }
@@ -2909,11 +2913,11 @@ enum NativeObject {
     Unknown,
 }
 
-pub struct VirtualMachine {
+pub struct VirtualMachine<ObjectImpl: JvmObject, ArrayImpl: JvmArray> {
     classes: HashMap<String, Rc<ClassFile>>,
-    class_instances: HashMap<String, JvmObject>,
-    static_instances: HashMap<ClassFileRef, HashMap<String, Value>>,
-    native_instances: HashMap<ValueRef, RefCell<NativeObject>>,
+    class_instances: HashMap<String, ObjectImpl>,
+    static_instances: HashMap<ClassFileRef, HashMap<String, Value<ObjectImpl, ArrayImpl>>>,
+    native_instances: HashMap<ValueRef, RefCell<NativeObject>>, // TODO: should probably be an ObjectImpl?
     classpath: Vec<PathBuf>,
     // TODO: actually reuse the VirtualMachine for <clinit> calls - mutually recursive classes
     // would loop and crash right now, among other issues..
@@ -2930,7 +2934,7 @@ pub enum VMError {
     Unsupported(&'static str),
 }
 
-impl VirtualMachine {
+impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VirtualMachine<ObjectImpl, ArrayImpl> {
     pub fn new(initial_classpath: Vec<PathBuf>) -> Self {
         VirtualMachine {
             classes: HashMap::new(),
@@ -2977,10 +2981,10 @@ impl VirtualMachine {
     fn get_instance_field(
         &mut self,
         instance_class: Rc<ClassFile>,
-        fields: Rc<RefCell<HashMap<String, Value>>>,
+        fields: Rc<RefCell<HashMap<String, Value<ObjectImpl, ArrayImpl>>>>,
         name: &str,
         ty: &str,
-    ) -> Option<Value> {
+    ) -> Option<Value<ObjectImpl, ArrayImpl>> {
         if self.has_instance_field(&instance_class, name) {
             Some(fields.borrow_mut().entry(name.to_string()).or_insert_with(
                 || Value::default_of(ty)
@@ -2993,10 +2997,10 @@ impl VirtualMachine {
     fn put_instance_field(
         &mut self,
         instance_class: Rc<ClassFile>,
-        fields: Rc<RefCell<HashMap<String, Value>>>,
+        fields: Rc<RefCell<HashMap<String, Value<ObjectImpl, ArrayImpl>>>>,
         name: &str,
         ty: &str,
-        value: Value,
+        value: Value<ObjectImpl, ArrayImpl>,
     ) {
         if self.has_instance_field(&instance_class, name) {
             fields.borrow_mut().insert(name.to_owned(), value);
@@ -3010,7 +3014,7 @@ impl VirtualMachine {
         class_ref: &Rc<ClassFile>,
         name: &str,
         ty: &str,
-    ) -> Option<Value> {
+    ) -> Option<Value<ObjectImpl, ArrayImpl>> {
         let fields = self
             .static_instances
             .entry(ClassFileRef::of(class_ref))
@@ -3029,7 +3033,7 @@ impl VirtualMachine {
         class_ref: &Rc<ClassFile>,
         name: &str,
         ty: &str,
-        value: Value,
+        value: Value<ObjectImpl, ArrayImpl>,
     ) {
         let fields = self
             .static_instances
@@ -3082,7 +3086,7 @@ impl VirtualMachine {
         class_name: String,
         class_file: ClassFile,
     ) -> Result<Rc<ClassFile>, VMError> {
-//        eprintln!("registering class {}", class_name);
+        eprintln!("registering class {}", class_name);
         let rc = Rc::new(class_file);
         self.classes.insert(class_name, Rc::clone(&rc));
 
@@ -3127,8 +3131,8 @@ impl VirtualMachine {
         &mut self,
         method: Rc<MethodHandle>,
         class_ref: &Rc<ClassFile>,
-        args: Vec<Value>,
-    ) -> Result<Option<Value>, VMError> {
+        args: Vec<Value<ObjectImpl, ArrayImpl>>,
+    ) -> Result<Option<Value<ObjectImpl, ArrayImpl>>, VMError> {
         if !method.access().is_static() {
             return Err(VMError::AccessError(
                 "attempted to call an instance method without an instance",
@@ -3151,7 +3155,7 @@ impl VirtualMachine {
         self.interpret(&mut state)
     }
 
-    fn interpret(&mut self, state: &mut VMState) -> Result<Option<Value>, VMError> {
+    fn interpret(&mut self, state: &mut VMState<ObjectImpl, ArrayImpl>) -> Result<Option<Value<ObjectImpl, ArrayImpl>>, VMError> {
         let first_run = self.first_run;
 
         // magic incantation to awaken the machine
@@ -3343,9 +3347,9 @@ pub fn parse_signature_string(signature: &str) -> Option<(Vec<Arg>, Option<Arg>)
     panic!("signature strings include return value type (even if it's just [V]oid)");
 }
 
-fn interpreted_method_call(
-    state: &mut VMState,
-    _vm: &mut VirtualMachine,
+fn interpreted_method_call<ObjectImpl: JvmObject, ArrayImpl: JvmArray>(
+    state: &mut VMState<ObjectImpl, ArrayImpl>,
+    _vm: &mut VirtualMachine<ObjectImpl, ArrayImpl>,
     method: Rc<MethodHandle>,
     method_class: Rc<ClassFile>,
     method_type: &str,
