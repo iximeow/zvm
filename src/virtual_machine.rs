@@ -2471,10 +2471,6 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                         vm.resolve_class("java/lang/Object").expect("object exists")
                     } else {
                         // TODO: handle null?
-                        // TODO: handle Value::String
-//                        Value::String(_) => {
-//                            vm.resolve_class("java/lang/String").expect("string exists")
-//                        }
                         panic!("cant instanceof a non-reference type: {:?}", item);
                     }
                 };
@@ -2508,10 +2504,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 } else if let Some(_) = top_of_stack.as_null() {
                     // TODO: think this should raise an exception...
                     return Ok(None);
-                } else { // TODO: Value::String
-//                    Value::String(_) => {
-//                        vm.resolve_class("java/lang/String").expect("strings exist")
-//                    },
+                } else {
                     return Err(VMError::BadClass("invalid operand for checkcast"))
                 };
                 eprintln!("checking if {:?} can be cast to {}", check_class.this_class, name);

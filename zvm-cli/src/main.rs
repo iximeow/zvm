@@ -1,7 +1,8 @@
 use zvm::class_file::unvalidated::read;
 use zvm::class_file::validated::ClassFile;
-use zvm::{Value, VirtualMachine};
+use zvm::{JvmValue, SimpleJvmValue, VirtualMachine};
 
+use std::collections::HashMap;
 use std::fs::File;
 use std::path::Path;
 use std::rc::Rc;
@@ -26,7 +27,7 @@ fn main() {
     let mut vm = VirtualMachine::new(classpath);
     let class_file_path = Path::new(filename);
     let class_name = class_file_path.file_stem().unwrap().to_str().unwrap();
-    let class_ref = vm.register(class_name.to_string(), class_file).unwrap();
+    let class_ref = vm.register(class_name.to_string(), class_file, HashMap::new()).unwrap();
     let entrypoint_methods = class_ref.get_methods(methodname);
     if entrypoint_methods.len() != 1 {
         println!(
@@ -44,11 +45,11 @@ fn main() {
 }
 
 // the string is because i don't want to think right now
-fn parse_args(env: &[String]) -> Result<Vec<Value>, String> {
+fn parse_args(env: &[String]) -> Result<Vec<SimpleJvmValue>, String> {
     let mut result = Vec::new();
 
     for s in env {
-        if let Some(value) = Value::parse_from(s) {
+        if let Some(value) = SimpleJvmValue::parse_from(s) {
             result.push(value);
         } else {
             return Err(format!("unable to parse {} as a value", s));
