@@ -282,9 +282,6 @@ pub fn class_header<R: Read>(data: &mut R) -> Result<ClassFile, Error> {
         fields,
         methods,
         attributes,
-        // native methods don't come with associated native functions. if a method is native and
-        // loaded from an external class, we'll go through JNI resolution mechanisms to find it.
-        native_methods: HashMap::new(),
         patched: false,
     })
 }

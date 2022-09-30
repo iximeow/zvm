@@ -7,10 +7,6 @@ use crate::class_file::unvalidated;
 use crate::class_file::unvalidated::ConstantIdx;
 use crate::class_file::unvalidated::{ClassFile as UnvalidatedClassFile};
 
-use crate::virtual_machine::VMError;
-use crate::virtual_machine::VMState;
-use crate::virtual_machine::VirtualMachine;
-
 mod instruction;
 pub use instruction::Instruction;
 
@@ -266,12 +262,11 @@ pub struct ClassFile {
     methods: Vec<Rc<MethodHandle>>,
     // currently support no attributes on classes
     attributes: Vec<()>,
-    pub(crate) native_methods: HashMap<String, fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>>
 }
 
 impl fmt::Debug for ClassFile {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "ClassFile {{ this_class: {:?}, super_class: {:?}, constants: {:?}, interfaces: {:?}, fields: {:?}, methods: {:?}, attributes: {:?}, native_methods: {:?} }}",
+        write!(f, "ClassFile {{ this_class: {:?}, super_class: {:?}, constants: {:?}, interfaces: {:?}, fields: {:?}, methods: {:?}, attributes: {:?} }}",
            self.this_class,
            self.super_class,
            self.constants,
@@ -279,7 +274,6 @@ impl fmt::Debug for ClassFile {
            self.fields,
            self.methods,
            self.attributes,
-           self.native_methods.keys()
         )
     }
 }
@@ -443,7 +437,6 @@ impl ClassFile {
             fields,
             methods,
             attributes,
-            native_methods: raw_class.native_methods.clone(),
         })
     }
 }

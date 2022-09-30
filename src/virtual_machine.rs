@@ -23,24 +23,24 @@ static NULL_COUNT: AtomicUsize = AtomicUsize::new(0);
 static NEW_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 #[allow(dead_code)]
-struct CallFrame<ObjectImpl: JvmObject, ArrayImpl: JvmArray> {
+struct CallFrame<ValueImpl: JvmValue> {
     offset: u32,
-    arguments: Vec<Value<ObjectImpl, ArrayImpl>>,
+    arguments: Vec<ValueImpl>,
     body: Rc<MethodBody>,
     pub enclosing_class: Rc<ClassFile>,
     pub method_name: String,
-    operand_stack: Vec<Value<ObjectImpl, ArrayImpl>>,
+    operand_stack: Vec<ValueImpl>,
 }
 
-impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> CallFrame<ObjectImpl, ArrayImpl> {
+impl<ValueImpl: JvmValue> CallFrame<ValueImpl> {
     pub fn new(
         body: Rc<MethodBody>,
         enclosing_class: Rc<ClassFile>,
         method_name: String,
-        mut arguments: Vec<Value<ObjectImpl, ArrayImpl>>,
+        mut arguments: Vec<ValueImpl>,
     ) -> Self {
         while arguments.len() < (body.max_locals as usize) {
-            arguments.push(Value::Uninitialized);
+            arguments.push(ValueImpl::uninitialized());
         }
 
         CallFrame {
@@ -75,19 +75,19 @@ impl CallKind {
     }
 }
 
-pub struct VMState<ObjectImpl: JvmObject, ArrayImpl: JvmArray> {
+pub struct VMState<ValueImpl: JvmValue> {
     // Attribute is actually a Code (anything else is an error)
-    call_stack: Vec<CallFrame<ObjectImpl, ArrayImpl>>,
+    call_stack: Vec<CallFrame<ValueImpl>>,
     throwing: bool,
 }
 
 #[allow(dead_code)]
-impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> {
+impl<ValueImpl: JvmValue> VMState<ValueImpl> {
     pub fn new(
         code: Rc<MethodBody>,
         method_class: Rc<ClassFile>,
         method_name: String,
-        initial_args: Vec<Value<ObjectImpl, ArrayImpl>>,
+        initial_args: Vec<ValueImpl>,
     ) -> Self {
         let mut state = VMState {
             call_stack: Vec::new(),
@@ -99,11 +99,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
         state
     }
 
-    fn current_frame(&self) -> &CallFrame {
+    fn current_frame(&self) -> &CallFrame<ValueImpl> {
         self.call_stack.iter().rev().next().unwrap()
     }
 
-    fn current_frame_mut(&mut self) -> &mut CallFrame {
+    fn current_frame_mut(&mut self) -> &mut CallFrame<ValueImpl> {
         self.call_stack.iter_mut().rev().next().unwrap()
     }
 
@@ -125,7 +125,7 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
         body: Rc<MethodBody>,
         enclosing_class: Rc<ClassFile>,
         method_name: &str,
-        arguments: Vec<Value<ObjectImpl, ArrayImpl>>,
+        arguments: Vec<ValueImpl>,
     ) {
         self.call_stack
             .push(CallFrame::new(body, enclosing_class, method_name.to_string(), arguments));
@@ -142,16 +142,16 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
         // self.call_stack.pop().expect("stack is non-empty");
     }
 
-    fn interpret_iload(&mut self, idx: u16) -> Result<Option<Value<ObjectImpl, ArrayImpl>>, VMError> {
+    fn interpret_iload(&mut self, idx: u16) -> Result<Option<ValueImpl>, VMError> {
         let frame_mut = self.current_frame_mut();
-        let argument: Option<&Value<ObjectImpl, ArrayImpl>> = frame_mut.arguments.get(idx as usize);
+        let argument: Option<&ValueImpl> = frame_mut.arguments.get(idx as usize);
         let operand = match argument {
-            Some(argument) => match argument {
-                Value::Integer(v) => Value::Integer(*v),
-                Value::Uninitialized => {
-                    Value::default_of("I")
-                }
-                _ => {
+            Some(argument) => {
+                if let Some(v) = argument.as_integer() {
+                    ValueImpl::integer(*v)
+                } else if argument.is_uninitialized() {
+                    ValueImpl::default_of("I")
+                } else {
                     return Err(VMError::BadClass("iload but not integer"));
                 }
             },
@@ -164,7 +164,7 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
         Ok(None)
     }
 
-    fn interpret_istore(&mut self, idx: u16) -> Result<Option<Value<ObjectImpl, ArrayImpl>>, VMError> {
+    fn interpret_istore(&mut self, idx: u16) -> Result<Option<ValueImpl>, VMError> {
         let frame_mut = self.current_frame_mut();
         let value = frame_mut
             .operand_stack
@@ -175,16 +175,16 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
         Ok(None)
     }
 
-    fn interpret_lload(&mut self, idx: u16) -> Result<Option<Value<ObjectImpl, ArrayImpl>>, VMError> {
+    fn interpret_lload(&mut self, idx: u16) -> Result<Option<ValueImpl>, VMError> {
         let frame_mut = self.current_frame_mut();
-        let argument: Option<&Value<ObjectImpl, ArrayImpl>> = frame_mut.arguments.get(idx as usize);
+        let argument: Option<&ValueImpl> = frame_mut.arguments.get(idx as usize);
         let operand = match argument {
-            Some(argument) => match argument {
-                Value::Long(v) => Value::Long(*v),
-                Value::Uninitialized => {
-                    Value::default_of("J")
-                }
-                _ => {
+            Some(argument) => {
+                if let Some(v) = argument.as_long() {
+                    ValueImpl::long(*v)
+                } else if argument.is_uninitialized() {
+                    ValueImpl::default_of("J")
+                } else {
                     return Err(VMError::BadClass("lload but not long"));
                 }
             },
@@ -197,7 +197,7 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
         Ok(None)
     }
 
-    fn interpret_lstore(&mut self, idx: u16) -> Result<Option<Value<ObjectImpl, ArrayImpl>>, VMError> {
+    fn interpret_lstore(&mut self, idx: u16) -> Result<Option<ValueImpl>, VMError> {
         let frame_mut = self.current_frame_mut();
         let value = frame_mut
             .operand_stack
@@ -208,16 +208,16 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
         Ok(None)
     }
 
-    fn interpret_fload(&mut self, idx: u16) -> Result<Option<Value<ObjectImpl, ArrayImpl>>, VMError> {
+    fn interpret_fload(&mut self, idx: u16) -> Result<Option<ValueImpl>, VMError> {
         let frame_mut = self.current_frame_mut();
-        let argument: Option<&Value<ObjectImpl, ArrayImpl>> = frame_mut.arguments.get(idx as usize);
+        let argument: Option<&ValueImpl> = frame_mut.arguments.get(idx as usize);
         let operand = match argument {
-            Some(argument) => match argument {
-                Value::Float(v) => Value::Float(*v),
-                Value::Uninitialized => {
-                    Value::default_of("F")
-                }
-                _ => {
+            Some(argument) => {
+                if let Some(v) = argument.as_float() {
+                    ValueImpl::float(*v)
+                } else if argument.is_uninitialized() {
+                    ValueImpl::default_of("F")
+                } else {
                     return Err(VMError::BadClass("fload but not float"));
                 }
             },
@@ -230,7 +230,7 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
         Ok(None)
     }
 
-    fn interpret_fstore(&mut self, idx: u16) -> Result<Option<Value<ObjectImpl, ArrayImpl>>, VMError> {
+    fn interpret_fstore(&mut self, idx: u16) -> Result<Option<ValueImpl>, VMError> {
         let frame_mut = self.current_frame_mut();
         let value = frame_mut
             .operand_stack
@@ -241,16 +241,16 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
         Ok(None)
     }
 
-    fn interpret_dload(&mut self, idx: u16) -> Result<Option<Value<ObjectImpl, ArrayImpl>>, VMError> {
+    fn interpret_dload(&mut self, idx: u16) -> Result<Option<ValueImpl>, VMError> {
         let frame_mut = self.current_frame_mut();
-        let argument: Option<&Value<ObjectImpl, ArrayImpl>> = frame_mut.arguments.get(idx as usize);
+        let argument: Option<&ValueImpl> = frame_mut.arguments.get(idx as usize);
         let operand = match argument {
-            Some(argument) => match argument {
-                Value::Double(v) => Value::Double(*v),
-                Value::Uninitialized => {
-                    Value::default_of("D")
-                }
-                _ => {
+            Some(argument) => {
+                if let Some(v) = argument.as_double() {
+                    ValueImpl::double(*v)
+                } else if argument.is_uninitialized() {
+                    ValueImpl::default_of("D")
+                } else {
                     return Err(VMError::BadClass("dload but not double"));
                 }
             },
@@ -263,7 +263,7 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
         Ok(None)
     }
 
-    fn interpret_dstore(&mut self, idx: u16) -> Result<Option<Value<ObjectImpl, ArrayImpl>>, VMError> {
+    fn interpret_dstore(&mut self, idx: u16) -> Result<Option<ValueImpl>, VMError> {
         let frame_mut = self.current_frame_mut();
         let value = frame_mut
             .operand_stack
@@ -274,26 +274,26 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
         Ok(None)
     }
 
-    fn interpret_aload(&mut self, idx: u16) -> Result<Option<Value<ObjectImpl, ArrayImpl>>, VMError> {
+    fn interpret_aload(&mut self, idx: u16) -> Result<Option<ValueImpl>, VMError> {
         let frame_mut = self.current_frame_mut();
-        let argument: Option<&Value<ObjectImpl, ArrayImpl>> = frame_mut.arguments.get(idx as usize);
-        let operand = match argument {
-            // TODO: type check argument as an object?
-            Some(Value::Uninitialized) => {
+        let argument: Option<&ValueImpl> = frame_mut.arguments.get(idx as usize);
+        let operand = if let Some(argument) = argument {
+            if argument.is_uninitialized() {
+                // TODO: type check argument as an object?
                 NULL_COUNT.fetch_add(1, Ordering::SeqCst);
-                Value::Null(String::new())
+                ValueImpl::null(String::new())
+            } else {
+                argument.clone()
             }
-            Some(argument) => argument.clone(),
-            None => {
-                return Err(VMError::BadClass("dload but insufficient arguments"));
-            }
+        } else {
+            return Err(VMError::BadClass("dload but insufficient arguments"));
         };
 
         frame_mut.operand_stack.push(operand);
         Ok(None)
     }
 
-    fn interpret_astore(&mut self, idx: u16) -> Result<Option<Value<ObjectImpl, ArrayImpl>>, VMError> {
+    fn interpret_astore(&mut self, idx: u16) -> Result<Option<ValueImpl>, VMError> {
         let frame_mut = self.current_frame_mut();
         let value = frame_mut
             .operand_stack
@@ -304,7 +304,7 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
         Ok(None)
     }
 
-    fn call_method(&mut self, vm: &mut VirtualMachine<ObjectImpl, ArrayImpl>, method: &MethodRef, kind: CallKind) {
+    fn call_method(&mut self, vm: &mut VirtualMachine<ValueImpl>, method: &MethodRef, kind: CallKind) {
         let mut current_class = match kind {
             CallKind::Virtual => {
                 // virtual calls can be abstract and resolution has to start at the ref being called on
@@ -312,19 +312,12 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                 let frame = self.current_frame();
                 let stack = &frame.operand_stack;
                 let receiver = &stack[stack.len() - args.len() - 1];
-                match receiver {
-                    Value::Object(obj) => {
-                        Rc::clone(obj.cls())
-                    }
-                    Value::Array(_) => {
-                        vm.resolve_class("java/lang/Object").unwrap()
-                    }
-                    Value::String(_) => {
-                        vm.resolve_class("java/lang/String").unwrap()
-                    }
-                    other => {
-                        panic!("unexpected receiver {:?}", other);
-                    }
+                if let Some(o) = receiver.as_object() {
+                    o.cls()
+                } else if let Some(_) = receiver.as_array() {
+                    vm.resolve_class("java/lang/Object").unwrap()
+                } else {
+                    panic!("unexpected receiver {:?}", receiver);
                 }
             },
             CallKind::Static | CallKind::Special => {
@@ -334,7 +327,7 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
         let init_class = Rc::clone(&current_class);
         loop {
             let target_class = Rc::clone(&current_class);
-            if let Some(native_method) = target_class.native_methods.get(&format!("{}{}", &method.name, &method.desc)) {
+            if let Some(native_method) = vm.get_native_method(Rc::clone(&target_class), format!("{}{}", &method.name, &method.desc)) {
                 native_method(self, vm).expect("native method call works");
                 break;
             } else if let Some(handle) = target_class.get_method(&method.name, &method.desc) {
@@ -367,8 +360,8 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
     fn execute(
         &mut self,
         instruction: &Instruction,
-        vm: &mut VirtualMachine<ObjectImpl, ArrayImpl>,
-    ) -> Result<Option<Value<ObjectImpl, ArrayImpl>>, VMError> {
+        vm: &mut VirtualMachine<ValueImpl>,
+    ) -> Result<Option<ValueImpl>, VMError> {
         let frame = self.current_frame();
         eprintln!("{}.{}: inst {}", &frame.enclosing_class.this_class, &frame.method_name, instruction);
         {
@@ -397,8 +390,8 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                 let frame = self.current_frame();
                 let stack = &frame.operand_stack;
                 let this = &stack[stack.len() - (*count) as usize];
-                if let Value::Object(obj) = &this {
-                    let mut current_class = Rc::clone(obj.cls());
+                if let Some(obj) = this.as_object() {
+                    let mut current_class = obj.cls();
                     let new_ref: MethodRef = loop {
                         if let Some(_handle) = current_class.get_method(&method_ref.name, &method_ref.desc) {
                             break MethodRef {
@@ -445,17 +438,16 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     .pop()
                     .expect("stack has a value");
 
-                let value = match top {
-                    Value::Object(obj) => {
-                        obj.get_field(&field_ref.name)
-//                        println!("getting the field, inst: {}", inst_class.this_class);
-                        /*
-                        vm
-                            .get_instance_field(Rc::clone(&inst_class), Rc::clone(&fields), &field_ref.name, &field_ref.desc)
-                            .unwrap()
-                        */
-                    }
-                    other => { panic!("should be an object, was {:?}, getting {:?}", other, field_ref); }
+                let value = if let Some(obj) = top.as_object() {
+                    obj.get_field(&field_ref.name)
+//                    println!("getting the field, inst: {}", inst_class.this_class);
+                    /*
+                    vm
+                        .get_instance_field(Rc::clone(&inst_class), Rc::clone(&fields), &field_ref.name, &field_ref.desc)
+                        .unwrap()
+                    */
+                } else {
+                    panic!("should be an object, was {:?}, getting {:?}", top, field_ref);
                 };
                 self.current_frame_mut().operand_stack.push(value);
                 Ok(None)
@@ -472,15 +464,14 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     .pop()
                     .expect("stack has a value");
 
-                match top {
-                    Value::Object(obj) => {
-                        obj.set_field(&field_ref.name, value);
-                        /*
-                        vm
-                            .put_instance_field(Rc::clone(&inst_class), Rc::clone(&fields), &field_ref.name, &field_ref.desc, value);
-                        */
-                    }
-                    other => { panic!("should be an object, was {:?}, getting {:?}", other, field_ref); }
+                if let Some(obj) = top.as_object() {
+                    obj.set_field(&field_ref.name, value);
+                    /*
+                    vm
+                        .put_instance_field(Rc::clone(&inst_class), Rc::clone(&fields), &field_ref.name, &field_ref.desc, value);
+                    */
+                } else {
+                    panic!("should be an object, was {:?}, getting {:?}", top, field_ref);
                 };
                 Ok(None)
             }
@@ -492,16 +483,20 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     .expect("stack has a value");
 
                 let mut elems = Vec::new();
-                if let Value::Integer(size) = top {
-                    for _ in 0..size {
-                        elems.push(Value::Integer(0));
+                if let Some(size) = top.as_integer() {
+                    for _ in 0..*size {
+                        elems.push(ValueImpl::integer(0));
                     }
+                } else {
+                    panic!("bad argument to newarray");
                 }
 
                 self.current_frame_mut()
                     .operand_stack
-                    .push(Value::Array(
-                        Rc::new(RefCell::new(elems.into_boxed_slice())),
+                    .push(ValueImpl::array_with_data(
+                        // TODO: use correct class (tpe?)
+                        vm.resolve_class("java/lang/Object").expect("class is defined"),
+                        elems.into_boxed_slice(),
                     ));
                 Ok(None)
             }
@@ -513,17 +508,21 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     .expect("stack has a value");
 
                 let mut elems = Vec::new();
-                if let Value::Integer(size) = top {
-                    for _ in 0..size {
+                if let Some(size) = top.as_integer() {
+                    for _ in 0..*size {
                         NULL_COUNT.fetch_add(1, Ordering::SeqCst);
-                        elems.push(Value::Null(String::new()));
+                        elems.push(ValueImpl::null(String::new()));
                     }
+                } else {
+                    panic!("bad argument to newarray");
                 }
 
                 self.current_frame_mut()
                     .operand_stack
-                    .push(Value::Array(
-                        Rc::new(RefCell::new(elems.into_boxed_slice())),
+                    .push(ValueImpl::array_with_data(
+                        // TODO: use correct class (tpe?)
+                        vm.resolve_class("java/lang/Object").expect("class is defined"),
+                        elems.into_boxed_slice()
                     ));
                 Ok(None)
             }
@@ -531,21 +530,21 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                 NEW_COUNT.fetch_add(1, Ordering::SeqCst);
                 self.current_frame_mut()
                     .operand_stack
-                    .push(Value::new_inst(
+                    .push(ValueImpl::object(ValueImpl::ObjectTy::new_inst(
                         vm.resolve_class(tpe)?,
-                    ));
+                    )));
                 Ok(None)
             }
             Instruction::BIPush(b) => {
                 self.current_frame_mut()
                     .operand_stack
-                    .push(Value::Integer(*b as i32));
+                    .push(ValueImpl::integer(*b as i32));
                 Ok(None)
             }
             Instruction::SIPush(s) => {
                 self.current_frame_mut()
                     .operand_stack
-                    .push(Value::Integer(*s as i32));
+                    .push(ValueImpl::integer(*s as i32));
                 Ok(None)
             }
             Instruction::Dup => {
@@ -632,11 +631,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     .pop()
                     .expect("stack has a value");
 
-                if let (Value::Array(elements), Value::Integer(index)) =
-                    (array, index)
+                if let (Some(elements), Some(index)) =
+                    (array.as_array(), index.as_integer())
                 {
                     // TODO: homogeneously typed arrays
-                    if let Some(value) = elements.borrow().get(index as usize) {
+                    if let Some(value) = elements.get_elem(*index as usize) {
                         self.current_frame_mut()
                             .operand_stack
                             .push(value.clone());
@@ -666,11 +665,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     .pop()
                     .expect("stack has a value");
 
-                if let (Value::Array(elements), Value::Integer(index)) =
-                    (&array, &index)
+                if let (Some(elements), Some(index)) =
+                    (array.as_array(), index.as_integer())
                 {
                     // TODO: homogeneously typed arrays
-                    elements.borrow_mut()[*index as usize] = value;
+                    *elements.get_elem_mut(*index as usize).expect("TODO: handle oob") = value;
                 } else {
                     panic!("storing element into non-array. array={:?}, index={:?}", array, index);
                 }
@@ -690,11 +689,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     .pop()
                     .expect("stack has a value");
 
-                if let (Value::Array(elements), Value::Integer(index)) =
-                    (array, index)
+                if let (Some(elements), Some(index)) =
+                    (array.as_array(), index.as_integer())
                 {
                     // TODO: homogeneously typed arrays
-                    if let Some(value) = elements.borrow().get(index as usize) {
+                    if let Some(value) = elements.get_elem(*index as usize) {
                         self.current_frame_mut()
                             .operand_stack
                             .push(value.clone());
@@ -725,11 +724,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     .pop()
                     .expect("stack has a value");
 
-                if let (Value::Array(elements), Value::Integer(index)) =
-                    (array, index)
+                if let (Some(elements), Some(index)) =
+                    (array.as_array(), index.as_integer())
                 {
                     // TODO: homogeneously typed arrays
-                    elements.borrow_mut()[index as usize] = value;
+                    *elements.get_elem_mut(*index as usize).expect("TODO: handle oob") = value;
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -754,11 +753,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     .pop()
                     .expect("stack has a value");
 
-                if let (Value::Array(elements), Value::Integer(index)) =
-                    (array, index)
+                if let (Some(elements), Some(index)) =
+                    (array.as_array(), index.as_integer())
                 {
                     // TODO: homogeneously typed arrays
-                    elements.borrow_mut()[index as usize] = value;
+                    *elements.get_elem_mut(*index as usize).expect("TODO: handle oob") = value;
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -778,14 +777,14 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     .pop()
                     .expect("stack has a value");
 
-                if let (Value::Array(elements), Value::Integer(index)) =
-                    (array, index)
+                if let (Some(elements), Some(index)) =
+                    (array.as_array(), index.as_integer())
                 {
                     // TODO: homogeneously typed arrays
                     self
                         .current_frame_mut()
                         .operand_stack
-                        .push(elements.borrow()[index as usize].clone());
+                        .push(elements.get_elem(*index as usize).expect("TODO: handle oob").clone());
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -809,11 +808,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     .pop()
                     .expect("stack has a value");
 
-                if let (Value::Array(elements), Value::Integer(index)) =
-                    (array, index)
+                if let (Some(elements), Some(index)) =
+                    (array.as_array(), index.as_integer())
                 {
                     // TODO: homogeneously typed arrays
-                    elements.borrow_mut()[index as usize] = value;
+                    *elements.get_elem_mut(*index as usize).expect("TODO: handle oob") = value;
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -832,14 +831,14 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     .pop()
                     .expect("stack has a value");
 
-                if let (Value::Array(elements), Value::Integer(index)) =
-                    (array, index)
+                if let (Some(elements), Some(index)) =
+                    (array.as_array(), index.as_integer())
                 {
                     // TODO: homogeneously typed arrays
                     self
                         .current_frame_mut()
                         .operand_stack
-                        .push(elements.borrow()[index as usize].clone());
+                        .push(elements.get_elem(*index as usize).expect("TODO: handle oob").clone());
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -863,11 +862,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     .pop()
                     .expect("stack has a value");
 
-                if let (Value::Array(elements), Value::Integer(index)) =
-                    (array, index)
+                if let (Some(elements), Some(index)) =
+                    (array.as_array(), index.as_integer())
                 {
                     // TODO: homogeneously typed arrays
-                    elements.borrow_mut()[index as usize] = value;
+                    *elements.get_elem_mut(*index as usize).expect("TODO: handle oob") = value;
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -886,14 +885,14 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     .pop()
                     .expect("stack has a value");
 
-                if let (Value::Array(elements), Value::Integer(index)) =
-                    (array, index)
+                if let (Some(elements), Some(index)) =
+                    (array.as_array(), index.as_integer())
                 {
                     // TODO: homogeneously typed arrays
                     self
                         .current_frame_mut()
                         .operand_stack
-                        .push(elements.borrow()[index as usize].clone());
+                        .push(elements.get_elem(*index as usize).expect("TODO: handle oob").clone());
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -918,11 +917,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     .pop()
                     .expect("stack has a value");
 
-                if let (Value::Array(elements), Value::Integer(index)) =
-                    (array, index)
+                if let (Some(elements), Some(index)) =
+                    (array.as_array(), index.as_integer())
                 {
                     // TODO: homogeneously typed arrays
-                    elements.borrow_mut()[index as usize] = value;
+                    *elements.get_elem_mut(*index as usize).expect("TODO: handle oob") = value;
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -942,14 +941,14 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     .pop()
                     .expect("stack has a value");
 
-                if let (Value::Array(elements), Value::Integer(index)) =
-                    (array, index)
+                if let (Some(elements), Some(index)) =
+                    (array.as_array(), index.as_integer())
                 {
                     // TODO: homogeneously typed arrays
                     self
                         .current_frame_mut()
                         .operand_stack
-                        .push(elements.borrow()[index as usize].clone());
+                        .push(elements.get_elem(*index as usize).expect("TODO: handle oob").clone());
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -974,11 +973,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     .pop()
                     .expect("stack has a value");
 
-                if let (Value::Array(elements), Value::Integer(index)) =
-                    (array, index)
+                if let (Some(elements), Some(index)) =
+                    (array.as_array(), index.as_integer())
                 {
                     // TODO: homogeneously typed arrays
-                    elements.borrow_mut()[index as usize] = value;
+                    *elements.get_elem_mut(*index as usize).expect("TODO: handle oob") = value;
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -998,14 +997,14 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     .pop()
                     .expect("stack has a value");
 
-                if let (Value::Array(elements), Value::Integer(index)) =
-                    (array, index)
+                if let (Some(elements), Some(index)) =
+                    (array.as_array(), index.as_integer())
                 {
                     // TODO: homogeneously typed arrays
                     self
                         .current_frame_mut()
                         .operand_stack
-                        .push(elements.borrow()[index as usize].clone());
+                        .push(elements.get_elem(*index as usize).expect("TODO: handle oob").clone());
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -1030,11 +1029,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     .pop()
                     .expect("stack has a value");
 
-                if let (Value::Array(elements), Value::Integer(index)) =
-                    (&array, &index)
+                if let (Some(elements), Some(index)) =
+                    (array.as_array(), index.as_integer())
                 {
                     // TODO: homogeneously typed arrays
-                    elements.borrow_mut()[*index as usize] = value;
+                    *elements.get_elem_mut(*index as usize).expect("TODO: handle oob") = value;
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -1054,14 +1053,14 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     .pop()
                     .expect("stack has a value");
 
-                if let (Value::Array(elements), Value::Integer(index)) =
-                    (array, index)
+                if let (Some(elements), Some(index)) =
+                    (array.as_array(), index.as_integer())
                 {
                     // TODO: homogeneously typed arrays
                     self
                         .current_frame_mut()
                         .operand_stack
-                        .push(elements.borrow()[index as usize].clone());
+                        .push(elements.get_elem(*index as usize).expect("TODO: handle oob").clone());
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -1074,10 +1073,10 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     .pop()
                     .expect("stack has a value");
 
-                if let Value::Array(elems) = top {
+                if let Some(elems) = top.as_array() {
                     self.current_frame_mut()
                         .operand_stack
-                        .push(Value::Integer(elems.borrow().len() as i32));
+                        .push(ValueImpl::integer(elems.len() as i32));
                     Ok(None)
                 } else {
                     panic!("arraylength but value is not array");
@@ -1088,98 +1087,98 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                 let frame_mut = self.current_frame_mut();
                 frame_mut
                     .operand_stack
-                    .push(Value::Null(String::new()));
+                    .push(ValueImpl::null(String::new()));
                 Ok(None)
             }
             Instruction::DConst0 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut
                     .operand_stack
-                    .push(Value::Double(0.0f64));
+                    .push(ValueImpl::double(0.0f64));
                 Ok(None)
             }
             Instruction::DConst1 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut
                     .operand_stack
-                    .push(Value::Double(1.0f64));
+                    .push(ValueImpl::double(1.0f64));
                 Ok(None)
             }
             Instruction::FConst0 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut
                     .operand_stack
-                    .push(Value::Float(0.0f32));
+                    .push(ValueImpl::float(0.0f32));
                 Ok(None)
             }
             Instruction::FConst1 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut
                     .operand_stack
-                    .push(Value::Float(1.0f32));
+                    .push(ValueImpl::float(1.0f32));
                 Ok(None)
             }
             Instruction::LConst0 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut
                     .operand_stack
-                    .push(Value::Long(0));
+                    .push(ValueImpl::long(0));
                 Ok(None)
             }
             Instruction::LConst1 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut
                     .operand_stack
-                    .push(Value::Long(1));
+                    .push(ValueImpl::long(1));
                 Ok(None)
             }
             Instruction::IConst0 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut
                     .operand_stack
-                    .push(Value::Integer(0));
+                    .push(ValueImpl::integer(0));
                 Ok(None)
             }
             Instruction::IConst1 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut
                     .operand_stack
-                    .push(Value::Integer(1));
+                    .push(ValueImpl::integer(1));
                 Ok(None)
             }
             Instruction::IConst2 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut
                     .operand_stack
-                    .push(Value::Integer(2));
+                    .push(ValueImpl::integer(2));
                 Ok(None)
             }
             Instruction::IConst3 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut
                     .operand_stack
-                    .push(Value::Integer(3));
+                    .push(ValueImpl::integer(3));
                 Ok(None)
             }
             Instruction::IConst4 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut
                     .operand_stack
-                    .push(Value::Integer(4));
+                    .push(ValueImpl::integer(4));
                 Ok(None)
             }
             Instruction::IConst5 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut
                     .operand_stack
-                    .push(Value::Integer(5));
+                    .push(ValueImpl::integer(5));
                 Ok(None)
             }
             Instruction::IConstM1 => {
                 let frame_mut = self.current_frame_mut();
                 frame_mut
                     .operand_stack
-                    .push(Value::Integer(-1));
+                    .push(ValueImpl::integer(-1));
                 Ok(None)
             }
             Instruction::Goto(offset) => {
@@ -1200,32 +1199,15 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("ifacmpne but insufficient arguments"));
                 };
 
-                match (left, right) {
-                    (Value::Array(l), Value::Array(r)) => {
-                        if Rc::ptr_eq(&l, &r) {
-                            frame_mut.branch_rel(*offset - 3);
-                            Ok(None)
-                        } else {
-                            Ok(None)
-                        }
-                    }
-                    (Value::Object(obj1), Value::Object(obj2)) => {
-                        if obj1 == obj2 {
-                            frame_mut.branch_rel(*offset - 3);
-                            Ok(None)
-                        } else {
-                            Ok(None)
-                        }
-                    }
-                    (Value::Null(_), Value::Null(_)) => {
+                if left.is_reference() && right.is_reference() {
+                    if left == right {
                         frame_mut.branch_rel(*offset - 3);
                         Ok(None)
-                    }
-                    (Value::Null(_), _) |
-                    (_, Value::Null(_)) => {
+                    } else {
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("ifacmpne but invalid operand types")),
+                } else {
+                    Err(VMError::BadClass("ifacmpeq but invalid operand types"))
                 }
             }
             Instruction::IfAcmpNe(offset) => {
@@ -1241,32 +1223,15 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("ifacmpne but insufficient arguments"));
                 };
 
-                match (left, right) {
-                    (Value::Array(l), Value::Array(r)) => {
-                        if !Rc::ptr_eq(&l, &r) {
-                            frame_mut.branch_rel(*offset - 3);
-                            Ok(None)
-                        } else {
-                            Ok(None)
-                        }
-                    }
-                    (Value::Object(obj1), Value::Object(obj2)) => {
-                        if obj1 != obj2 {
-                            frame_mut.branch_rel(*offset - 3);
-                            Ok(None)
-                        } else {
-                            Ok(None)
-                        }
-                    }
-                    (Value::Null(_), Value::Null(_)) => {
-                        Ok(None)
-                    }
-                    (Value::Null(_), _) |
-                    (_, Value::Null(_)) => {
+                if left.is_reference() && right.is_reference() {
+                    if left != right {
                         frame_mut.branch_rel(*offset - 3);
                         Ok(None)
+                    } else {
+                        Ok(None)
                     }
-                    _ => Err(VMError::BadClass("ifacmpne but invalid operand types")),
+                } else {
+                    Err(VMError::BadClass("ifacmpne but invalid operand types"))
                 }
             }
             Instruction::IfGe(offset) => {
@@ -1277,16 +1242,15 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match value {
-                    Value::Integer(v) => {
-                        if v >= 0 {
-                            frame_mut.branch_rel(*offset - 3);
-                            Ok(None)
-                        } else {
-                            Ok(None)
-                        }
+                if let Some(v) = value.as_integer() {
+                    if *v >= 0 {
+                        frame_mut.branch_rel(*offset - 3);
+                        Ok(None)
+                    } else {
+                        Ok(None)
                     }
-                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                } else {
+                    Err(VMError::BadClass("iadd but invalid operand types"))
                 }
             }
             Instruction::IfGt(offset) => {
@@ -1297,16 +1261,15 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match value {
-                    Value::Integer(v) => {
-                        if v > 0 {
-                            frame_mut.branch_rel(*offset - 3);
-                            Ok(None)
-                        } else {
-                            Ok(None)
-                        }
+                if let Some(v) = value.as_integer() {
+                    if *v > 0 {
+                        frame_mut.branch_rel(*offset - 3);
+                        Ok(None)
+                    } else {
+                        Ok(None)
                     }
-                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                } else {
+                    Err(VMError::BadClass("iadd but invalid operand types"))
                 }
             }
             Instruction::IfLe(offset) => {
@@ -1317,16 +1280,15 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("ifle but insufficient arguments"));
                 };
 
-                match value {
-                    Value::Integer(v) => {
-                        if v <= 0 {
-                            frame_mut.branch_rel(*offset - 3);
-                            Ok(None)
-                        } else {
-                            Ok(None)
-                        }
+                if let Some(v) = value.as_integer() {
+                    if *v <= 0 {
+                        frame_mut.branch_rel(*offset - 3);
+                        Ok(None)
+                    } else {
+                        Ok(None)
                     }
-                    _ => Err(VMError::BadClass("ifle but invalid operand types")),
+                } else {
+                    Err(VMError::BadClass("iadd but invalid operand types"))
                 }
             }
             Instruction::IfLt(offset) => {
@@ -1337,16 +1299,15 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match value {
-                    Value::Integer(v) => {
-                        if v < 0 {
-                            frame_mut.branch_rel(*offset - 3);
-                            Ok(None)
-                        } else {
-                            Ok(None)
-                        }
+                if let Some(v) = value.as_integer() {
+                    if *v < 0 {
+                        frame_mut.branch_rel(*offset - 3);
+                        Ok(None)
+                    } else {
+                        Ok(None)
                     }
-                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                } else {
+                    Err(VMError::BadClass("iadd but invalid operand types"))
                 }
             }
             Instruction::IfEq(offset) => {
@@ -1357,16 +1318,15 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("ifeq but insufficient arguments"));
                 };
 
-                match value {
-                    Value::Integer(v) => {
-                        if v == 0 {
-                            frame_mut.branch_rel(*offset - 3);
-                            Ok(None)
-                        } else {
-                            Ok(None)
-                        }
+                if let Some(v) = value.as_integer() {
+                    if *v == 0 {
+                        frame_mut.branch_rel(*offset - 3);
+                        Ok(None)
+                    } else {
+                        Ok(None)
                     }
-                    _ => Err(VMError::BadClass("ifeq but invalid operand types")),
+                } else {
+                    Err(VMError::BadClass("iadd but invalid operand types"))
                 }
             }
             Instruction::IfNe(offset) => {
@@ -1377,16 +1337,15 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("ifne but insufficient arguments"));
                 };
 
-                match value {
-                    Value::Integer(v) => {
-                        if v != 0 {
-                            frame_mut.branch_rel(*offset - 3);
-                            Ok(None)
-                        } else {
-                            Ok(None)
-                        }
+                if let Some(v) = value.as_integer() {
+                    if *v != 0 {
+                        frame_mut.branch_rel(*offset - 3);
+                        Ok(None)
+                    } else {
+                        Ok(None)
                     }
-                    _ => Err(VMError::BadClass("ifne but invalid operand types")),
+                } else {
+                    Err(VMError::BadClass("iadd but invalid operand types"))
                 }
             }
             Instruction::IfIcmpEq(offset) => {
@@ -1402,16 +1361,15 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match (left, right) {
-                    (Value::Integer(l), Value::Integer(r)) => {
-                        if l == r {
-                            frame_mut.branch_rel(*offset - 3);
-                            Ok(None)
-                        } else {
-                            Ok(None)
-                        }
+                if let (Some(l), Some(r)) = (left.as_integer(), right.as_integer()) {
+                    if l == r {
+                        frame_mut.branch_rel(*offset - 3);
+                        Ok(None)
+                    } else {
+                        Ok(None)
                     }
-                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                } else {
+                    Err(VMError::BadClass("iadd but invalid operand types"))
                 }
             }
             Instruction::IfIcmpLe(offset) => {
@@ -1427,16 +1385,15 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match (left, right) {
-                    (Value::Integer(l), Value::Integer(r)) => {
-                        if l <= r {
-                            frame_mut.branch_rel(*offset - 3);
-                            Ok(None)
-                        } else {
-                            Ok(None)
-                        }
+                if let (Some(l), Some(r)) = (left.as_integer(), right.as_integer()) {
+                    if l <= r {
+                        frame_mut.branch_rel(*offset - 3);
+                        Ok(None)
+                    } else {
+                        Ok(None)
                     }
-                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                } else {
+                    Err(VMError::BadClass("iadd but invalid operand types"))
                 }
             }
             Instruction::IfIcmpLt(offset) => {
@@ -1452,16 +1409,15 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match (left, right) {
-                    (Value::Integer(l), Value::Integer(r)) => {
-                        if l < r {
-                            frame_mut.branch_rel(*offset - 3);
-                            Ok(None)
-                        } else {
-                            Ok(None)
-                        }
+                if let (Some(l), Some(r)) = (left.as_integer(), right.as_integer()) {
+                    if l < r {
+                        frame_mut.branch_rel(*offset - 3);
+                        Ok(None)
+                    } else {
+                        Ok(None)
                     }
-                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                } else {
+                    Err(VMError::BadClass("iadd but invalid operand types"))
                 }
             }
             Instruction::IfIcmpGe(offset) => {
@@ -1477,16 +1433,15 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match (left, right) {
-                    (Value::Integer(l), Value::Integer(r)) => {
-                        if l >= r {
-                            frame_mut.branch_rel(*offset - 3);
-                            Ok(None)
-                        } else {
-                            Ok(None)
-                        }
+                if let (Some(l), Some(r)) = (left.as_integer(), right.as_integer()) {
+                    if l >= r {
+                        frame_mut.branch_rel(*offset - 3);
+                        Ok(None)
+                    } else {
+                        Ok(None)
                     }
-                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                } else {
+                    Err(VMError::BadClass("iadd but invalid operand types"))
                 }
             }
             Instruction::IfIcmpGt(offset) => {
@@ -1502,16 +1457,15 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match (left, right) {
-                    (Value::Integer(l), Value::Integer(r)) => {
-                        if l > r {
-                            frame_mut.branch_rel(*offset - 3);
-                            Ok(None)
-                        } else {
-                            Ok(None)
-                        }
+                if let (Some(l), Some(r)) = (left.as_integer(), right.as_integer()) {
+                    if l > r {
+                        frame_mut.branch_rel(*offset - 3);
+                        Ok(None)
+                    } else {
+                        Ok(None)
                     }
-                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                } else {
+                    Err(VMError::BadClass("iadd but invalid operand types"))
                 }
             }
             Instruction::IfIcmpNe(offset) => {
@@ -1527,16 +1481,15 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match (left, right) {
-                    (Value::Integer(l), Value::Integer(r)) => {
-                        if l != r {
-                            frame_mut.branch_rel(*offset - 3);
-                            Ok(None)
-                        } else {
-                            Ok(None)
-                        }
+                if let (Some(l), Some(r)) = (left.as_integer(), right.as_integer()) {
+                    if l != r {
+                        frame_mut.branch_rel(*offset - 3);
+                        Ok(None)
+                    } else {
+                        Ok(None)
                     }
-                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                } else {
+                    Err(VMError::BadClass("iadd but invalid operand types"))
                 }
             }
             Instruction::LCmp => {
@@ -1551,22 +1504,22 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     .pop()
                     .expect("stack has a value");
 
-                match (left, right) {
-                    (Value::Long(left), Value::Long(right)) => {
-                        let left = left as i64;
-                        let right = right as i64;
+                match (left.as_long(), right.as_long()) {
+                    (Some(left), Some(right)) => {
+                        let left = *left as i64;
+                        let right = *right as i64;
                         if left > right {
                             self.current_frame_mut()
                                 .operand_stack
-                                .push(Value::Integer(1));
+                                .push(ValueImpl::integer(1));
                         } else if left == right {
                             self.current_frame_mut()
                                 .operand_stack
-                                .push(Value::Integer(0));
+                                .push(ValueImpl::integer(0));
                         } else {
                             self.current_frame_mut()
                                 .operand_stack
-                                .push(Value::Integer(-1));
+                                .push(ValueImpl::integer(-1));
                         }
                         Ok(None)
                     }
@@ -1585,20 +1538,20 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     .pop()
                     .expect("stack has a value");
 
-                match (left, right) {
-                    (Value::Float(left), Value::Float(right)) => {
+                match (left.as_float(), right.as_float()) {
+                    (Some(left), Some(right)) => {
                         if left > right {
                             self.current_frame_mut()
                                 .operand_stack
-                                .push(Value::Integer(1));
+                                .push(ValueImpl::integer(1));
                         } else if left == right {
                             self.current_frame_mut()
                                 .operand_stack
-                                .push(Value::Integer(0));
+                                .push(ValueImpl::integer(0));
                         } else {
                             self.current_frame_mut()
                                 .operand_stack
-                                .push(Value::Integer(-1));
+                                .push(ValueImpl::integer(-1));
                         }
                         Ok(None)
                     }
@@ -1617,20 +1570,20 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     .pop()
                     .expect("stack has a value");
 
-                match (left, right) {
-                    (Value::Float(left), Value::Float(right)) => {
+                match (left.as_float(), right.as_float()) {
+                    (Some(left), Some(right)) => {
                         if left < right {
                             self.current_frame_mut()
                                 .operand_stack
-                                .push(Value::Integer(1));
+                                .push(ValueImpl::integer(1));
                         } else if left == right {
                             self.current_frame_mut()
                                 .operand_stack
-                                .push(Value::Integer(0));
+                                .push(ValueImpl::integer(0));
                         } else {
                             self.current_frame_mut()
                                 .operand_stack
-                                .push(Value::Integer(-1));
+                                .push(ValueImpl::integer(-1));
                         }
                         Ok(None)
                     }
@@ -1649,13 +1602,13 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     .pop()
                     .expect("stack has a value");
 
-                match (left, right) {
+                match (left.as_float(), right.as_float()) {
                     // TODO: ensure that division works "correctly" around NaN and zeroes (doesn't
                     // panic pls)
-                    (Value::Float(left), Value::Float(right)) => {
+                    (Some(left), Some(right)) => {
                         self.current_frame_mut()
                             .operand_stack
-                            .push(Value::Float(left * right));
+                            .push(ValueImpl::float(left * right));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("lcmp but invalid operand types")),
@@ -1673,13 +1626,13 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     .pop()
                     .expect("stack has a value");
 
-                match (left, right) {
+                match (left.as_float(), right.as_float()) {
                     // TODO: ensure that division works "correctly" around NaN and zeroes (doesn't
                     // panic pls)
-                    (Value::Float(left), Value::Float(right)) => {
+                    (Some(left), Some(right)) => {
                         self.current_frame_mut()
                             .operand_stack
-                            .push(Value::Float(left / right));
+                            .push(ValueImpl::float(left / right));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("lcmp but invalid operand types")),
@@ -1693,25 +1646,15 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("ifnull but insufficient arguments"));
                 };
 
-                match value {
-                    Value::Null(_v) => {
+                if value.is_reference() {
+                    if value.as_null().is_some() {
                         frame_mut.branch_rel(*offset - 3);
                         Ok(None)
-                    }
-                    Value::Array(_) => {
+                    } else {
                         Ok(None)
                     }
-                    Value::Object(_) => {
-                        Ok(None)
-                    }
-                    Value::String(_) => {
-                        // TODO: really need to make this an internal String-with-value situation,
-                        // but strings are not null....
-                        Ok(None)
-                    }
-                    _other => {
-                        Err(VMError::BadClass("ifnull but invalid operand types"))
-                    }
+                } else {
+                    Err(VMError::BadClass("ifnull but invalid operand types"))
                 }
             }
             Instruction::IfNonNull(offset) => {
@@ -1722,38 +1665,25 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("ifnotnull but insufficient arguments"));
                 };
 
-                match value {
-                    Value::Null(_v) => {
+                if value.is_reference() {
+                    if value.as_null().is_some() {
                         Ok(None)
-                    }
-                    Value::Array(_) => {
+                    } else {
                         frame_mut.branch_rel(*offset - 3);
                         Ok(None)
                     }
-                    Value::Object(_) => {
-                        frame_mut.branch_rel(*offset - 3);
-                        Ok(None)
-                    }
-                    Value::String(_) => {
-                        // TODO: really need to make this an internal String-with-value situation,
-                        // but strings are not null....
-                        frame_mut.branch_rel(*offset - 3);
-                        Ok(None)
-                    }
-                    _other => {
-                        Err(VMError::BadClass("ifnotnull but invalid operand types"))
-                    }
+                } else {
+                    Err(VMError::BadClass("ifnotnull but invalid operand types"))
                 }
             }
             Instruction::IInc(idx, constant) => {
                 let frame_mut = self.current_frame_mut();
-                let argument: Option<&mut Value<ObjectImpl, ArrayImpl>> = frame_mut.arguments.get_mut(*idx as usize);
+                let argument: Option<&mut ValueImpl> = frame_mut.arguments.get_mut(*idx as usize);
                 match argument {
-                    Some(argument) => match argument {
-                        Value::Integer(v) => { *v = v.wrapping_add(*constant as i32); }
-                        _ => {
-                            return Err(VMError::BadClass("iinc but not integer"));
-                        }
+                    Some(argument) => if let Some(v) = argument.as_integer() {
+                        *argument = ValueImpl::integer(v.wrapping_add(*constant as i32));
+                    } else {
+                        return Err(VMError::BadClass("iinc but not integer"));
                     },
                     None => {
                         return Err(VMError::BadClass("iinc but insufficient arguments"));
@@ -1824,11 +1754,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match (value, amount) {
-                    (Value::Long(value), Value::Integer(amount)) => {
+                match (value.as_long(), amount.as_integer()) {
+                    (Some(value), Some(amount)) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Long(((value as u64) >> (amount & 0x3f)) as i64));
+                            .push(ValueImpl::long(((*value as u64) >> (*amount & 0x3f)) as i64));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
@@ -1842,11 +1772,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("lneg but insufficient arguments"));
                 };
 
-                match value {
-                    Value::Long(l) => {
+                match value.as_long() {
+                    Some(l) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Long(l.wrapping_neg()));
+                            .push(ValueImpl::long(l.wrapping_neg()));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("lneg but invalid operand types")),
@@ -1865,11 +1795,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("iand but insufficient arguments"));
                 };
 
-                match (left, right) {
-                    (Value::Long(l), Value::Long(r)) => {
+                match (left.as_long(), right.as_long()) {
+                    (Some(l), Some(r)) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Long(l & r));
+                            .push(ValueImpl::long(l & r));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iand but invalid operand types")),
@@ -1888,11 +1818,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("ior but insufficient arguments"));
                 };
 
-                match (left, right) {
-                    (Value::Long(l), Value::Long(r)) => {
+                match (left.as_long(), right.as_long()) {
+                    (Some(l), Some(r)) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Long(l | r));
+                            .push(ValueImpl::long(l | r));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("ior but invalid operand types")),
@@ -1911,11 +1841,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match (value, amount) {
-                    (Value::Long(value), Value::Integer(amount)) => {
+                match (value.as_long(), amount.as_integer()) {
+                    (Some(value), Some(amount)) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Long(((value as u64) << (amount & 0x3f)) as i64));
+                            .push(ValueImpl::long(((*value as u64) << (*amount & 0x3f)) as i64));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
@@ -1934,11 +1864,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match (left, right) {
-                    (Value::Double(l), Value::Double(r)) => {
+                match (left.as_double(), right.as_double()) {
+                    (Some(l), Some(r)) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Double(l + r));
+                            .push(ValueImpl::double(l + r));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
@@ -1957,11 +1887,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match (left, right) {
-                    (Value::Float(l), Value::Float(r)) => {
+                match (left.as_float(), right.as_float()) {
+                    (Some(l), Some(r)) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Float(l + r));
+                            .push(ValueImpl::float(l + r));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
@@ -1980,11 +1910,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match (left, right) {
-                    (Value::Integer(l), Value::Integer(r)) => {
+                match (left.as_integer(), right.as_integer()) {
+                    (Some(l), Some(r)) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Integer(l.wrapping_add(r)));
+                            .push(ValueImpl::integer(l.wrapping_add(*r)));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
@@ -2003,11 +1933,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("imul but insufficient arguments"));
                 };
 
-                match (left, right) {
-                    (Value::Integer(l), Value::Integer(r)) => {
+                match (left.as_integer(), right.as_integer()) {
+                    (Some(l), Some(r)) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Integer(l.wrapping_mul(r)));
+                            .push(ValueImpl::integer(l.wrapping_mul(*r)));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
@@ -2026,11 +1956,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("ladd but insufficient arguments"));
                 };
 
-                match (left, right) {
-                    (Value::Long(l), Value::Long(r)) => {
+                match (left.as_long(), right.as_long()) {
+                    (Some(l), Some(r)) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Long(l.wrapping_add(r)));
+                            .push(ValueImpl::long(l.wrapping_add(*r)));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("ladd but invalid operand types")),
@@ -2049,11 +1979,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match (left, right) {
-                    (Value::Integer(l), Value::Integer(r)) => {
+                match (left.as_integer(), right.as_integer()) {
+                    (Some(l), Some(r)) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Integer(l.wrapping_sub(r)));
+                            .push(ValueImpl::integer(l.wrapping_sub(*r)));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
@@ -2067,11 +1997,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("ineg but insufficient arguments"));
                 };
 
-                match value {
-                    Value::Integer(l) => {
+                match value.as_integer() {
+                    Some(l) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Integer(l.wrapping_neg()));
+                            .push(ValueImpl::integer(l.wrapping_neg()));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("ineg but invalid operand types")),
@@ -2090,11 +2020,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("iand but insufficient arguments"));
                 };
 
-                match (left, right) {
-                    (Value::Integer(l), Value::Integer(r)) => {
+                match (left.as_integer(), right.as_integer()) {
+                    (Some(l), Some(r)) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Integer(l ^ r));
+                            .push(ValueImpl::integer(l ^ r));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iand but invalid operand types")),
@@ -2113,11 +2043,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("iand but insufficient arguments"));
                 };
 
-                match (left, right) {
-                    (Value::Integer(l), Value::Integer(r)) => {
+                match (left.as_integer(), right.as_integer()) {
+                    (Some(l), Some(r)) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Integer(l & r));
+                            .push(ValueImpl::integer(l & r));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iand but invalid operand types")),
@@ -2136,11 +2066,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("ior but insufficient arguments"));
                 };
 
-                match (left, right) {
-                    (Value::Integer(l), Value::Integer(r)) => {
+                match (left.as_integer(), right.as_integer()) {
+                    (Some(l), Some(r)) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Integer(l | r));
+                            .push(ValueImpl::integer(l | r));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("ior but invalid operand types")),
@@ -2159,11 +2089,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("ishr but insufficient arguments"));
                 };
 
-                match (value1, value2) {
-                    (Value::Integer(v1), Value::Integer(v2)) => {
+                match (value1.as_integer(), value2.as_integer()) {
+                    (Some(v1), Some(v2)) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Integer(v1 >> (v2 & 0x1f)));
+                            .push(ValueImpl::integer(v1 >> (v2 & 0x1f)));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("ishr but invalid operand types")),
@@ -2182,12 +2112,12 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("ishr but insufficient arguments"));
                 };
 
-                match (value1, value2) {
-                    (Value::Integer(v1), Value::Integer(v2)) => {
-                        let res = (v1 as u32) >> ((v2 as u32) & 0x1f);
+                match (value1.as_integer(), value2.as_integer()) {
+                    (Some(v1), Some(v2)) => {
+                        let res = (*v1 as u32) >> ((*v2 as u32) & 0x1f);
                         frame_mut
                             .operand_stack
-                            .push(Value::Integer(res as i32));
+                            .push(ValueImpl::integer(res as i32));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("ishr but invalid operand types")),
@@ -2206,11 +2136,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("ishl but insufficient arguments"));
                 };
 
-                match (value1, value2) {
-                    (Value::Integer(v1), Value::Integer(v2)) => {
+                match (value1.as_integer(), value2.as_integer()) {
+                    (Some(v1), Some(v2)) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Integer(v1 << (v2 & 0x1f)));
+                            .push(ValueImpl::integer(v1 << (v2 & 0x1f)));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("ishl but invalid operand types")),
@@ -2224,11 +2154,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("i2d but insufficient arguments"));
                 };
 
-                match value {
-                    Value::Float(f) => {
+                match value.as_float() {
+                    Some(f) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Double(f as f64));
+                            .push(ValueImpl::double(*f as f64));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("i2d but invalid operand types")),
@@ -2242,11 +2172,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("i2d but insufficient arguments"));
                 };
 
-                match value {
-                    Value::Float(f) => {
+                match value.as_float() {
+                    Some(f) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Integer(f as i32));
+                            .push(ValueImpl::integer(*f as i32));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("i2d but invalid operand types")),
@@ -2260,11 +2190,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match value {
-                    Value::Long(l) => {
+                match value.as_long() {
+                    Some(l) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Integer(l as i32));
+                            .push(ValueImpl::integer(*l as i32));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
@@ -2278,11 +2208,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("l2f but insufficient arguments"));
                 };
 
-                match value {
-                    Value::Long(l) => {
+                match value.as_long() {
+                    Some(l) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Float(l as f32));
+                            .push(ValueImpl::float(*l as f32));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("l2f but invalid operand types")),
@@ -2296,11 +2226,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match value {
-                    Value::Integer(l) => {
+                match value.as_integer() {
+                    Some(l) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Integer(l as i8 as i32));
+                            .push(ValueImpl::integer(*l as i8 as i32));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
@@ -2314,11 +2244,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match value {
-                    Value::Integer(l) => {
+                match value.as_integer() {
+                    Some(l) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Integer(l as i16 as u16 as i32));
+                            .push(ValueImpl::integer(*l as i16 as u16 as i32));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
@@ -2332,11 +2262,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("i2d but insufficient arguments"));
                 };
 
-                match value {
-                    Value::Integer(l) => {
+                match value.as_integer() {
+                    Some(l) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Double(l as f64));
+                            .push(ValueImpl::double(*l as f64));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("i2d but invalid operand types")),
@@ -2350,11 +2280,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("i2f but insufficient arguments"));
                 };
 
-                match value {
-                    Value::Integer(l) => {
+                match value.as_integer() {
+                    Some(l) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Float(l as f32));
+                            .push(ValueImpl::float(*l as f32));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("i2f but invalid operand types")),
@@ -2368,11 +2298,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match value {
-                    Value::Integer(l) => {
+                match value.as_integer() {
+                    Some(l) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Long(l as i64));
+                            .push(ValueImpl::long(*l as i64));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
@@ -2386,11 +2316,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("iadd but insufficient arguments"));
                 };
 
-                match value {
-                    Value::Double(d) => {
+                match value.as_double() {
+                    Some(d) => {
                         frame_mut
                             .operand_stack
-                            .push(Value::Long(d as i64));
+                            .push(ValueImpl::long(*d as i64));
                         Ok(None)
                     }
                     _ => Err(VMError::BadClass("iadd but invalid operand types")),
@@ -2404,8 +2334,8 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("dreturn but insufficient arguments"));
                 };
 
-                match value {
-                    Value::Double(_) => {
+                match value.as_double() {
+                    Some(_) => {
                         self.leave();
                         Ok(Some(value))
                     }
@@ -2420,8 +2350,8 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("ireturn but insufficient arguments"));
                 };
 
-                match value {
-                    Value::Integer(_) => {
+                match value.as_integer() {
+                    Some(_) => {
                         self.leave();
                         Ok(Some(value))
                     }
@@ -2436,8 +2366,8 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("lreturn but insufficient arguments"));
                 };
 
-                match value {
-                    Value::Long(_) => {
+                match value.as_long() {
+                    Some(_) => {
                         self.leave();
                         Ok(Some(value))
                     }
@@ -2452,24 +2382,11 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("areturn but insufficient arguments"));
                 };
 
-                match value {
-                    Value::String(_) => {
-                        self.leave();
-                        Ok(Some(value))
-                    }
-                    Value::Array(_) => {
-                        self.leave();
-                        Ok(Some(value))
-                    }
-                    Value::Object(_) => {
-                        self.leave();
-                        Ok(Some(value))
-                    }
-                    Value::Null(_) => {
-                        self.leave();
-                        Ok(Some(value))
-                    }
-                    _ => Err(VMError::BadClass("areturn but invalid operand types")),
+                if value.is_reference() {
+                    self.leave();
+                    Ok(Some(value))
+                } else {
+                    Err(VMError::BadClass("areturn but invalid operand types"))
                 }
             }
             Instruction::AThrow => {
@@ -2480,20 +2397,19 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                     return Err(VMError::BadClass("athrow but insufficient arguments"));
                 };
 
-                match value {
-                    Value::Object(_) => {
-                        self.throw();
-                        Ok(Some(value))
-                    }
-                    _ => Err(VMError::BadClass("athrow but invalid operand types")),
+                if value.as_object().is_some() {
+                    self.throw();
+                    Ok(Some(value))
+                } else {
+                    Err(VMError::BadClass("athrow but invalid operand types"))
                 }
             }
             Instruction::Ldc(c) => {
                 let value = match &**c {
-                    Constant::Integer(i) => Value::Integer(*i as i32),
-                    Constant::Float(f) => Value::Float(*f),
+                    Constant::Integer(i) => ValueImpl::integer(*i as i32),
+                    Constant::Float(f) => ValueImpl::float(*f),
                     Constant::String(s) => {
-                        Value::String(Rc::new(s.bytes().collect()))
+                        ValueImpl::string(vm, s)
                     }
                     Constant::Class(c) => {
                         jvm::synthetic::class_object_new(vm, &c)
@@ -2509,10 +2425,10 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
             }
             Instruction::LdcW(c) => {
                 let value = match &**c {
-                    Constant::Integer(i) => Value::Integer(*i as i32),
-                    Constant::Float(f) => Value::Float(*f),
+                    Constant::Integer(i) => ValueImpl::integer(*i as i32),
+                    Constant::Float(f) => ValueImpl::float(*f),
                     Constant::String(s) => {
-                        Value::String(Rc::new(s.bytes().collect()))
+                        ValueImpl::string(vm, s)
                     }
                     Constant::Class(c) => {
                         jvm::synthetic::class_object_new(vm, &c)
@@ -2527,8 +2443,8 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
             }
             Instruction::Ldc2W(c) => {
                 let value = match &**c {
-                    Constant::Long(l) => Value::Long(*l as i64),
-                    Constant::Double(d) => Value::Double(*d),
+                    Constant::Long(l) => ValueImpl::long(*l as i64),
+                    Constant::Double(d) => ValueImpl::double(*d),
                     _ => {
                         return Err(VMError::Unsupported("unsupported constant type for ldc2w"));
                     }
@@ -2544,39 +2460,37 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                 let item = stack.pop().expect("operand available");
 
                 let mut item_class = {
-                    if item.is_null() {
-                        stack.push(Value::Integer(0));
+                    if item.as_null().is_some() {
+                        stack.push(ValueImpl::integer(0));
                         return Ok(None);
                     }
 
-                    match item {
-                        Value::Object(obj) => {
-                            Rc::clone(obj.cls())
-                        },
-                        Value::Array(_) => {
-                            vm.resolve_class("java/lang/Object").expect("object exists")
-                        }
-                        Value::String(_) => {
-                            vm.resolve_class("java/lang/String").expect("string exists")
-                        }
-                        other => {
-                            panic!("cant instanceof a non-reference type: {:?}", other);
-                        }
+                    if let Some(obj) = item.as_object() {
+                        obj.cls()
+                    } else if let Some(_) = item.as_array() {
+                        vm.resolve_class("java/lang/Object").expect("object exists")
+                    } else {
+                        // TODO: handle null?
+                        // TODO: handle Value::String
+//                        Value::String(_) => {
+//                            vm.resolve_class("java/lang/String").expect("string exists")
+//                        }
+                        panic!("cant instanceof a non-reference type: {:?}", item);
                     }
                 };
                 loop {
                     let cls = Rc::clone(&item_class);
                     if cls.this_class.as_str() == name.as_str() {
-                        stack.push(Value::Integer(1));
+                        stack.push(ValueImpl::integer(1));
                         return Ok(None);
                     } else if cls.interfaces.contains(&name.to_string()) {
-                        stack.push(Value::Integer(1));
+                        stack.push(ValueImpl::integer(1));
                         return Ok(None);
                     } else if let Some(super_class) = cls.super_class.as_ref() {
                         // not this class, not an interface, maybe superclass?
                         item_class = vm.resolve_class(super_class).expect("superclass exists");
                     } else {
-                        stack.push(Value::Integer(0));
+                        stack.push(ValueImpl::integer(0));
                         return Ok(None);
                     }
                 }
@@ -2585,24 +2499,20 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
                 let frame_mut = self.current_frame_mut();
                 let stack = &frame_mut.operand_stack;
                 let mut array = false;
-                let mut check_class = match &stack[stack.len() - 1] {
-                    Value::Object(obj) => {
-                        Rc::clone(obj.cls())
-                    }
-                    Value::Array(_) => {
-                        array = true;
-                        vm.resolve_class("java/lang/Object").expect("arrays are objects")
-                    },
-                    Value::String(_) => {
-                        vm.resolve_class("java/lang/String").expect("strings exist")
-                    },
-                    Value::Null(_) => {
-                        // TODO: think this should raise an exception...
-                        return Ok(None);
-                    }
-                    _ => {
-                        return Err(VMError::BadClass("invalid operand for checkcast"))
-                    }
+                let top_of_stack = &stack[stack.len() - 1];
+                let mut check_class = if let Some(obj) = top_of_stack.as_object() {
+                    obj.cls()
+                } else if let Some(_) = top_of_stack.as_array() {
+                    array = true;
+                    vm.resolve_class("java/lang/Object").expect("arrays are objects")
+                } else if let Some(_) = top_of_stack.as_null() {
+                    // TODO: think this should raise an exception...
+                    return Ok(None);
+                } else { // TODO: Value::String
+//                    Value::String(_) => {
+//                        vm.resolve_class("java/lang/String").expect("strings exist")
+//                    },
+                    return Err(VMError::BadClass("invalid operand for checkcast"))
                 };
                 eprintln!("checking if {:?} can be cast to {}", check_class.this_class, name);
 
@@ -2656,254 +2566,477 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VMState<ObjectImpl, ArrayImpl> 
         }
     }
     #[allow(dead_code)]
-    fn return_value(&mut self) -> Option<Value<ObjectImpl, ArrayImpl>> {
+    fn return_value(&mut self) -> Option<ValueImpl> {
         // panic!("Hello there");
         None
     }
 }
 
-pub struct JvmObject {
-    class: Rc<ClassFile>,
-    // TODO: declare classes to zvm and get layout ids to use here..
-    // zvm_layout_id: LayoutId,
-    fields: Rc<RefCell<HashMap<String, Value<ObjectImpl, ArrayImpl>>>>,
-}
-
-impl PartialEq for JvmObject {
-    fn eq(&self, other: &Self) -> bool {
-        Rc::ptr_eq(&self.fields, &other.fields)
-    }
-}
-
-impl Clone for JvmObject {
-    fn clone(&self) -> Self {
-        JvmObject {
-            class: Rc::clone(&self.class),
-            fields: Rc::clone(&self.fields),
-        }
-    }
-}
-
-impl JvmObject {
-    pub fn new_with_data(class: Rc<ClassFile>, data: HashMap<String, Value<ObjectImpl, ArrayImpl>>) -> Self {
-        JvmObject {
-            fields: Rc::new(RefCell::new(data)),
-            class,
-        }
-    }
-    pub fn create(class: Rc<ClassFile>) -> Self {
-        JvmObject {
-            fields: Rc::new(RefCell::new(HashMap::new())),
-            class,
-        }
-    }
-
-    pub fn with_field(self, name: &str, value: Value) -> Self {
-        self.fields.borrow_mut().insert(name.to_string(), value);
-        self
-    }
-
-    pub fn cls(&self) -> &Rc<ClassFile> {
-        &self.class
-    }
-
-    pub fn fields_ptr(&self) -> *const u8 {
-        let ptr: *const HashMap<String, Value<ObjectImpl, ArrayImpl>> = (&*self.fields.borrow()) as *const HashMap<String, Value<ObjectImpl, ArrayImpl>>;
-        ptr as *const u8
-    }
-
-    pub fn get_field(&self, name: &str) -> Value {
-        self.fields.borrow().get(name).expect("field is defined").clone()
-    }
-
-    pub fn set_field(&self, name: &str, value: Value) {
-        self.fields.borrow_mut().insert(name.to_string(), value);
-    }
-
-    pub fn new_inst(class_file: Rc<ClassFile>) -> JvmObject {
-        let mut fields = HashMap::new();
-        // TODO: respect type and access flags of fields
-        for field in class_file.fields.iter() {
-            fields.insert(
-                field.name.clone(),
-                Value::default_of(
-                    &field.desc,
-                ),
-            );
-        }
-        JvmObject { fields: Rc::new(RefCell::new(fields)), class: class_file }
-    }
-}
-
-pub enum Value<ObjectImpl: JvmObject, ArrayImpl: JvmArray> {
+pub enum SimpleJvmValue {
     Integer(i32),
     Long(i64),
     Float(f32),
     Double(f64),
     // Array(Rc<RefCell<Box<[Value]>>>),
-    Array(ArrayImpl),
+    Array(SimpleJvmArray),
     String(Rc<Vec<u8>>),
-    Object(ObjectImpl),
+    Object(SimpleJvmObject),
     Null(String), // Null, of type `String`
     Uninitialized,
 }
 
-impl fmt::Debug for Value {
+impl fmt::Debug for SimpleJvmValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Value::Integer(i) => { write!(f, "{}", i) },
-            Value::Long(l) => { write!(f, "{}", l) },
-            Value::Float(value) => { write!(f, "{}", value) },
-            Value::Double(d) => { write!(f, "{}", d) },
-            Value::Array(array) => {
+            Self::Integer(i) => { write!(f, "{}", i) },
+            Self::Long(l) => { write!(f, "{}", l) },
+            Self::Float(value) => { write!(f, "{}", value) },
+            Self::Double(d) => { write!(f, "{}", d) },
+            Self::Array(array) => {
                 write!(f, "Array({:?})", array)
             },
-            Value::String(bytes) => {
+            Self::String(bytes) => {
                 if let Ok(s) = std::str::from_utf8(bytes) {
                     write!(f, "String({:?})", s)
                 } else {
                     write!(f, "String({:?})", bytes)
                 }
             }
-            Value::Object(obj) => {
-                write!(f, "Object({})", obj.cls())
+            Self::Object(obj) => {
+                write!(f, "Object({})", &obj.cls().this_class)
             }
-            Value::Null(cls) => {
+            Self::Null(cls) => {
                 write!(f, "Null({})", cls)
             }
-            Value::Uninitialized => { f.write_str("uninitialized") }
+            Self::Uninitialized => { f.write_str("uninitialized") }
         }
     }
 }
 
-impl Clone for Value {
+impl Clone for SimpleJvmValue {
     fn clone(&self) -> Self {
         match self {
-            Value::Integer(v) => Value::Integer(*v),
-            Value::Long(v) => Value::Long(*v),
-            Value::Float(v) => Value::Float(*v),
-            Value::Double(v) => Value::Double(*v),
-            Value::Array(v) => Value::Array(v.clone()),
-            Value::String(v) => Value::String(Rc::clone(v)),
-            Value::Object(obj) => Value::Object(obj.clone()),
-            Value::Null(v) => Value::Null(v.clone()),
-            Value::Uninitialized => Value::Uninitialized,
+            Self::Integer(v) => Self::Integer(*v),
+            Self::Long(v) => Self::Long(*v),
+            Self::Float(v) => Self::Float(*v),
+            Self::Double(v) => Self::Double(*v),
+            Self::Array(v) => Self::Array(v.new_ref()),
+            Self::String(v) => Self::String(Rc::clone(v)),
+            Self::Object(obj) => Self::Object(obj.new_ref()),
+            Self::Null(v) => Self::Null(v.clone()),
+            Self::Uninitialized => Self::Uninitialized,
         }
     }
 }
 
-impl Value<ObjectImpl: JvmObject, ArrayImpl: JvmArray> {
-    pub fn new_inst(class_file: Rc<ClassFile>) -> Value {
-        Value::Object(ObjectImpl::new_inst(class_file))
-    }
-
-    pub fn default_of(s: &str) -> Value {
-        match s {
-            "J" => Value::Long(0),
-            "B" | "C" | "S" | "Z" | "I" => Value::Integer(0),
-            "F" => Value::Float(0.0),
-            "D" => Value::Double(0.0),
-            // Lasdf;   reference type
-            // [        array
-            // [[Lasdf; asdf[][]
-            other => Value::Null(other.to_string()),
+impl Hash for SimpleJvmValue {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Integer(v) => v.hash(state),
+            Self::Long(v) => v.hash(state),
+            Self::Float(v) => v.to_bits().hash(state),
+            Self::Double(v) => v.to_bits().hash(state),
+            Self::Array(v) => {
+                v.hash(state);
+            },
+            Self::String(v) => {
+                unsafe {
+                    let ptr = Rc::into_raw(Rc::clone(v));
+                    ptr.hash(state);
+                    Rc::from_raw(ptr);
+                }
+            },
+            Self::Object(obj) => {
+                obj.hash(state);
+            }
+            Self::Null(v) => v.hash(state),
+            Self::Uninitialized => 4.hash(state),
         }
     }
+}
 
-    pub fn parse_from(s: &str) -> Option<Value<ObjectImpl, ArrayImpl>> {
-        if s == "null" {
-            return Some(Value::Null("Object".to_string()));
+impl Eq for SimpleJvmValue {}
+
+impl PartialEq for SimpleJvmValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Integer(v1), Self::Integer(v2)) => { v1 == v2 },
+            (Self::Long(v1), Self::Long(v2)) => { v1 == v2 },
+            (Self::Float(v1), Self::Float(v2)) => { v1 == v2 },
+            (Self::Double(v1), Self::Double(v2)) => { v1 == v2 },
+            (Self::Array(v1), Self::Array(v2)) => { v1 == v2 },
+            (Self::Object(obj1), Self::Object(obj2)) => { obj1 == obj2 },
+            (Self::String(v1), Self::String(v2)) => { v1 == v2 },
+            (Self::Null(v1), Self::Null(v2)) => { v1 == v2 },
+            (Self::Uninitialized, _) => false,
+            (_, Self::Uninitialized) => false,
+            _ => false,
         }
+    }
+}
 
-        if let Ok(v) = i64::from_str(s) {
-            return Some(Value::Integer(v as i32));
+#[derive(Debug)]
+pub struct SimpleJvmArray {
+    cls: Rc<ClassFile>,
+    data: Rc<RefCell<Box<[SimpleJvmValue]>>>
+}
+
+impl Hash for SimpleJvmArray {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        (Rc::as_ptr(&self.cls) as u64).hash(state);
+        (Rc::as_ptr(&self.data) as u64).hash(state);
+    }
+}
+
+impl PartialEq for SimpleJvmArray {
+    fn eq(&self, other: &Self) -> bool {
+        &*self.cls.this_class == &*other.cls.this_class &&
+        &*self.data.borrow() == &*other.data.borrow()
+    }
+}
+impl Eq for SimpleJvmArray {}
+
+impl JvmArray<SimpleJvmValue> for SimpleJvmArray {
+    fn len(&self) -> usize {
+        self.data.borrow().len()
+    }
+    fn cls(&self) -> Rc<ClassFile> {
+        Rc::clone(&self.cls)
+    }
+    fn get_elem(&self, idx: usize) -> Option<&SimpleJvmValue> {
+        panic!("ref of refcell.. uh oh...");
+    }
+    fn get_elem_mut(&self, idx: usize) -> Option<&mut SimpleJvmValue> {
+        panic!("ref of refcell.. uh oh...");
+    }
+    unsafe fn as_slice<'data, T>(&'data self) -> Option<&'data [T]> {
+        panic!("ref of refcell.. uh oh...");
+    }
+    fn internal_obj_id(&self) -> u64 {
+        self.data.as_ptr() as u64
+    }
+    fn new_ref(&self) -> Self {
+        Self {
+            cls: Rc::clone(&self.cls),
+            data: Rc::clone(&self.data),
         }
-
-        if let Ok(v) = f64::from_str(s) {
-            return Some(Value::Double(v));
+    }
+    fn new_array(class_file: Rc<ClassFile>, data: Box<[SimpleJvmValue]>) -> Self {
+        Self {
+            cls: class_file,
+            data: panic!("todo: do something with argument")
         }
+    }
+}
 
-        if s.len() >= 2 && s.starts_with("\"") && s.ends_with("\"") {
-            return Some(Value::String(Rc::new(s[1..][..s.len() - 2].bytes().collect())));
+#[derive(Debug)]
+pub struct SimpleJvmObject {
+    fields: Rc<RefCell<HashMap<String, SimpleJvmValue>>>,
+    cls: Rc<ClassFile>,
+}
+
+impl Hash for SimpleJvmObject {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        (Rc::as_ptr(&self.fields) as u64).hash(state);
+        (Rc::as_ptr(&self.cls) as u64).hash(state);
+    }
+}
+
+impl PartialEq for SimpleJvmObject {
+    fn eq(&self, other: &Self) -> bool {
+        &self.cls.this_class == &other.cls.this_class &&
+        &*self.fields.borrow() == &*other.fields.borrow()
+    }
+}
+impl Eq for SimpleJvmObject {}
+
+impl JvmObject<SimpleJvmValue> for SimpleJvmObject {
+    fn new_inst(class_file: Rc<ClassFile>) -> Self {
+        panic!("new inst")
+    }
+    fn cls(&self) -> Rc<ClassFile> {
+        panic!("array class");
+    }
+    fn get_field(&self, field: &str) -> SimpleJvmValue {
+        self.fields.borrow().get(field).expect("field exists").to_owned()
+    }
+    fn set_field(&self, field: &str, v: SimpleJvmValue) {
+        self.fields.borrow_mut().insert(field.to_owned(), v);
+    }
+    fn internal_obj_id(&self) -> u64 {
+        self.fields.as_ptr() as u64
+    }
+    fn new_ref(&self) -> Self {
+        Self {
+            fields: Rc::clone(&self.fields),
+            cls: Rc::clone(&self.cls),
         }
+    }
+}
 
-        return None;
+impl SimpleJvmObject {
+    pub fn new_with_data(class: Rc<ClassFile>, data: HashMap<String, SimpleJvmValue>) -> Self {
+        SimpleJvmObject {
+            fields: Rc::new(RefCell::new(data)),
+            cls: class,
+        }
+    }
+    pub fn create(class: Rc<ClassFile>) -> Self {
+        SimpleJvmObject {
+            fields: Rc::new(RefCell::new(HashMap::new())),
+            cls: class,
+        }
     }
 
-    pub fn is_null(&self) -> bool {
-        if let Value::Null(_) = self {
+    pub fn new_inst(class_file: Rc<ClassFile>) -> SimpleJvmObject {
+        let mut fields = HashMap::new();
+        // TODO: respect type and access flags of fields
+        for field in class_file.fields.iter() {
+            fields.insert(
+                field.name.clone(),
+                SimpleJvmValue::default_of(
+                    &field.desc,
+                ),
+            );
+        }
+        SimpleJvmObject { fields: Rc::new(RefCell::new(fields)), cls: class_file }
+    }
+}
+
+impl JvmValue for SimpleJvmValue {
+    type ArrayTy = SimpleJvmArray;
+    type ObjectTy = SimpleJvmObject;
+
+    fn as_object(&self) -> Option<&Self::ObjectTy> {
+        if let Self::Object(obj) = self {
+            Some(obj)
+        } else {
+            None
+        }
+    }
+    fn as_array(&self) -> Option<&Self::ArrayTy> {
+        if let Self::Array(elems) = self {
+            Some(elems)
+        } else {
+            None
+        }
+    }
+    fn as_integer(&self) -> Option<&i32> {
+        if let Self::Integer(i) = self {
+            Some(i)
+        } else {
+            None
+        }
+    }
+    fn as_long(&self) -> Option<&i64> {
+        if let Self::Long(i) = self {
+            Some(i)
+        } else {
+            None
+        }
+    }
+    fn as_float(&self) -> Option<&f32> {
+        if let Self::Float(i) = self {
+            Some(i)
+        } else {
+            None
+        }
+    }
+    fn as_double(&self) -> Option<&f64> {
+        if let Self::Double(i) = self {
+            Some(i)
+        } else {
+            None
+        }
+    }
+    // `str` is the name of the class this null is an instance of. does that even make sense for
+    // jvm semantics? i dunno
+    fn as_null(&self) -> Option<&str> {
+        if let Self::Null(cls) = self {
+            Some(cls)
+        } else {
+            None
+        }
+    }
+    fn is_uninitialized(&self) -> bool {
+        if let Self::Uninitialized = self {
             true
         } else {
             false
         }
     }
+
+    fn object(v: Self::ObjectTy) -> Self {
+        Self::Object(v)
+    }
+
+    fn array(v: Self::ArrayTy) -> Self {
+        Self::Array(v)
+    }
+
+    fn integer(v: i32) -> Self {
+        Self::Integer(v)
+    }
+
+    fn long(v: i64) -> Self {
+        Self::Long(v)
+    }
+
+    fn float(v: f32) -> Self {
+        Self::Float(v)
+    }
+
+    fn double(v: f64) -> Self {
+        Self::Double(v)
+    }
+
+    fn null(s: String) -> Self {
+        Self::Null(s)
+    }
+
+    fn uninitialized() -> Self {
+        Self::Uninitialized
+    }
 }
 
-pub(crate) struct ValueRef(Value);
+pub trait JvmValue: fmt::Debug + Sized + PartialEq + Eq + Hash + Clone {
+    type ArrayTy: JvmArray<Self>;
+    type ObjectTy: JvmObject<Self>;
 
-impl ValueRef {
-    pub fn of(reference: &Value) -> Self {
+    // as_object + a type check of the object
+    fn as_type(&self, ty: &str) -> Option<&Self::ObjectTy> {
+        if let Some(obj) = self.as_object() {
+            if obj.cls().this_class == ty {
+                return Some(obj);
+            }
+        }
+
+        None
+    }
+    fn as_object(&self) -> Option<&Self::ObjectTy>;
+    fn as_array(&self) -> Option<&Self::ArrayTy>;
+    fn as_integer(&self) -> Option<&i32>;
+    fn as_long(&self) -> Option<&i64>;
+    fn as_float(&self) -> Option<&f32>;
+    fn as_double(&self) -> Option<&f64>;
+    fn as_null(&self) -> Option<&str>;
+    fn is_uninitialized(&self) -> bool;
+    fn is_reference(&self) -> bool {
+        self.as_object().is_some() || self.as_array().is_some() || self.as_null().is_some()
+    }
+
+    fn integer(v: i32) -> Self;
+    fn long(v: i64) -> Self;
+    fn float(v: f32) -> Self;
+    fn double(v: f64) -> Self;
+    fn object(o: Self::ObjectTy) -> Self;
+    fn array(a: Self::ArrayTy) -> Self;
+    fn null(cls: String) -> Self;
+    fn uninitialized() -> Self;
+
+    // constructs a java.lang.String describing `data`
+    fn string(vm: &mut VirtualMachine<Self>, data: &str) -> Self {
+        let string_class = vm.resolve_class("java/lang/String").expect("strings exist");
+        let mut jvm_data = HashMap::new();
+        let mut jvm_chars = Vec::new();
+        // TODO: strings are utf, not bytes.
+        for c in data.as_bytes().iter() {
+            jvm_chars.push(Self::integer(*c as i32));
+        }
+        jvm_data.insert("value".to_owned(), Self::array_with_data(
+            vm.resolve_class("java/lang/Character").expect("chars exist"),
+            jvm_chars.into_boxed_slice()
+        ));
+        Self::object_with_data(string_class, jvm_data)
+    }
+
+
+    fn object_with_data(class_file: Rc<ClassFile>, fields: HashMap<String, Self>) -> Self {
+        let mut obj = Self::ObjectTy::new_inst(class_file);
+        for (k, v) in fields.into_iter() {
+            obj.set_field(&k, v)
+        }
+        Self::object(obj)
+    }
+
+    fn array_with_data(class_file: Rc<ClassFile>, elems: Box<[Self]>) -> Self {
+        Self::array(Self::ArrayTy::new_array(class_file, elems))
+    }
+
+    fn default_of(s: &str) -> Self {
+        match s {
+            "J" => Self::long(0),
+            "B" | "C" | "S" | "Z" | "I" => Self::integer(0),
+            "F" => Self::float(0.0),
+            "D" => Self::double(0.0),
+            // Lasdf;   reference type
+            // [        array
+            // [[Lasdf; asdf[][]
+            other => Self::null(other.to_string()),
+        }
+    }
+
+    fn parse_from(s: &str) -> Option<Self> {
+        if s == "null" {
+            return Some(Self::null("Object".to_string()));
+        }
+
+        if let Ok(v) = i64::from_str(s) {
+            return Some(Self::integer(v as i32));
+        }
+
+        if let Ok(v) = f64::from_str(s) {
+            return Some(Self::double(v));
+        }
+
+        if s.len() >= 2 && s.starts_with("\"") && s.ends_with("\"") {
+            panic!("string");
+//            return Some(Self::String(Rc::new(s[1..][..s.len() - 2].bytes().collect())));
+        }
+
+        return None;
+    }
+}
+
+pub trait JvmObject<ValueTy: JvmValue>: fmt::Debug + Sized + PartialEq + Eq + Hash {
+    fn new_inst(class_file: Rc<ClassFile>) -> Self;
+    fn cls(&self) -> Rc<ClassFile>;
+    fn get_field(&self, field: &str) -> ValueTy;
+    fn set_field(&self, field: &str, v: ValueTy);
+    fn internal_obj_id(&self) -> u64;
+    fn new_ref(&self) -> Self;
+}
+
+pub trait JvmArray<ValueTy: JvmValue>: fmt::Debug + Sized + PartialEq + Eq + Hash {
+    fn new_array(class_file: Rc<ClassFile>, data: Box<[ValueTy]>) -> Self;
+    fn cls(&self) -> Rc<ClassFile>;
+    fn get_elem(&self, idx: usize) -> Option<&ValueTy>;
+    fn get_elem_mut(&self, idx: usize) -> Option<&mut ValueTy>;
+    fn len(&self) -> usize;
+    fn internal_obj_id(&self) -> u64;
+    fn new_ref(&self) -> Self;
+    unsafe fn as_slice<'data, T>(&'data self) -> Option<&'data [T]>;
+}
+
+pub(crate) struct ValueRef<ValueImpl: JvmValue>(ValueImpl);
+
+impl<ValueImpl: JvmValue> ValueRef<ValueImpl> {
+    pub fn of(reference: &ValueImpl) -> Self {
         ValueRef(reference.clone())
     }
 }
 
-impl Hash for ValueRef {
+impl<ValueImpl: JvmValue> Hash for ValueRef<ValueImpl> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        match &self.0 {
-            Value::Integer(v) => v.hash(state),
-            Value::Long(v) => v.hash(state),
-            Value::Float(v) => v.to_bits().hash(state),
-            Value::Double(v) => v.to_bits().hash(state),
-            Value::Array(v) => {
-                unsafe {
-                    let ptr = Rc::into_raw(Rc::clone(v));
-                    ptr.hash(state);
-                    Rc::from_raw(ptr);
-                }
-            },
-            Value::String(v) => {
-                unsafe {
-                    let ptr = Rc::into_raw(Rc::clone(v));
-                    ptr.hash(state);
-                    Rc::from_raw(ptr);
-                }
-            },
-            Value::Object(obj) => {
-                panic!();
-                /*
-                unsafe {
-                    let ptr = Rc::into_raw(Rc::clone(v1));
-                    ptr.hash(state);
-                    Rc::from_raw(ptr);
-                    let ptr = Rc::into_raw(Rc::clone(v2));
-                    ptr.hash(state);
-                    Rc::from_raw(ptr);
-                }
-                */
-            }
-            Value::Null(v) => v.hash(state),
-            Value::Uninitialized => 4.hash(state),
-        }
+        self.0.hash(state)
     }
 }
 
-impl Eq for ValueRef {}
+impl<ValueImpl: JvmValue> Eq for ValueRef<ValueImpl> {}
 
-impl PartialEq for ValueRef {
-    fn eq(&self, other: &ValueRef) -> bool {
-        match (&self.0, &other.0) {
-            (Value::Integer(v1), Value::Integer(v2)) => { v1 == v2 },
-            (Value::Long(v1), Value::Long(v2)) => { v1 == v2 },
-            (Value::Float(v1), Value::Float(v2)) => { v1 == v2 },
-            (Value::Double(v1), Value::Double(v2)) => { v1 == v2 },
-            (Value::Array(v1), Value::Array(v2)) => { Rc::ptr_eq(v1, v2) },
-            (Value::Object(obj1), Value::Object(obj2)) => { obj1 == obj2 },
-            (Value::String(v1), Value::String(v2)) => { Rc::ptr_eq(v1, v2) },
-            (Value::Null(v1), Value::Null(v2)) => { v1 == v2 },
-            (Value::Uninitialized, _) => false,
-            (_, Value::Uninitialized) => false,
-            _ => false,
-        }
+impl<ValueImpl: JvmValue> PartialEq for ValueRef<ValueImpl> {
+    fn eq(&self, other: &Self) -> bool {
+        &self.0 == &other.0
     }
 }
 
@@ -2913,11 +3046,66 @@ enum NativeObject {
     Unknown,
 }
 
-pub struct VirtualMachine<ObjectImpl: JvmObject, ArrayImpl: JvmArray> {
+#[derive(Debug)]
+enum NativeImplKey {
+    // name is not included: this is only to describe `<clinit>()V` functions.
+    Initializer { cls: String },
+    Method { cls: Rc<ClassFile>, declaration: String },
+}
+
+impl Eq for NativeImplKey {}
+impl PartialEq for NativeImplKey {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (NativeImplKey::Initializer { cls }, NativeImplKey::Initializer { cls: other_cls }) => {
+                cls == other_cls
+            },
+            (NativeImplKey::Method { cls, declaration }, NativeImplKey::Method { cls: other_cls, declaration: other_declaration }) => {
+                &cls.this_class == &other_cls.this_class &&
+                declaration == other_declaration
+            }
+            _ => {
+                false
+            }
+        }
+    }
+}
+
+impl Hash for NativeImplKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            NativeImplKey::Initializer { cls } => {
+                1.hash(state);
+                cls.hash(state);
+            }
+            NativeImplKey::Method { cls, declaration } => {
+                2.hash(state);
+                Rc::as_ptr(cls).hash(state);
+                declaration.hash(state);
+            }
+        }
+    }
+}
+
+impl NativeImplKey {
+    fn initializer(s: &str) -> Self {
+        NativeImplKey::Initializer { cls: s.to_owned() }
+    }
+
+    fn method(cls: &Rc<ClassFile>, decl: String) -> Self {
+        NativeImplKey::Method {
+            cls: Rc::clone(cls),
+            declaration: decl
+        }
+    }
+}
+
+pub struct VirtualMachine<ValueImpl: JvmValue> {
     classes: HashMap<String, Rc<ClassFile>>,
-    class_instances: HashMap<String, ObjectImpl>,
-    static_instances: HashMap<ClassFileRef, HashMap<String, Value<ObjectImpl, ArrayImpl>>>,
-    native_instances: HashMap<ValueRef, RefCell<NativeObject>>, // TODO: should probably be an ObjectImpl?
+    native_impls: HashMap<NativeImplKey, fn(&mut VMState<ValueImpl>, &mut VirtualMachine<ValueImpl>) -> Result<(), VMError>>,
+    class_instances: HashMap<String, ValueImpl>, // they're all objects, but we use the generic ValueImpl here
+    static_instances: HashMap<ClassFileRef, HashMap<String, ValueImpl>>,
+    native_instances: HashMap<ValueRef<ValueImpl>, RefCell<NativeObject>>, // TODO: should probably be an ObjectImpl?
     classpath: Vec<PathBuf>,
     // TODO: actually reuse the VirtualMachine for <clinit> calls - mutually recursive classes
     // would loop and crash right now, among other issues..
@@ -2934,10 +3122,11 @@ pub enum VMError {
     Unsupported(&'static str),
 }
 
-impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VirtualMachine<ObjectImpl, ArrayImpl> {
+impl<ValueImpl: JvmValue> VirtualMachine<ValueImpl> {
     pub fn new(initial_classpath: Vec<PathBuf>) -> Self {
         VirtualMachine {
             classes: HashMap::new(),
+            native_impls: HashMap::new(),
             class_instances: HashMap::new(),
             static_instances: HashMap::new(),
             native_instances: HashMap::new(),
@@ -2981,13 +3170,13 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VirtualMachine<ObjectImpl, Arra
     fn get_instance_field(
         &mut self,
         instance_class: Rc<ClassFile>,
-        fields: Rc<RefCell<HashMap<String, Value<ObjectImpl, ArrayImpl>>>>,
+        fields: Rc<RefCell<HashMap<String, ValueImpl>>>,
         name: &str,
         ty: &str,
-    ) -> Option<Value<ObjectImpl, ArrayImpl>> {
+    ) -> Option<ValueImpl> {
         if self.has_instance_field(&instance_class, name) {
             Some(fields.borrow_mut().entry(name.to_string()).or_insert_with(
-                || Value::default_of(ty)
+                || ValueImpl::default_of(ty)
             ).clone())
         } else {
             None
@@ -2997,10 +3186,10 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VirtualMachine<ObjectImpl, Arra
     fn put_instance_field(
         &mut self,
         instance_class: Rc<ClassFile>,
-        fields: Rc<RefCell<HashMap<String, Value<ObjectImpl, ArrayImpl>>>>,
+        fields: Rc<RefCell<HashMap<String, ValueImpl>>>,
         name: &str,
         ty: &str,
-        value: Value<ObjectImpl, ArrayImpl>,
+        value: ValueImpl,
     ) {
         if self.has_instance_field(&instance_class, name) {
             fields.borrow_mut().insert(name.to_owned(), value);
@@ -3014,14 +3203,14 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VirtualMachine<ObjectImpl, Arra
         class_ref: &Rc<ClassFile>,
         name: &str,
         ty: &str,
-    ) -> Option<Value<ObjectImpl, ArrayImpl>> {
+    ) -> Option<ValueImpl> {
         let fields = self
             .static_instances
             .entry(ClassFileRef::of(class_ref))
             .or_insert_with(|| HashMap::new());
         if class_ref.has_static_field(name) {
             Some(fields.entry(name.to_string()).or_insert_with(
-                || Value::default_of(ty)
+                || ValueImpl::default_of(ty)
             ).clone())
         } else {
             None
@@ -3033,7 +3222,7 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VirtualMachine<ObjectImpl, Arra
         class_ref: &Rc<ClassFile>,
         name: &str,
         ty: &str,
-        value: Value<ObjectImpl, ArrayImpl>,
+        value: ValueImpl,
     ) {
         let fields = self
             .static_instances
@@ -3046,18 +3235,29 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VirtualMachine<ObjectImpl, Arra
         }
     }
 
+    pub fn get_native_method(&self, cls: Rc<ClassFile>, descriptor: String) -> Option<fn(&mut VMState<ValueImpl>, &mut VirtualMachine<ValueImpl>) -> Result<(), VMError>> {
+        if descriptor == "<clinit>()V" {
+            // ok this arm probably isn't reachable huh, initializers are called before there's a
+            // registered `Rc<ClassFile>` to be looking up `this_class` on ...
+            eprintln!("get_native_method for clinit? seems unlikely");
+            self.native_impls.get(&NativeImplKey::initializer(&cls.this_class.to_string())).cloned()
+        } else {
+            self.native_impls.get(&NativeImplKey::method(&cls, descriptor)).cloned()
+        }
+    }
+
     pub fn resolve_class(&mut self, class_name: &str) -> Result<Rc<ClassFile>, VMError> {
 //        eprintln!("resolve class: {}", referent);
         if let Some(cls) = self.classes.get(class_name) {
             return Ok(Rc::clone(cls));
         }
 
-        let new_class = if let Some(new_class) = jvm::synthetic::build_synthetic_class(class_name) {
-            new_class
+        let (new_class, patches) = if let Some((new_class, patches)) = jvm::synthetic::build_synthetic_class(class_name) {
+            (new_class, patches)
         } else {
             use std::collections::hash_map::Entry;
             use std::fs::File;
-            let mut res: Option<ClassFile> = None;
+            let mut res: Option<(ClassFile, HashMap<(String, String), crate::virtual_machine::jvm::synthetic::NativeJvmFn<ValueImpl>>)> = None;
             for path in self.classpath.iter() {
                 let possible_class = path.join(PathBuf::from(format!("{}.class", class_name)));
 //                            println!("-- checking {}", possible_class.display());
@@ -3071,26 +3271,35 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VirtualMachine<ObjectImpl, Arra
                     break;
                 }
             }
-            if let Some(res) = res {
-                res
+            if let Some((cls, patches)) = res {
+                (cls, patches)
             } else {
                 return Err(VMError::BadClass("could not resolve class"));
             }
         };
 
-        self.register(class_name.to_string(), new_class)
+        self.register(class_name.to_string(), new_class, patches)
     }
 
     pub fn register(
         &mut self,
         class_name: String,
         class_file: ClassFile,
+        native_methods: HashMap<(String, String), crate::virtual_machine::jvm::synthetic::NativeJvmFn<ValueImpl>>,
     ) -> Result<Rc<ClassFile>, VMError> {
         eprintln!("registering class {}", class_name);
         let rc = Rc::new(class_file);
-        self.classes.insert(class_name, Rc::clone(&rc));
+        self.classes.insert(class_name.clone(), Rc::clone(&rc));
 
-        if let Some(native_method) = rc.native_methods.get("<clinit>()V") {
+        for ((method, sig), impl_fn) in native_methods.into_iter() {
+            if method == "<clinit>" && sig == "()V" {
+                self.native_impls.insert(NativeImplKey::initializer(&class_name), impl_fn);
+            } else {
+                self.native_impls.insert(NativeImplKey::method(&Rc::clone(&rc), format!("{}{}", method, sig)), impl_fn);
+            }
+        }
+
+        if let Some(native_method) = self.native_impls.get(&NativeImplKey::initializer(&class_name)) {
             let mut state = VMState::new(
                 Rc::new(MethodBody::native()),
                 Rc::clone(&rc),
@@ -3106,7 +3315,7 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VirtualMachine<ObjectImpl, Arra
                     "<clinit>".to_string(),
                     vec![],
                 );
-                let native_method = rc.native_methods.get("<clinit>()V").expect("native clinit has native method impl");
+                let native_method = self.native_impls.get(&NativeImplKey::initializer(&class_name)).expect("native clinit has native method impl");
                 native_method(&mut state, self)?;
             } else {
                 let mut state = VMState::new(
@@ -3131,8 +3340,8 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VirtualMachine<ObjectImpl, Arra
         &mut self,
         method: Rc<MethodHandle>,
         class_ref: &Rc<ClassFile>,
-        args: Vec<Value<ObjectImpl, ArrayImpl>>,
-    ) -> Result<Option<Value<ObjectImpl, ArrayImpl>>, VMError> {
+        args: Vec<ValueImpl>,
+    ) -> Result<Option<ValueImpl>, VMError> {
         if !method.access().is_static() {
             return Err(VMError::AccessError(
                 "attempted to call an instance method without an instance",
@@ -3155,7 +3364,7 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VirtualMachine<ObjectImpl, Arra
         self.interpret(&mut state)
     }
 
-    fn interpret(&mut self, state: &mut VMState<ObjectImpl, ArrayImpl>) -> Result<Option<Value<ObjectImpl, ArrayImpl>>, VMError> {
+    fn interpret(&mut self, state: &mut VMState<ValueImpl>) -> Result<Option<ValueImpl>, VMError> {
         let first_run = self.first_run;
 
         // magic incantation to awaken the machine
@@ -3174,8 +3383,8 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VirtualMachine<ObjectImpl, Arra
                     while state.throwing && state.call_stack.len() > 0 {
                         for exception_record in state.current_frame().body.exception_info.iter() {
                             if exception_record.contains(state.current_frame().offset) {
-                                if let Value::Object(obj) = &value {
-                                    if self.is_exception(obj.cls(), exception_record.catch_type.as_str()) {
+                                if let Some(obj) = value.as_object() {
+                                    if self.is_exception(&obj.cls(), exception_record.catch_type.as_str()) {
                                         handler_pc = Some(exception_record.handler_pc as u32);
                                         break;
                                     }
@@ -3201,9 +3410,12 @@ impl<ObjectImpl: JvmObject, ArrayImpl: JvmArray> VirtualMachine<ObjectImpl, Arra
                         // if there is no handler and we stopped walking the call stack, we must
                         // have reached the end of the stack.
                         assert!(state.call_stack.len() == 0);
-                        if let Value::Object(obj) = &value {
-                            if let Value::String(msg) = obj.get_field("message") {
-                                eprintln!("unhandled {}: {}", obj.cls().this_class.as_str(), String::from_utf8_lossy(msg.as_ref()));
+                        if let Some(obj) = value.as_object() {
+                            if let Some(msg) = obj.get_field("message").as_type("java/lang/String") {
+                                let field = msg.get_field("value");
+                                let msg = field.as_array().expect("TODO: is array");
+                                let msg = unsafe { msg.as_slice::<u8>() }.expect("TODO: can cast");
+                                eprintln!("unhandled {}: {}", obj.cls().this_class.as_str(), String::from_utf8_lossy(msg));
                                 std::process::exit(1);
                             }
                         }
@@ -3347,9 +3559,9 @@ pub fn parse_signature_string(signature: &str) -> Option<(Vec<Arg>, Option<Arg>)
     panic!("signature strings include return value type (even if it's just [V]oid)");
 }
 
-fn interpreted_method_call<ObjectImpl: JvmObject, ArrayImpl: JvmArray>(
-    state: &mut VMState<ObjectImpl, ArrayImpl>,
-    _vm: &mut VirtualMachine<ObjectImpl, ArrayImpl>,
+fn interpreted_method_call<ValueImpl: JvmValue>(
+    state: &mut VMState<ValueImpl>,
+    _vm: &mut VirtualMachine<ValueImpl>,
     method: Rc<MethodHandle>,
     method_class: Rc<ClassFile>,
     method_type: &str,

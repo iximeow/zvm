@@ -62,14 +62,14 @@ pub struct ClassFile {
     pub(crate) fields: Vec<FieldInfo>,
     pub(crate) methods: Vec<MethodInfo>,
     pub(crate) attributes: Vec<AttributeInfo>,
-    pub(crate) native_methods:
-        HashMap<String, fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>>,
+//    pub(crate) native_methods:
+//        HashMap<String, fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>>,
     pub(crate) patched: bool,
 }
 
 impl fmt::Debug for ClassFile {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "ClassFile {{ major: {}, minor: {}, constants: {:?}, access_flags: {:?}, this_class: {:?}, super_class: {:?}, interfaces: {:?}, fields: {:?}, methods: {:?}, attributes: {:?}, native_methods: {:?}, patched: {:?} }}",
+        write!(f, "ClassFile {{ major: {}, minor: {}, constants: {:?}, access_flags: {:?}, this_class: {:?}, super_class: {:?}, interfaces: {:?}, fields: {:?}, methods: {:?}, attributes: {:?}, patched: {:?} }}",
            self.minor_version,
            self.major_version,
            self.constant_pool,
@@ -80,7 +80,6 @@ impl fmt::Debug for ClassFile {
            self.fields,
            self.methods,
            self.attributes,
-           self.native_methods.keys(),
            self.patched,
         )
     }
@@ -126,7 +125,6 @@ impl ClassFile {
             fields: Vec::new(),
             methods: Vec::new(),
             attributes: Vec::new(),
-            native_methods: HashMap::new(),
             patched: false,
         };
         res.mark_patched();
@@ -161,7 +159,6 @@ impl ClassFile {
         mut self,
         name: &str,
         ty: &str,
-        native_impl: Option<fn(&mut VMState, &mut VirtualMachine) -> Result<(), VMError>>
     ) -> Self {
         self.constant_pool.push(Constant::Utf8(name.as_bytes().to_vec()));
         self.constant_pool.push(Constant::Utf8(ty.as_bytes().to_vec()));
@@ -172,9 +169,6 @@ impl ClassFile {
             descriptor_index: ConstantIdx::new(self.constant_pool.len() as u16).unwrap(),
             attributes: Vec::new(),
         });
-        if let Some(native) = native_impl {
-            self.native_methods.insert(format!("{}{}", name, ty), native);
-        }
 
         self
     }
