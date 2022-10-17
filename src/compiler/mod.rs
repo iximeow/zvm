@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::virtual_machine::Arg;
-use crate::class_file::validated::FieldRef;
+use crate::class_file::validated::{ClassFile, FieldRef};
 
 pub mod ir {
     use std::fmt;
@@ -718,7 +718,7 @@ fn test_translator() {
     ];
 
     let args = &[];
-    jit(args.as_slice(), instructions, "()I");
+    jit(args.as_slice(), instructions, "()I", Vec::new());
 }
 
 #[test]
@@ -733,7 +733,7 @@ fn test_add_args() {
     ];
 
     let args = &[20, 4];
-    jit(args.as_slice(), instructions, "(II)I");
+    jit(args.as_slice(), instructions, "(II)I", Vec::new());
 }
 
 #[test]
@@ -751,12 +751,43 @@ fn test_field_access() {
     let definitely_an_integer = [0xdeadbeef_cafebabe_u64 as i64, 20i64];
     let integer_ref: *const [i64; 2] = &definitely_an_integer as *const [i64; 2];
     let args = &[integer_ref as i64, 4];
-    jit(args.as_slice(), instructions, "(Ljava/lang/Integer;I)I");
+    jit(args.as_slice(), instructions, "(Ljava/lang/Integer;I)I", Vec::new());
+}
+
+#[test]
+fn test_object_return() {
+    use crate::class_file::validated;
+
+    let mut classes: Vec<Rc<ClassFile>> = Vec::new();
+
+    // pretend this method is, in fact, `test_method`.
+    let custom_class: Rc<ClassFile> = Rc::new(
+        crate::class_file::synthetic::SyntheticClassBuilder::<crate::SimpleJvmValue>::new("TestClass")
+            .extends("java/lang/Object")
+            .with_field("inner", "I")
+            .with_method("<init>", "(LTestClass;I)", None)
+            .with_method("test_method", "()I", None)
+            .validate().0);
+
+    classes.push(Rc::clone(&custom_class));
+
+    let instructions: Vec<validated::Instruction> = vec![
+        Instruction::New(Rc::new(custom_class.this_class.clone())),
+        Instruction::ALoad0,
+        Instruction::ILoad1,
+        Instruction::InvokeSpecial(Rc::new(custom_class.method_ref("<init>", "(LTestClass;I)").expect("method exists"))),
+        Instruction::AReturn,
+    ];
+
+    let definitely_an_integer = [0xdeadbeef_cafebabe_u64 as i64, 20i64];
+    let integer_ref: *const [i64; 2] = &definitely_an_integer as *const [i64; 2];
+    let args = &[integer_ref as i64, 4];
+    jit(args.as_slice(), instructions, "(Ljava/lang/String;I)LCustomClass;", classes);
 }
 
 use crate::class_file::validated;
 
-fn jit(args: &[i64], instructions: Vec<validated::Instruction>, signature: &'static str) {
+fn jit(args: &[i64], instructions: Vec<validated::Instruction>, signature: &'static str, extra_classes: Vec<Rc<ClassFile>>) {
     println!("jvm instructions:");
     for inst in instructions.iter() {
         println!("  {}", inst);

@@ -143,31 +143,31 @@ pub fn augment_classfile<ValueImpl: JvmValue>(mut class_file: ClassFile) -> (Cla
     (class_file, patches)
 }
 
-pub type NativeJvmFn<ValueImpl: JvmValue> =
+pub type NativeJvmFn<ValueImpl> =
     fn(&mut VMState<ValueImpl>, &mut VirtualMachine<ValueImpl>) ->
         Result<(), VMError>;
 
-struct SyntheticClassBuilder<ValueImpl: JvmValue> {
+pub struct SyntheticClassBuilder<ValueImpl: JvmValue> {
     cls: UnvalidatedClassFile,
     native_methods: HashMap<(String, String), NativeJvmFn<ValueImpl>>,
 }
 
 impl<ValueImpl: JvmValue> SyntheticClassBuilder<ValueImpl> {
-    fn new(name: &str) -> Self {
+    pub fn new(name: &str) -> Self {
         Self {
             cls: UnvalidatedClassFile::synthetic(name),
             native_methods: HashMap::new()
         }
     }
 
-    fn extends(mut self, name: &str) -> Self {
+    pub fn extends(mut self, name: &str) -> Self {
         Self {
             cls: self.cls.extends(name),
             native_methods: self.native_methods,
         }
     }
 
-    fn with_method(mut self, name: &str, sig: &str, native: Option<NativeJvmFn<ValueImpl>>) -> Self {
+    pub fn with_method(mut self, name: &str, sig: &str, native: Option<NativeJvmFn<ValueImpl>>) -> Self {
         let new_cls = self.cls.with_method(name, sig);
         let mut native_methods = self.native_methods;
         if let Some(native) = native {
@@ -179,7 +179,7 @@ impl<ValueImpl: JvmValue> SyntheticClassBuilder<ValueImpl> {
         }
     }
 
-    fn with_field(mut self, name: &str, sig: &str) -> Self {
+    pub fn with_field(mut self, name: &str, sig: &str) -> Self {
         let new_cls = self.cls.with_field(name, sig);
         let native_methods = self.native_methods;
         Self {
@@ -188,7 +188,7 @@ impl<ValueImpl: JvmValue> SyntheticClassBuilder<ValueImpl> {
         }
     }
 
-    fn validate(self) -> (
+    pub fn validate(self) -> (
         ClassFile,
         HashMap<
             (String, String),

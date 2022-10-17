@@ -17,7 +17,7 @@ use crate::class_file::validated::MethodBody;
 use crate::class_file::validated::MethodHandle;
 use crate::class_file::validated::MethodRef;
 
-mod jvm;
+pub mod jvm;
 
 static NULL_COUNT: AtomicUsize = AtomicUsize::new(0);
 static NEW_COUNT: AtomicUsize = AtomicUsize::new(0);

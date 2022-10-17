@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::hash::{Hasher, Hash};
 use std::rc::Rc;
 use std::fmt;
+use std::io::{Cursor, Write};
 
 use crate::class_file::unvalidated;
 use crate::class_file::unvalidated::ConstantIdx;
@@ -310,6 +311,17 @@ impl UnvalidatedClassFile {
 }
 
 impl ClassFile {
+    pub fn method_ref(&self, name: &str, desc: &str) -> Option<MethodRef> {
+        self.get_method(name, desc)
+            .map(|handle| {
+                MethodRef {
+                    class_name: self.this_class.clone(),
+                    name: handle.name.clone(),
+                    desc: handle.name.clone(),
+                }
+            })
+    }
+
     pub fn get_method(&self, name: &str, desc: &str) -> Option<Rc<MethodHandle>> {
         for method in self.methods.iter() {
             if method.name == name && method.desc == desc {
@@ -467,233 +479,233 @@ impl PartialEq for ClassFileRef {
     }
 }
 
-fn assemble_into(inst: crate::class_file::validated::Instruction, bytes: &mut Vec<u8>, method_body: &mut MethodBody) {
+fn assemble_into(inst: crate::class_file::validated::Instruction, bytes: &mut Cursor<Vec<u8>>, method_body: &mut MethodBody) {
     use crate::class_file::validated::Instruction::*;
 
-    match inst {
-        Nop => { bytes.push(0x00) },
-        AConstNull => { bytes.push(0x01) },
-        IConstM1 => { bytes.push(0x02) },
-        IConst0 => { bytes.push(0x03) },
-        IConst1 => { bytes.push(0x04) },
-        IConst2 => { bytes.push(0x05) },
-        IConst3 => { bytes.push(0x06) },
-        IConst4 => { bytes.push(0x07) },
-        IConst5 => { bytes.push(0x08) },
-        LConst0 => { bytes.push(0x09) },
-        LConst1 => { bytes.push(0x0a) },
-        FConst0 => { bytes.push(0x0b) },
-        FConst1 => { bytes.push(0x0c) },
-        FConst2 => { bytes.push(0x0d) },
-        DConst0 => { bytes.push(0x0e) },
-        DConst1 => { bytes.push(0x0f) },
+    let write_res = match inst {
+        Nop => { bytes.write_all(&[0x00]) },
+        AConstNull => { bytes.write_all(&[0x01]) },
+        IConstM1 => { bytes.write_all(&[0x02]) },
+        IConst0 => { bytes.write_all(&[0x03]) },
+        IConst1 => { bytes.write_all(&[0x04]) },
+        IConst2 => { bytes.write_all(&[0x05]) },
+        IConst3 => { bytes.write_all(&[0x06]) },
+        IConst4 => { bytes.write_all(&[0x07]) },
+        IConst5 => { bytes.write_all(&[0x08]) },
+        LConst0 => { bytes.write_all(&[0x09]) },
+        LConst1 => { bytes.write_all(&[0x0a]) },
+        FConst0 => { bytes.write_all(&[0x0b]) },
+        FConst1 => { bytes.write_all(&[0x0c]) },
+        FConst2 => { bytes.write_all(&[0x0d]) },
+        DConst0 => { bytes.write_all(&[0x0e]) },
+        DConst1 => { bytes.write_all(&[0x0f]) },
         /*
-        BIPush(i8::read_from(data)?) => { bytes.push(0x10) },
-        SIPush(i16::read_from(data)?) => { bytes.push(0x11) },
-        Ldc(ConstantIdx::new(u8::read_from(data)? as u16).unwrap()) => { bytes.push(0x12) },
-        LdcW(ConstantIdx::read_from(data)?) => { bytes.push(0x13) },
-        Ldc2W(ConstantIdx::read_from(data)?) => { bytes.push(0x14) },
-        ILoad(read_idx(data, wide)?) => { bytes.push(0x15) },
-        LLoad(read_idx(data, wide)?) => { bytes.push(0x16) },
-        FLoad(read_idx(data, wide)?) => { bytes.push(0x17) },
-        DLoad(read_idx(data, wide)?) => { bytes.push(0x18) },
-        ALoad(read_idx(data, wide)?) => { bytes.push(0x19) },
+        BIPush(i8::read_from(data)?) => { bytes.write_all(&[0x10]) },
+        SIPush(i16::read_from(data)?) => { bytes.write_all(&[0x11]) },
+        Ldc(ConstantIdx::new(u8::read_from(data)? as u16).unwrap()) => { bytes.write_all(&[0x12]) },
+        LdcW(ConstantIdx::read_from(data)?) => { bytes.write_all(&[0x13]) },
+        Ldc2W(ConstantIdx::read_from(data)?) => { bytes.write_all(&[0x14]) },
+        ILoad(read_idx(data, wide)?) => { bytes.write_all(&[0x15]) },
+        LLoad(read_idx(data, wide)?) => { bytes.write_all(&[0x16]) },
+        FLoad(read_idx(data, wide)?) => { bytes.write_all(&[0x17]) },
+        DLoad(read_idx(data, wide)?) => { bytes.write_all(&[0x18]) },
+        ALoad(read_idx(data, wide)?) => { bytes.write_all(&[0x19]) },
         */
-        ILoad0 => { bytes.push(0x1a) },
-        ILoad1 => { bytes.push(0x1b) },
-        ILoad2 => { bytes.push(0x1c) },
-        ILoad3 => { bytes.push(0x1d) },
-        LLoad0 => { bytes.push(0x1e) },
-        LLoad1 => { bytes.push(0x1f) },
-        LLoad2 => { bytes.push(0x20) },
-        LLoad3 => { bytes.push(0x21) },
-        FLoad0 => { bytes.push(0x22) },
-        FLoad1 => { bytes.push(0x23) },
-        FLoad2 => { bytes.push(0x24) },
-        FLoad3 => { bytes.push(0x25) },
-        DLoad0 => { bytes.push(0x26) },
-        DLoad1 => { bytes.push(0x27) },
-        DLoad2 => { bytes.push(0x28) },
-        DLoad3 => { bytes.push(0x29) },
-        ALoad0 => { bytes.push(0x2a) },
-        ALoad1 => { bytes.push(0x2b) },
-        ALoad2 => { bytes.push(0x2c) },
-        ALoad3 => { bytes.push(0x2d) },
-        IALoad => { bytes.push(0x2e) },
-        LALoad => { bytes.push(0x2f) },
-        FALoad => { bytes.push(0x30) },
-        DALoad => { bytes.push(0x31) },
-        AALoad => { bytes.push(0x32) },
-        BALoad => { bytes.push(0x33) },
-        CALoad => { bytes.push(0x34) },
-        SALoad => { bytes.push(0x35) },
+        ILoad0 => { bytes.write_all(&[0x1a]) },
+        ILoad1 => { bytes.write_all(&[0x1b]) },
+        ILoad2 => { bytes.write_all(&[0x1c]) },
+        ILoad3 => { bytes.write_all(&[0x1d]) },
+        LLoad0 => { bytes.write_all(&[0x1e]) },
+        LLoad1 => { bytes.write_all(&[0x1f]) },
+        LLoad2 => { bytes.write_all(&[0x20]) },
+        LLoad3 => { bytes.write_all(&[0x21]) },
+        FLoad0 => { bytes.write_all(&[0x22]) },
+        FLoad1 => { bytes.write_all(&[0x23]) },
+        FLoad2 => { bytes.write_all(&[0x24]) },
+        FLoad3 => { bytes.write_all(&[0x25]) },
+        DLoad0 => { bytes.write_all(&[0x26]) },
+        DLoad1 => { bytes.write_all(&[0x27]) },
+        DLoad2 => { bytes.write_all(&[0x28]) },
+        DLoad3 => { bytes.write_all(&[0x29]) },
+        ALoad0 => { bytes.write_all(&[0x2a]) },
+        ALoad1 => { bytes.write_all(&[0x2b]) },
+        ALoad2 => { bytes.write_all(&[0x2c]) },
+        ALoad3 => { bytes.write_all(&[0x2d]) },
+        IALoad => { bytes.write_all(&[0x2e]) },
+        LALoad => { bytes.write_all(&[0x2f]) },
+        FALoad => { bytes.write_all(&[0x30]) },
+        DALoad => { bytes.write_all(&[0x31]) },
+        AALoad => { bytes.write_all(&[0x32]) },
+        BALoad => { bytes.write_all(&[0x33]) },
+        CALoad => { bytes.write_all(&[0x34]) },
+        SALoad => { bytes.write_all(&[0x35]) },
         /*
-        IStore(read_idx(data, wide)?) => { bytes.push(0x36) },
-        LStore(read_idx(data, wide)?) => { bytes.push(0x37) },
-        FStore(read_idx(data, wide)?) => { bytes.push(0x38) },
-        DStore(read_idx(data, wide)?) => { bytes.push(0x39) },
-        AStore(read_idx(data, wide)?) => { bytes.push(0x3a) },
+        IStore(read_idx(data, wide)?) => { bytes.write_all(&[0x36]) },
+        LStore(read_idx(data, wide)?) => { bytes.write_all(&[0x37]) },
+        FStore(read_idx(data, wide)?) => { bytes.write_all(&[0x38]) },
+        DStore(read_idx(data, wide)?) => { bytes.write_all(&[0x39]) },
+        AStore(read_idx(data, wide)?) => { bytes.write_all(&[0x3a]) },
         */
-        IStore0 => { bytes.push(0x3b) },
-        IStore1 => { bytes.push(0x3c) },
-        IStore2 => { bytes.push(0x3d) },
-        IStore3 => { bytes.push(0x3e) },
-        LStore0 => { bytes.push(0x3f) },
-        LStore1 => { bytes.push(0x40) },
-        LStore2 => { bytes.push(0x41) },
-        LStore3 => { bytes.push(0x42) },
-        FStore0 => { bytes.push(0x43) },
-        FStore1 => { bytes.push(0x44) },
-        FStore2 => { bytes.push(0x45) },
-        FStore3 => { bytes.push(0x46) },
-        DStore0 => { bytes.push(0x47) },
-        DStore1 => { bytes.push(0x48) },
-        DStore2 => { bytes.push(0x49) },
-        DStore3 => { bytes.push(0x4a) },
-        AStore0 => { bytes.push(0x4b) },
-        AStore1 => { bytes.push(0x4c) },
-        AStore2 => { bytes.push(0x4d) },
-        AStore3 => { bytes.push(0x4e) },
-        IAStore => { bytes.push(0x4f) },
-        LAStore => { bytes.push(0x50) },
-        FAStore => { bytes.push(0x51) },
-        DAStore => { bytes.push(0x52) },
-        AAStore => { bytes.push(0x53) },
-        BAStore => { bytes.push(0x54) },
-        CAStore => { bytes.push(0x55) },
-        SAStore => { bytes.push(0x56) },
-        Pop => { bytes.push(0x57) },
-        Pop2 => { bytes.push(0x58) },
-        Dup => { bytes.push(0x59) },
-        DupX1 => { bytes.push(0x5a) },
-        DupX2 => { bytes.push(0x5b) },
-        Dup2 => { bytes.push(0x5c) },
-        Dup2X1 => { bytes.push(0x5d) },
-        Dup2X2 => { bytes.push(0x5e) },
-        Swap => { bytes.push(0x5f) },
-        IAdd => { bytes.push(0x60) },
-        LAdd => { bytes.push(0x61) },
-        FAdd => { bytes.push(0x62) },
-        DAdd => { bytes.push(0x63) },
-        ISub => { bytes.push(0x64) },
-        LSub => { bytes.push(0x65) },
-        FSub => { bytes.push(0x66) },
-        DSub => { bytes.push(0x67) },
-        IMul => { bytes.push(0x68) },
-        LMul => { bytes.push(0x69) },
-        FMul => { bytes.push(0x6a) },
-        DMul => { bytes.push(0x6b) },
-        IDiv => { bytes.push(0x6c) },
-        LDiv => { bytes.push(0x6d) },
-        FDiv => { bytes.push(0x6e) },
-        DDiv => { bytes.push(0x6f) },
-        IRem => { bytes.push(0x70) },
-        LRem => { bytes.push(0x71) },
-        FRem => { bytes.push(0x72) },
-        DRem => { bytes.push(0x73) },
-        INeg => { bytes.push(0x74) },
-        LNeg => { bytes.push(0x75) },
-        FNeg => { bytes.push(0x76) },
-        DNeg => { bytes.push(0x77) },
-        IShl => { bytes.push(0x78) },
-        LShl => { bytes.push(0x79) },
-        IShr => { bytes.push(0x7a) },
-        LShr => { bytes.push(0x7b) },
-        IUshr => { bytes.push(0x7c) },
-        LUshr => { bytes.push(0x7d) },
-        IAnd => { bytes.push(0x7e) },
-        LAnd => { bytes.push(0x7f) },
-        IOr => { bytes.push(0x80) },
-        LOr => { bytes.push(0x81) },
-        IXor => { bytes.push(0x82) },
-        LXor => { bytes.push(0x83) },
-        // IInc(read_idx(data, wide)?, read_idx(data, wide)? as i16) => { bytes.push(0x84) },
-        I2L => { bytes.push(0x85) },
-        I2F => { bytes.push(0x86) },
-        I2D => { bytes.push(0x87) },
-        L2I => { bytes.push(0x88) },
-        L2F => { bytes.push(0x89) },
-        L2D => { bytes.push(0x8a) },
-        F2I => { bytes.push(0x8b) },
-        F2L => { bytes.push(0x8c) },
-        F2D => { bytes.push(0x8d) },
-        D2I => { bytes.push(0x8e) },
-        D2L => { bytes.push(0x8f) },
-        D2F => { bytes.push(0x90) },
-        I2B => { bytes.push(0x91) },
-        I2C => { bytes.push(0x92) },
-        I2S => { bytes.push(0x93) },
-        LCmp => { bytes.push(0x94) },
-        FCmpL => { bytes.push(0x95) },
-        FCmpG => { bytes.push(0x96) },
-        DCmpL => { bytes.push(0x97) },
-        DCmpG => { bytes.push(0x98) },
+        IStore0 => { bytes.write_all(&[0x3b]) },
+        IStore1 => { bytes.write_all(&[0x3c]) },
+        IStore2 => { bytes.write_all(&[0x3d]) },
+        IStore3 => { bytes.write_all(&[0x3e]) },
+        LStore0 => { bytes.write_all(&[0x3f]) },
+        LStore1 => { bytes.write_all(&[0x40]) },
+        LStore2 => { bytes.write_all(&[0x41]) },
+        LStore3 => { bytes.write_all(&[0x42]) },
+        FStore0 => { bytes.write_all(&[0x43]) },
+        FStore1 => { bytes.write_all(&[0x44]) },
+        FStore2 => { bytes.write_all(&[0x45]) },
+        FStore3 => { bytes.write_all(&[0x46]) },
+        DStore0 => { bytes.write_all(&[0x47]) },
+        DStore1 => { bytes.write_all(&[0x48]) },
+        DStore2 => { bytes.write_all(&[0x49]) },
+        DStore3 => { bytes.write_all(&[0x4a]) },
+        AStore0 => { bytes.write_all(&[0x4b]) },
+        AStore1 => { bytes.write_all(&[0x4c]) },
+        AStore2 => { bytes.write_all(&[0x4d]) },
+        AStore3 => { bytes.write_all(&[0x4e]) },
+        IAStore => { bytes.write_all(&[0x4f]) },
+        LAStore => { bytes.write_all(&[0x50]) },
+        FAStore => { bytes.write_all(&[0x51]) },
+        DAStore => { bytes.write_all(&[0x52]) },
+        AAStore => { bytes.write_all(&[0x53]) },
+        BAStore => { bytes.write_all(&[0x54]) },
+        CAStore => { bytes.write_all(&[0x55]) },
+        SAStore => { bytes.write_all(&[0x56]) },
+        Pop => { bytes.write_all(&[0x57]) },
+        Pop2 => { bytes.write_all(&[0x58]) },
+        Dup => { bytes.write_all(&[0x59]) },
+        DupX1 => { bytes.write_all(&[0x5a]) },
+        DupX2 => { bytes.write_all(&[0x5b]) },
+        Dup2 => { bytes.write_all(&[0x5c]) },
+        Dup2X1 => { bytes.write_all(&[0x5d]) },
+        Dup2X2 => { bytes.write_all(&[0x5e]) },
+        Swap => { bytes.write_all(&[0x5f]) },
+        IAdd => { bytes.write_all(&[0x60]) },
+        LAdd => { bytes.write_all(&[0x61]) },
+        FAdd => { bytes.write_all(&[0x62]) },
+        DAdd => { bytes.write_all(&[0x63]) },
+        ISub => { bytes.write_all(&[0x64]) },
+        LSub => { bytes.write_all(&[0x65]) },
+        FSub => { bytes.write_all(&[0x66]) },
+        DSub => { bytes.write_all(&[0x67]) },
+        IMul => { bytes.write_all(&[0x68]) },
+        LMul => { bytes.write_all(&[0x69]) },
+        FMul => { bytes.write_all(&[0x6a]) },
+        DMul => { bytes.write_all(&[0x6b]) },
+        IDiv => { bytes.write_all(&[0x6c]) },
+        LDiv => { bytes.write_all(&[0x6d]) },
+        FDiv => { bytes.write_all(&[0x6e]) },
+        DDiv => { bytes.write_all(&[0x6f]) },
+        IRem => { bytes.write_all(&[0x70]) },
+        LRem => { bytes.write_all(&[0x71]) },
+        FRem => { bytes.write_all(&[0x72]) },
+        DRem => { bytes.write_all(&[0x73]) },
+        INeg => { bytes.write_all(&[0x74]) },
+        LNeg => { bytes.write_all(&[0x75]) },
+        FNeg => { bytes.write_all(&[0x76]) },
+        DNeg => { bytes.write_all(&[0x77]) },
+        IShl => { bytes.write_all(&[0x78]) },
+        LShl => { bytes.write_all(&[0x79]) },
+        IShr => { bytes.write_all(&[0x7a]) },
+        LShr => { bytes.write_all(&[0x7b]) },
+        IUshr => { bytes.write_all(&[0x7c]) },
+        LUshr => { bytes.write_all(&[0x7d]) },
+        IAnd => { bytes.write_all(&[0x7e]) },
+        LAnd => { bytes.write_all(&[0x7f]) },
+        IOr => { bytes.write_all(&[0x80]) },
+        LOr => { bytes.write_all(&[0x81]) },
+        IXor => { bytes.write_all(&[0x82]) },
+        LXor => { bytes.write_all(&[0x83]) },
+        // IInc(read_idx(data, wide)?, read_idx(data, wide)? as i16) => { bytes.write_all(&[0x84]) },
+        I2L => { bytes.write_all(&[0x85]) },
+        I2F => { bytes.write_all(&[0x86]) },
+        I2D => { bytes.write_all(&[0x87]) },
+        L2I => { bytes.write_all(&[0x88]) },
+        L2F => { bytes.write_all(&[0x89]) },
+        L2D => { bytes.write_all(&[0x8a]) },
+        F2I => { bytes.write_all(&[0x8b]) },
+        F2L => { bytes.write_all(&[0x8c]) },
+        F2D => { bytes.write_all(&[0x8d]) },
+        D2I => { bytes.write_all(&[0x8e]) },
+        D2L => { bytes.write_all(&[0x8f]) },
+        D2F => { bytes.write_all(&[0x90]) },
+        I2B => { bytes.write_all(&[0x91]) },
+        I2C => { bytes.write_all(&[0x92]) },
+        I2S => { bytes.write_all(&[0x93]) },
+        LCmp => { bytes.write_all(&[0x94]) },
+        FCmpL => { bytes.write_all(&[0x95]) },
+        FCmpG => { bytes.write_all(&[0x96]) },
+        DCmpL => { bytes.write_all(&[0x97]) },
+        DCmpG => { bytes.write_all(&[0x98]) },
         IfEq(offset) => {
-            bytes.push(0x99);
-            bytes.push((offset >> 8) as u8); bytes.push(offset as u8)
+            bytes.write_all(&[0x99]);
+            bytes.write_all(&offset.to_le_bytes())
         },
         IfNe(offset) => {
-            bytes.push(0x9a);
-            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+            bytes.write_all(&[0x9a]);
+            bytes.write_all(&offset.to_le_bytes())
         },
         IfLt(offset) => {
-            bytes.push(0x9b);
-            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+            bytes.write_all(&[0x9b]);
+            bytes.write_all(&offset.to_le_bytes())
         },
         IfGe(offset) => {
-            bytes.push(0x9c);
-            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+            bytes.write_all(&[0x9c]);
+            bytes.write_all(&offset.to_le_bytes())
         },
         IfGt(offset) => {
-            bytes.push(0x9d);
-            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+            bytes.write_all(&[0x9d]);
+            bytes.write_all(&offset.to_le_bytes())
         },
         IfLe(offset) => {
-            bytes.push(0x9e);
-            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+            bytes.write_all(&[0x9e]);
+            bytes.write_all(&offset.to_le_bytes())
         },
         IfIcmpEq(offset) => {
-            bytes.push(0x9f);
-            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+            bytes.write_all(&[0x9f]);
+            bytes.write_all(&offset.to_le_bytes())
         },
         IfIcmpNe(offset) => {
-            bytes.push(0xa0);
-            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+            bytes.write_all(&[0xa0]);
+            bytes.write_all(&offset.to_le_bytes())
         },
         IfIcmpLt(offset) => {
-            bytes.push(0xa1);
-            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+            bytes.write_all(&[0xa1]);
+            bytes.write_all(&offset.to_le_bytes())
         },
         IfIcmpGe(offset) => {
-            bytes.push(0xa2);
-            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+            bytes.write_all(&[0xa2]);
+            bytes.write_all(&offset.to_le_bytes())
         },
         IfIcmpGt(offset) => {
-            bytes.push(0xa3);
-            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+            bytes.write_all(&[0xa3]);
+            bytes.write_all(&offset.to_le_bytes())
         },
         IfIcmpLe(offset) => {
-            bytes.push(0xa4);
-            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+            bytes.write_all(&[0xa4]);
+            bytes.write_all(&offset.to_le_bytes())
         },
         IfAcmpEq(offset) => {
-            bytes.push(0xa5);
-            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+            bytes.write_all(&[0xa5]);
+            bytes.write_all(&offset.to_le_bytes())
         },
         IfAcmpNe(offset) => {
-            bytes.push(0xa6);
-            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+            bytes.write_all(&[0xa6]);
+            bytes.write_all(&offset.to_le_bytes())
         },
         Goto(offset) => {
-            bytes.push(0xa7);
-            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+            bytes.write_all(&[0xa7]);
+            bytes.write_all(&offset.to_le_bytes())
         },
         Jsr(offset) => {
-            bytes.push(0xa8);
-            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+            bytes.write_all(&[0xa8]);
+            bytes.write_all(&offset.to_le_bytes())
         },
         /*
-        Ret(read_idx(data, wide)?) => { bytes.push(0xa9) },
+        Ret(read_idx(data, wide)?) => { bytes.write_all(&[0xa9]) },
                 0xaa => {
                     while data.seek(SeekFrom::Current(0))? % 4 != 0 {
                         let _ = u8::read_from(data)?;
@@ -723,43 +735,55 @@ fn assemble_into(inst: crate::class_file::validated::Instruction, bytes: &mut Ve
                     Instruction::LookupSwitch(default, entries)
                 }
         */
-        IReturn => { bytes.push(0xac) },
-        LReturn => { bytes.push(0xad) },
-        FReturn => { bytes.push(0xae) },
-        DReturn => { bytes.push(0xaf) },
-        AReturn => { bytes.push(0xb0) },
-        Return => { bytes.push(0xb1) },
+        IReturn => { bytes.write_all(&[0xac]) },
+        LReturn => { bytes.write_all(&[0xad]) },
+        FReturn => { bytes.write_all(&[0xae]) },
+        DReturn => { bytes.write_all(&[0xaf]) },
+        AReturn => { bytes.write_all(&[0xb0]) },
+        Return => { bytes.write_all(&[0xb1]) },
         // TODO: assembly needs to include assembling to a sink that holds fieldrefs etc
         GetField(fieldref) => {
             method_body.field_refs.insert(method_body.field_refs.len() as u32 + 1, fieldref);
             let field_id = method_body.field_refs.len();
-            bytes.push(0xb4);
-            bytes.push(((field_id >> 8) & 0xff) as u8); bytes.push((field_id & 0xff) as u8)
+            bytes.write_all(&[0xb4]);
+            bytes.write_all(&field_id.to_le_bytes())
         },
         /*
-        GetStatic(ConstantIdx::read_from(data)?) => { bytes.push(0xb2) },
-        PutStatic(ConstantIdx::read_from(data)?) => { bytes.push(0xb3) },
-        PutField(ConstantIdx::read_from(data)?) => { bytes.push(0xb5) },
-        InvokeVirtual(ConstantIdx::read_from(data)?) => { bytes.push(0xb6) },
-        InvokeSpecial(ConstantIdx::read_from(data)?) => { bytes.push(0xb7) },
-        InvokeStatic(ConstantIdx::read_from(data)?) => { bytes.push(0xb8) },
+        GetStatic(ConstantIdx::read_from(data)?) => { bytes.write_all(&[0xb2]) },
+        PutStatic(ConstantIdx::read_from(data)?) => { bytes.write_all(&[0xb3]) },
+        PutField(ConstantIdx::read_from(data)?) => { bytes.write_all(&[0xb5]) },
+        InvokeVirtual(ConstantIdx::read_from(data)?) => { bytes.write_all(&[0xb6]) },
+        */
+        InvokeSpecial(method_ref) => {
+            method_body.method_refs.insert(bytes.position() as u32, method_ref);
+            bytes.write_all(&[0xb7]);
+            bytes.write_all(&u32::MAX.to_le_bytes())
+        },
+        /*
+        InvokeStatic(ConstantIdx::read_from(data)?) => { bytes.write_all(&[0xb8]) },
                 0xb9 => Instruction::InvokeInterface(
                     ConstantIdx::read_from(data)?,
                     u8::read_from(data)?,
                 ),
-        InvokeDynamic(ConstantIdx::read_from(data)?) => { bytes.push(0xba) },
-        New(ConstantIdx::read_from(data)?) => { bytes.push(0xbb) },
-        NewArray(u8::read_from(data)?) => { bytes.push(0xbc) },
-        ANewArray(u16::read_from(data)?) => { bytes.push(0xbd) },
+        InvokeDynamic(ConstantIdx::read_from(data)?) => { bytes.write_all(&[0xba]) },
         */
-        ArrayLength => { bytes.push(0xbe) },
-        AThrow => { bytes.push(0xbf) },
+        New(cls_name) => {
+            method_body.class_refs.insert(bytes.position() as u32, cls_name);
+            bytes.write_all(&[0xbb]);
+            bytes.write_all(&u32::MAX.to_le_bytes())
+        },
         /*
-        CheckCast(ConstantIdx::read_from(data)?) => { bytes.push(0xc0) },
-        InstanceOf(ConstantIdx::read_from(data)?) => { bytes.push(0xc1) },
+        NewArray(u8::read_from(data)?) => { bytes.write_all(&[0xbc]) },
+        ANewArray(u16::read_from(data)?) => { bytes.write_all(&[0xbd]) },
         */
-        MonitorEnter => { bytes.push(0xc2) },
-        MonitorExit => { bytes.push(0xc3) },
+        ArrayLength => { bytes.write_all(&[0xbe]) },
+        AThrow => { bytes.write_all(&[0xbf]) },
+        /*
+        CheckCast(ConstantIdx::read_from(data)?) => { bytes.write_all(&[0xc0]) },
+        InstanceOf(ConstantIdx::read_from(data)?) => { bytes.write_all(&[0xc1]) },
+        */
+        MonitorEnter => { bytes.write_all(&[0xc2]) },
+        MonitorExit => { bytes.write_all(&[0xc3]) },
         /*
                 0xc4 => {
                     return Err(Error::BadInstruction(0xc4, wide));
@@ -769,27 +793,28 @@ fn assemble_into(inst: crate::class_file::validated::Instruction, bytes: &mut Ve
                 }
         */
         IfNull(offset) => {
-            bytes.push(0xc6);
-            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+            bytes.write_all(&[0xc6]);
+            bytes.write_all(&offset.to_le_bytes())
         },
         IfNonNull(offset) => {
-            bytes.push(0xc7);
-            bytes.push((offset >> 8) as u8); bytes.push(offset as u8);
+            bytes.write_all(&[0xc7]);
+            bytes.write_all(&offset.to_le_bytes())
         },
         GotoW(offset) => {
-            bytes.push(0xc8);
-            bytes.push((offset >> 24) as u8); bytes.push((offset >> 16) as u8);
-            bytes.push((offset >> 8) as u8); bytes.push((offset >> 0) as u8);
+            bytes.write_all(&[0xc8]);
+            debug_assert!(offset.to_le_bytes().len() == 4);
+            bytes.write_all(&offset.to_le_bytes())
         },
         JsrW(offset) => {
-            bytes.push(0xc9);
-            bytes.push((offset >> 24) as u8); bytes.push((offset >> 16) as u8);
-            bytes.push((offset >> 8) as u8); bytes.push((offset >> 0) as u8);
+            bytes.write_all(&[0xc9]);
+            debug_assert!(offset.to_le_bytes().len() == 4);
+            bytes.write_all(&offset.to_le_bytes())
         },
-        _other => {
-            panic!("unsupported inst");
+        other => {
+            panic!("unsupported inst: {}", other);
         }
-    }
+    };
+    write_res.expect("write succeeds");
 }
 
 pub fn assemble(insts: Vec<crate::class_file::validated::Instruction>) -> MethodBody {
@@ -804,10 +829,10 @@ pub fn assemble(insts: Vec<crate::class_file::validated::Instruction>) -> Method
         const_refs: HashMap::new(),
     };
 
-    let mut bytes: Vec<u8> = Vec::new();
+    let mut cursor = Cursor::new(Vec::new());
     for inst in insts {
-        assemble_into(inst, &mut bytes, &mut result);
+        assemble_into(inst, &mut cursor, &mut result);
     }
-    result.bytes = bytes.into_boxed_slice();
+    result.bytes = cursor.into_inner().into_boxed_slice();
     result
 }
