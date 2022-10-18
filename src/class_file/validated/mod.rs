@@ -770,7 +770,7 @@ fn assemble_into(inst: crate::class_file::validated::Instruction, bytes: &mut Cu
         New(cls_name) => {
             method_body.class_refs.insert(bytes.position() as u32, cls_name);
             bytes.write_all(&[0xbb]);
-            bytes.write_all(&u32::MAX.to_le_bytes())
+            bytes.write_all(&u16::MAX.to_le_bytes())
         },
         /*
         NewArray(u8::read_from(data)?) => { bytes.write_all(&[0xbc]) },

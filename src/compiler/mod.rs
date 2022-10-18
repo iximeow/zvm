@@ -104,11 +104,12 @@ pub mod ir {
         ConstLong { result: ValueRef, value: i64 },
         IntAdd { result: ValueRef, left: ValueRef, right: ValueRef },
         IntXor { result: ValueRef, left: ValueRef, right: ValueRef },
+        AReturn { retval: ValueRef },
         IReturn { retval: ValueRef },
         TypeAdjust { value: ValueRef, current_ty: ValueType, result: ValueRef, new_ty: ValueType },
         GetField { result: ValueRef, object: ValueRef, field_desc: LayoutFieldRef },
-// TODO: alloc is where we need to finally introduce some notion of translation state...
-//        Alloc { result: ValueRef, layout_id: LayoutId },
+        Alloc { result: ValueRef, layout_id: LayoutId },
+        Dealloc { value: ValueRef },
         Return,
     }
 
@@ -135,6 +136,12 @@ pub mod ir {
 
     #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
     pub struct LayoutId(usize);
+
+    impl LayoutId {
+        pub fn as_usize(&self) -> usize {
+            self.0
+        }
+    }
 
     #[derive(Debug)]
     pub struct Layout {
@@ -190,8 +197,15 @@ pub mod ir {
                 .expect("layout id implies the layout exists")
         }
 
-        pub fn get_layout_id(&self, name: &str) -> Option<LayoutId> {
+        pub fn get_layout_id(&self, name: &str) -> Result<LayoutId, TranslationError> {
+            println!("looking up {} in...", name);
+            for (i, l) in self.layouts_by_name.iter().enumerate() {
+                println!("  {}: {:?}", i, l);
+            }
             self.layouts_by_name.get(name).cloned()
+                .ok_or_else(|| {
+                    TranslationError::UnknownType(name.to_owned())
+                })
         }
 
         pub fn get_field_in_layout(&self, layout_id: LayoutId, name: &str) -> &LayoutFieldRef {
@@ -218,6 +232,7 @@ pub mod ir {
     /// `TranslationError`.
     pub enum TranslationError {
         UnsupportedInstruction(crate::class_file::validated::Instruction),
+        UnknownType(String),
     }
 
     impl fmt::Debug for TranslationError {
@@ -225,6 +240,9 @@ pub mod ir {
             match self {
                 TranslationError::UnsupportedInstruction(inst) => {
                     write!(f, "TranslationError::UnsupportedInstruction({})", inst)
+                }
+                TranslationError::UnknownType(s) => {
+                    write!(f, "TranslationError::UnknownType({})", s)
                 }
             }
         }
@@ -241,18 +259,19 @@ pub struct ZvmMethod {
 //    block_map: HashMap<ir::BlockRef, usize>,
 }
 
-enum CompileError {
-    InvalidLoad(&'static str)
+trait RuntimeInfo {
+
 }
 
 impl ZvmMethod {
-    pub fn compile(&self) -> Result<Box<[u8]>, ir::CompileError> {
+    pub fn compile(&self) /*, rt_info: &dyn RuntimeInfo) */ -> Result<Box<[u8]>, ir::CompileError> {
         use cranelift_codegen::entity::EntityRef;
         use cranelift_codegen::ir::types::*;
         use cranelift_codegen::ir::{AbiParam, ExternalName, Function, InstBuilder, MemFlags, Signature};
         use cranelift_codegen::isa::CallConv;
         use cranelift_codegen::settings;
         use cranelift_codegen::verifier::verify_function;
+        use cranelift_codegen::ir::ExtFuncData;
         use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 
         let mut sig = Signature::new(CallConv::SystemV);
@@ -296,7 +315,9 @@ impl ZvmMethod {
         }
 
         {
+            let managed_alloc_name = ExternalName::User { namespace: 0, index: 0 };
             let mut builder = FunctionBuilder::new(&mut func, &mut fn_builder_ctx);
+//            let user_name_ref = builder.declare_imported_user_function(managed_alloc_name);
 
             for (i, local) in self.locals.iter().enumerate() {
                 let var = Variable::new(i << 2);
@@ -358,25 +379,49 @@ impl ZvmMethod {
                         let retval = builder.use_var(*retval);
                         builder.ins().return_(&[retval]);
                     }
-                    /*
+                    ir::Instruction::AReturn { retval } => {
+                        let retval = vars.get(&retval).expect("result var is defined");
+                        let retval = builder.use_var(*retval);
+                        builder.ins().return_(&[retval]);
+                    }
                     ir::Instruction::Alloc { result, layout_id } => {
                         let result = vars.get(&result).expect("result var is defined");
-                        fn generate_native_alloc(&self, builder: &mut FunctionBuilder, layout_id: LayoutId) -> Result<Value, CompileError> {
-                            let call = builder.ins().call_indirect(
-                                self.managed_alloc_signature(),
-                                self.get_managed_alloc(),
-                                &[self.get_vmref(), layout_id]
-                            );
-                            let results = builder.inst_results(call);
-                            match results {
-                                &[value] => Ok(value),
-                                other => { return Err(CompileError::InvalidSignature("managed alloc returned multiple values?")); }
-                            }
-                        }
-                        let value = self.generate_native_alloc(layout_id).expect("no translation error");
+                        // TODO: this should be pointer-type. derived from the target triple, you
+                        // know...
+                        let managed_alloc_sig = builder.import_signature(Signature {
+                            // TODO: takes a layoutid
+                            params: vec![AbiParam::new(cranelift_codegen::ir::types::I64)],
+                            // TODO: should return pointer-width
+                            returns: vec![AbiParam::new(cranelift_codegen::ir::types::I64)],
+                            // TODO: this should be the target-defined calling convention
+                            call_conv: CallConv::SystemV,
+                        });
+                        let managed_alloc_funcref = builder.import_function(ExtFuncData {
+                            name: ExternalName::User { namespace: 0, index: 0 },
+                            signature: managed_alloc_sig,
+                            // TODO: it'd be nice to say "true".. but jit addresses are probably
+                            // >128mb from malloc on aarch64
+                            colocated: false,
+                        });
+                        let managed_alloc = builder.ins().func_addr(cranelift_codegen::ir::types::I64, managed_alloc_funcref);
+
+                        let layout_id = builder.ins().iconst(I64, layout_id.as_usize() as i64);
+
+                        let call = builder.ins().call_indirect(
+                            managed_alloc_sig,
+                            managed_alloc,
+                            &[layout_id]
+                        );
+                        let results = builder.inst_results(call);
+                        let value = match results {
+                            &[value] => value,
+                            other => { return Err(ir::CompileError::InvalidSignature("managed alloc returned multiple values?")); }
+                        };
                         builder.def_var(*result, value);
                     }
-                    */
+                    ir::Instruction::Dealloc { value } => {
+                        panic!("dealloc is not yet supported");
+                    }
                     ir::Instruction::GetField { result, object, field_desc } => {
                         let object = vars.get(&object).expect("object var is defined");
                         let object_val = builder.use_var(*object);
@@ -655,11 +700,7 @@ pub fn bytecode2ir(layouts: &ir::LayoutsInfo, method: &MethodBody, sig: (Vec<Arg
                     ir::ValueType::Int
                 }
 
-                let layout_id = translator.layouts.get_layout_id(&fieldref.class_name);
-                if layout_id.is_none() {
-                    panic!("layout for '{}' is not declared", &fieldref.class_name);
-                }
-                let layout_id = layout_id.expect("TODO: layout is declared ahead of time");
+                let layout_id = translator.layouts.get_layout_id(&fieldref.class_name)?;
                 let field = translator.layouts.get_field_in_layout(layout_id, &fieldref.name);
 
                 if desc_to_ir_valuety(&fieldref.desc) != field.ty {
@@ -686,15 +727,31 @@ pub fn bytecode2ir(layouts: &ir::LayoutsInfo, method: &MethodBody, sig: (Vec<Arg
                 translator.inst(ir::Instruction::IReturn { retval });
                 // translator.apply_return();
             }
+            Instruction::AReturn => {
+                let retval = translator.pop_typed(ir::ValueType::Ref);
+                // move this all into a function on `translator`
+                translator.returns = Some(retval);
+                translator.inst(ir::Instruction::AReturn { retval });
+                // translator.apply_return();
+            }
             Instruction::BIPush(b) => {
                 let result = translator.new_local(ir::ValueType::Int);
-                translator.inst(ir::Instruction::ConstInt { result, value: b as i32 })
+                translator.inst(ir::Instruction::ConstInt { result, value: b as i32 });
+                translator.push(result);
             }
             Instruction::SIPush(s) => {
                 let result = translator.new_local(ir::ValueType::Int);
-                translator.inst(ir::Instruction::ConstInt { result, value: s as i32 })
+                translator.inst(ir::Instruction::ConstInt { result, value: s as i32 });
+                translator.push(result);
+            }
+            Instruction::New(cls_name) => {
+                let result = translator.new_local(ir::ValueType::Ref);
+                let layout_id = translator.layouts.get_layout_id(&cls_name)?;
+                translator.inst(ir::Instruction::Alloc { result, layout_id });
+                translator.push(result);
             }
             other => {
+                eprintln!("wth {}", other);
                 return Err(ir::TranslationError::UnsupportedInstruction(other));
             }
         }
@@ -773,9 +830,9 @@ fn test_object_return() {
 
     let instructions: Vec<validated::Instruction> = vec![
         Instruction::New(Rc::new(custom_class.this_class.clone())),
-        Instruction::ALoad0,
-        Instruction::ILoad1,
-        Instruction::InvokeSpecial(Rc::new(custom_class.method_ref("<init>", "(LTestClass;I)").expect("method exists"))),
+//        Instruction::ALoad0,
+//        Instruction::ILoad1,
+//        Instruction::InvokeSpecial(Rc::new(custom_class.method_ref("<init>", "(LTestClass;I)").expect("method exists"))),
         Instruction::AReturn,
     ];
 
@@ -811,6 +868,12 @@ fn jit(args: &[i64], instructions: Vec<validated::Instruction>, signature: &'sta
         });
         layout
     }, "java/lang/Integer".to_string());
+    for cls in extra_classes.iter() {
+        layouts.declare({
+            let mut layout = ir::Layout::new();
+            layout
+        }, cls.this_class.to_string());
+    }
 
 
     let result = bytecode2ir(&layouts, &method, crate::virtual_machine::parse_signature_string(signature).expect("parses")).expect("translates");
@@ -825,12 +888,13 @@ fn jit(args: &[i64], instructions: Vec<validated::Instruction>, signature: &'sta
     while let Ok(inst) = decoder.decode_slice(&code[addr..]) {
         let len = inst.len().to_const() as usize;
         print!("{:#08x}: ", addr);
-        for i in 0..8 {
+        let sz = std::cmp::max(8, len);
+        for i in 0..sz {
             // skip 8-len slots...
-            if i < (8 - len) {
+            if i < (sz - len) {
                 print!("  ");
             } else {
-                let byte = i - (8 - len);
+                let byte = i - (sz - len);
                 print!("{:02x}", code[addr..][byte]);
             }
         }
