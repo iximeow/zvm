@@ -317,7 +317,7 @@ impl ClassFile {
                 MethodRef {
                     class_name: self.this_class.clone(),
                     name: handle.name.clone(),
-                    desc: handle.name.clone(),
+                    desc: handle.desc.clone(),
                 }
             })
     }
@@ -757,7 +757,7 @@ fn assemble_into(inst: crate::class_file::validated::Instruction, bytes: &mut Cu
         InvokeSpecial(method_ref) => {
             method_body.method_refs.insert(bytes.position() as u32, method_ref);
             bytes.write_all(&[0xb7]);
-            bytes.write_all(&u32::MAX.to_le_bytes())
+            bytes.write_all(&u16::MAX.to_le_bytes())
         },
         /*
         InvokeStatic(ConstantIdx::read_from(data)?) => { bytes.write_all(&[0xb8]) },

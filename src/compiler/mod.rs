@@ -97,6 +97,10 @@ pub mod ir {
         }
     }
 
+    struct FunctionRef {
+        name: String,
+    }
+
     #[derive(Debug)]
     pub enum Instruction {
         LoadArg { result: ValueRef, source: ValueRef, id: usize },
@@ -110,6 +114,7 @@ pub mod ir {
         GetField { result: ValueRef, object: ValueRef, field_desc: LayoutFieldRef },
         Alloc { result: ValueRef, layout_id: LayoutId },
         Dealloc { value: ValueRef },
+        CallImport { result: Option<ValueRef>, name: String, sig: (Vec<ValueType>, Option<ValueType>), args: Vec<ValueRef> },
         Return,
     }
 
@@ -135,7 +140,7 @@ pub mod ir {
     }
 
     #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
-    pub struct LayoutId(usize);
+    pub struct LayoutId(pub usize);
 
     impl LayoutId {
         pub fn as_usize(&self) -> usize {
@@ -249,6 +254,75 @@ pub mod ir {
     }
 }
 
+pub struct FunctionEmitter {
+    bytes: *mut u8,
+    len: usize,
+}
+
+impl FunctionEmitter {
+    fn data_mut(&mut self) -> &mut [u8] {
+        unsafe {
+            std::slice::from_raw_parts_mut(self.bytes, self.len)
+        }
+    }
+    fn data(&self) -> &[u8] {
+        unsafe {
+            std::slice::from_raw_parts(self.bytes, self.len)
+        }
+    }
+    fn link(&mut self, relocs: &[cranelift_codegen::MachReloc], rt_info: &dyn RuntimeInfo) -> Result<(), crate::compiler::ir::CompileError> {
+        use cranelift_codegen::binemit::Reloc;
+
+        let data = self.data_mut();
+        for reloc in relocs.iter() {
+            match reloc.kind {
+                Reloc::Abs8 => {
+                    let addr = rt_info.func_addr(&reloc.name).expect("name exists");
+                    data[reloc.offset as usize..][..8].copy_from_slice(&addr.to_le_bytes());
+                },
+                other => {
+                    panic!("unhandled reloc kind: {:?}", other);
+                }
+            }
+        }
+
+        Ok(())
+    }
+    fn finalize(self) -> (*mut u8, usize) {
+        let page_addr = self.bytes as usize & !0xfff;
+        let prot_len = (self.len + 0xfff) & 0xfff;
+        let res = unsafe { libc::mprotect(page_addr as *mut std::ffi::c_void, prot_len, libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC) };
+        eprintln!("mprotect res: {}", res);
+
+        let prot_res = unsafe { libc::mprotect(self.bytes as *mut std::ffi::c_void, self.len, libc::PROT_READ | libc::PROT_EXEC) };
+        if prot_res != 0 {
+            panic!("mprotect({:p}+{:#x}): {:?}", self.bytes, self.len, prot_res);
+        }
+        (self.bytes, self.len)
+    }
+}
+
+pub struct CompiledMethod {
+    bytes: *mut u8,
+    len: usize,
+    relocs: Box<[cranelift_codegen::MachReloc]>,
+    // going to want to record stack maps as well probably
+    // maybe call sites too
+}
+
+impl CompiledMethod {
+    fn data_mut(&mut self) -> &mut [u8] {
+        unsafe {
+            std::slice::from_raw_parts_mut(self.bytes, self.len)
+        }
+    }
+    fn data(&self) -> &[u8] {
+        unsafe {
+            std::slice::from_raw_parts(self.bytes, self.len)
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ZvmMethod {
     arguments: Vec<ir::Argument>,
@@ -259,12 +333,23 @@ pub struct ZvmMethod {
 //    block_map: HashMap<ir::BlockRef, usize>,
 }
 
-trait RuntimeInfo {
-
+pub trait RuntimeInfo: Sync {
+//    fn addr_of(&self, extname: cranelift_codegen::ir::ExternalName) ->
+    fn layouts(&self) -> &ir::LayoutsInfo;
+    /// alloc a `FunctionEmitter` for a function of size `size`.
+    ///
+    /// the region allocated here will be read-write, but at an address selected so that this
+    /// entire region can be moved from `rw-` to `r-x` when emission is complete. implementations
+    /// should take care to not have other live code overlapping in the last page referenced, as
+    /// memory permissions require rounding up to the nearest page granularity, and so the last
+    /// page will be made `rw-` regardless of contents.
+    fn alloc_function(&self, size: usize) -> Result<FunctionEmitter, &'static str>;
+    fn func_addr(&self, name: &cranelift_codegen::ir::ExternalName) -> Result<usize, &'static str>;
+    fn declare_layout(&mut self, layout: ir::Layout, name: String) -> Result<(), &'static str>;
 }
 
 impl ZvmMethod {
-    pub fn compile(&self) /*, rt_info: &dyn RuntimeInfo) */ -> Result<Box<[u8]>, ir::CompileError> {
+    pub fn compile(&self, rt_info: &dyn RuntimeInfo) -> Result<CompiledMethod, ir::CompileError> {
         use cranelift_codegen::entity::EntityRef;
         use cranelift_codegen::ir::types::*;
         use cranelift_codegen::ir::{AbiParam, ExternalName, Function, InstBuilder, MemFlags, Signature};
@@ -422,6 +507,51 @@ impl ZvmMethod {
                     ir::Instruction::Dealloc { value } => {
                         panic!("dealloc is not yet supported");
                     }
+                    ir::Instruction::CallImport { result, name, sig, args } => {
+                        let params = vec![AbiParam::new(cranelift_codegen::ir::types::I64); sig.0.len()];
+                        let returns = if let Some(ret) = sig.1 {
+                            vec![AbiParam::new(cranelift_codegen::ir::types::I64); 1]
+                        } else {
+                            vec![]
+                        };
+
+                        let sigref = builder.import_signature(Signature {
+                            params,
+                            returns,
+                            call_conv: CallConv::SystemV,
+                        });
+
+                        let func_ref = builder.import_function(ExtFuncData {
+                            name: ExternalName::user(0, 1),
+                            signature: sigref,
+                            colocated: true
+                        });
+                        // TODO: ptr type
+                        let func_addr = builder.ins().func_addr(cranelift_codegen::ir::types::I64, func_ref);
+
+                        let mut cranelift_args: Vec<cranelift_codegen::ir::Value> = Vec::new();
+                        for arg in args.iter() {
+                            cranelift_args.push(builder.use_var(*vars.get(arg).expect("argument var is defined")));
+                        }
+
+                        let call = builder.ins().call_indirect(
+                            sigref,
+                            func_addr,
+                            &cranelift_args,
+                        );
+                        let results = builder.inst_results(call);
+                        match results {
+                            &[] => {
+                                /* nothing to do */
+                            },
+                            &[value] => {
+                                let result = result.expect("result var exists if function is supposed to return a value");
+                                let result = vars.get(&result).expect("result var is defined");
+                                builder.def_var(*result, value);
+                            }
+                            other => { return Err(ir::CompileError::InvalidSignature("call returned multiple values?")); }
+                        };
+                    }
                     ir::Instruction::GetField { result, object, field_desc } => {
                         let object = vars.get(&object).expect("object var is defined");
                         let object_val = builder.use_var(*object);
@@ -463,7 +593,10 @@ impl ZvmMethod {
             builder.finalize();
         }
 
-        let flags = settings::Flags::new(settings::builder());
+        use cranelift_codegen::settings::Configurable;
+        let mut settings = settings::builder();
+        settings.set("opt_level", "speed_and_size").expect("works");
+        let flags = settings::Flags::new(settings);
         let res = verify_function(&func, &flags);
         println!("{}", func.display());
         if let Err(errors) = res {
@@ -473,8 +606,18 @@ impl ZvmMethod {
         let target = cranelift_codegen::isa::lookup_by_name("x86_64").unwrap().finish(flags).unwrap();
         let res = target.compile_function(&func, false).unwrap();
         let bytes = res.buffer.data();
+        let relocs = res.buffer.relocs();
 
-        Ok(bytes.to_vec().into_boxed_slice())
+        let mut function_bytes = rt_info.alloc_function(bytes.len()).expect("alloc works");
+        function_bytes.data_mut().copy_from_slice(&bytes[..]);
+        function_bytes.link(relocs, rt_info)?;
+        let (ptr, len) = function_bytes.finalize();
+
+        Ok(CompiledMethod {
+            bytes: ptr,
+            len,
+            relocs: relocs.to_vec().into_boxed_slice()
+        })
     }
 }
 
@@ -602,12 +745,35 @@ impl<'layouts> TranslatorState<'layouts> {
     fn push(&mut self, v: ir::ValueRef) {
         self.operand_stack.push(v);
     }
+
+    // create a new (or use an existing) ExternalName for fname, reserve a sig, etc...
+    fn extdata(&mut self, fname: &str) -> cranelift_codegen::ir::ExtFuncData {
+        panic!("aa");
+        // let sig = Signature {
+        //    params: vec![
+        /*
+        self.extfuncs.insert(ExternalName::User(0, self.extfuncs.len()), fname.to_string());
+        cranelift_codegen::ir::ExtFuncData {
+            name: ExternalName::User(0, self.extfuncs.len() - 1),
+            signature: asdf,
+            colocated: true
+        }
+        */
+    }
 }
 
 use crate::class_file::validated::{MethodBody, Instruction};
 
-pub fn bytecode2ir(layouts: &ir::LayoutsInfo, method: &MethodBody, sig: (Vec<Arg>, Option<Arg>)) -> Result<ZvmMethod, ir::TranslationError> {
-    let mut translator = TranslatorState::new(layouts);
+fn desc_to_ir_valuety(desc: &str) -> ir::ValueType {
+    if desc == "I" {
+        ir::ValueType::Int
+    } else {
+        panic!("unhandled desc: {}", desc);
+    }
+}
+
+pub fn bytecode2ir(rt_info: &mut RuntimeInfo, method: &MethodBody, sig: (Vec<Arg>, Option<Arg>)) -> Result<ZvmMethod, ir::TranslationError> {
+    let mut translator = TranslatorState::new(rt_info.layouts());
 
     for arg in sig.0.iter() {
         translator.new_argument(arg.ty);
@@ -627,6 +793,12 @@ pub fn bytecode2ir(layouts: &ir::LayoutsInfo, method: &MethodBody, sig: (Vec<Arg
             }
             Instruction::ALoad3 => {
                 translator.load_argument(3, ir::ValueType::Ref);
+            }
+            Instruction::LLoad0 => {
+                translator.load_argument(0, ir::ValueType::Long);
+            }
+            Instruction::LLoad1 => {
+                translator.load_argument(1, ir::ValueType::Long);
             }
             Instruction::ILoad0 => {
                 translator.load_argument(0, ir::ValueType::Int);
@@ -696,10 +868,6 @@ pub fn bytecode2ir(layouts: &ir::LayoutsInfo, method: &MethodBody, sig: (Vec<Arg
                 translator.push(result);
             }
             Instruction::GetField(fieldref) => {
-                fn desc_to_ir_valuety(desc: &str) -> ir::ValueType {
-                    ir::ValueType::Int
-                }
-
                 let layout_id = translator.layouts.get_layout_id(&fieldref.class_name)?;
                 let field = translator.layouts.get_field_in_layout(layout_id, &fieldref.name);
 
@@ -750,6 +918,56 @@ pub fn bytecode2ir(layouts: &ir::LayoutsInfo, method: &MethodBody, sig: (Vec<Arg
                 translator.inst(ir::Instruction::Alloc { result, layout_id });
                 translator.push(result);
             }
+            Instruction::Dup => {
+                let top = translator.pop_any();
+                translator.push(top);
+                translator.push(top);
+            }
+            Instruction::InvokeSpecial(method_ref) => {
+                eprintln!("method ref desc: {}", method_ref.desc);
+                let (arg_tys, ret_ty) = crate::virtual_machine::parse_signature_string(&method_ref.desc).expect("signature parses");
+
+                // TODO: this leaks an Rc<MethodRef> into the function body? how to clean up
+                let method_ref_rc = translator.new_local(ir::ValueType::Long);
+                translator.inst(ir::Instruction::ConstLong { result: method_ref_rc, value: Rc::into_raw(method_ref) as usize as isize as i64 });
+
+                let mut args = vec![
+                    method_ref_rc,
+                ];
+
+                let mut zvm_arg_tys = vec![
+                    ir::ValueType::Long,
+                ];
+
+                for arg in arg_tys.iter().rev() {
+                    args.push(translator.pop_typed(arg.ty));
+                }
+
+                // TODO: probably translate java/lang/Integer and friends to their primitive types?
+                // maybe??
+                let target = translator.pop_typed(ir::ValueType::Ref);
+                zvm_arg_tys.push(ir::ValueType::Ref);
+                args.push(target);
+                for arg in arg_tys.iter() {
+                    zvm_arg_tys.push(arg.ty);
+                }
+                let (result, result_ty) = if let Some(ret_ty) = ret_ty {
+                    (Some(translator.new_local(ret_ty.ty)), Some(ret_ty.ty))
+                } else {
+                    (None, None)
+                };
+                // let extdata = translator.extdata("__vm_call_stub");
+
+                translator.inst(ir::Instruction::CallImport {
+                    result,
+                    name: "__vm_call_stub".to_string(),
+                    sig: (
+                        zvm_arg_tys,
+                        result_ty,
+                    ),
+                    args
+                });
+            }
             other => {
                 eprintln!("wth {}", other);
                 return Err(ir::TranslationError::UnsupportedInstruction(other));
@@ -760,9 +978,84 @@ pub fn bytecode2ir(layouts: &ir::LayoutsInfo, method: &MethodBody, sig: (Vec<Arg
     Ok(translator.into_method())
 }
 
+use std::cell::RefCell;
+
+static mut ZVM: Option<&'static mut RuntimeInfo> = None;
+
+pub struct ZvmRuntime {
+    layouts: ir::LayoutsInfo
+}
+
+use std::borrow::Borrow;
+use crate::class_file::validated::MethodRef;
+impl ZvmRuntime {
+    pub fn init() -> Self {
+        Self {
+            layouts: ir::LayoutsInfo::new()
+        }
+    }
+
+    // TODO: types
+    fn runtime_alloc_func(layout_id: u64) -> usize {
+        eprintln!("alloc requested for layout {}", layout_id);
+        let vm = unsafe { ZVM.as_mut().unwrap() };
+        eprintln!("layout: {:?}", vm.layouts().get_layout(crate::compiler::ir::LayoutId(layout_id as usize)));
+        123456
+    }
+
+    // TODO: types
+    fn __vm_call_stub(method_ref: *const MethodRef, receiver: u64, arg: u64, arg2: u64) {
+        let method_ref = unsafe { std::mem::transmute::<*const MethodRef, &MethodRef>(method_ref) };
+        eprintln!("runtime witnessed call to {:?} on object {:#x} and args [{:#x}, {:#x}]", method_ref, receiver, arg, arg2);
+    }
+}
+
+impl RuntimeInfo for ZvmRuntime {
+    fn layouts(&self) -> &ir::LayoutsInfo {
+        &self.layouts
+    }
+
+    fn alloc_function(&self, size: usize) -> Result<FunctionEmitter, &'static str> {
+        use libc::{PROT_READ, PROT_WRITE, MAP_PRIVATE, MAP_ANONYMOUS};
+
+        let rounded_size = (size + 0xfff) & !0xfff;
+        let ptr = unsafe {
+            libc::mmap(std::ptr::null_mut(), rounded_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0) as *mut u8
+        };
+        if ptr == std::ptr::null_mut() {
+            panic!("alloc fail ({:#x} bytes)", rounded_size);
+        }
+        Ok(FunctionEmitter {
+            bytes: ptr,
+            len: size,
+        })
+    }
+
+    fn func_addr(&self, name: &cranelift_codegen::ir::ExternalName) -> Result<usize, &'static str> {
+        match name {
+            cranelift_codegen::ir::ExternalName::User { namespace: 0, index: 0 } => {
+                Ok(Self::runtime_alloc_func as usize)
+            },
+            cranelift_codegen::ir::ExternalName::User { namespace: 0, index: 1 } => {
+                Ok(Self::__vm_call_stub as usize)
+            },
+            other => {
+                panic!("unknown extname: {:?}", other);
+            }
+        }
+    }
+
+    fn declare_layout(&mut self, layout: ir::Layout, name: String) -> Result<(), &'static str> {
+        self.layouts.declare(layout, name);
+        Ok(())
+    }
+}
+
 #[test]
 fn test_translator() {
     use crate::class_file::validated;
+
+    let mut zvm_rt = ZvmRuntime::init();
 
     let instructions: Vec<validated::Instruction> = vec![
         Instruction::Nop,
@@ -775,12 +1068,14 @@ fn test_translator() {
     ];
 
     let args = &[];
-    jit(args.as_slice(), instructions, "()I", Vec::new());
+    jit(args.as_slice(), instructions, "()I", Vec::new(), &mut zvm_rt);
 }
 
 #[test]
 fn test_add_args() {
     use crate::class_file::validated;
+
+    let mut zvm_rt = ZvmRuntime::init();
 
     let instructions: Vec<validated::Instruction> = vec![
         Instruction::ILoad0,
@@ -790,12 +1085,14 @@ fn test_add_args() {
     ];
 
     let args = &[20, 4];
-    jit(args.as_slice(), instructions, "(II)I", Vec::new());
+    jit(args.as_slice(), instructions, "(II)I", Vec::new(), &mut zvm_rt);
 }
 
 #[test]
 fn test_field_access() {
     use crate::class_file::validated;
+
+    let mut zvm_rt = ZvmRuntime::init();
 
     let instructions: Vec<validated::Instruction> = vec![
         Instruction::ALoad0,
@@ -808,12 +1105,14 @@ fn test_field_access() {
     let definitely_an_integer = [0xdeadbeef_cafebabe_u64 as i64, 20i64];
     let integer_ref: *const [i64; 2] = &definitely_an_integer as *const [i64; 2];
     let args = &[integer_ref as i64, 4];
-    jit(args.as_slice(), instructions, "(Ljava/lang/Integer;I)I", Vec::new());
+    jit(args.as_slice(), instructions, "(Ljava/lang/Integer;I)I", Vec::new(), &mut zvm_rt);
 }
 
 #[test]
 fn test_object_return() {
     use crate::class_file::validated;
+
+    let mut zvm_rt = ZvmRuntime::init();
 
     let mut classes: Vec<Rc<ClassFile>> = Vec::new();
 
@@ -822,7 +1121,7 @@ fn test_object_return() {
         crate::class_file::synthetic::SyntheticClassBuilder::<crate::SimpleJvmValue>::new("TestClass")
             .extends("java/lang/Object")
             .with_field("inner", "I")
-            .with_method("<init>", "(LTestClass;I)", None)
+            .with_method("<init>", "(LTestClass;J)V", None)
             .with_method("test_method", "()I", None)
             .validate().0);
 
@@ -830,21 +1129,22 @@ fn test_object_return() {
 
     let instructions: Vec<validated::Instruction> = vec![
         Instruction::New(Rc::new(custom_class.this_class.clone())),
-//        Instruction::ALoad0,
-//        Instruction::ILoad1,
-//        Instruction::InvokeSpecial(Rc::new(custom_class.method_ref("<init>", "(LTestClass;I)").expect("method exists"))),
+        Instruction::Dup,
+        Instruction::ALoad0,
+        Instruction::LLoad1,
+        Instruction::InvokeSpecial(Rc::new(custom_class.method_ref("<init>", "(LTestClass;J)V").expect("method exists"))),
         Instruction::AReturn,
     ];
 
     let definitely_an_integer = [0xdeadbeef_cafebabe_u64 as i64, 20i64];
     let integer_ref: *const [i64; 2] = &definitely_an_integer as *const [i64; 2];
     let args = &[integer_ref as i64, 4];
-    jit(args.as_slice(), instructions, "(Ljava/lang/String;I)LCustomClass;", classes);
+    jit(args.as_slice(), instructions, "(Ljava/lang/String;J)LCustomClass;", classes, &mut zvm_rt);
 }
 
 use crate::class_file::validated;
 
-fn jit(args: &[i64], instructions: Vec<validated::Instruction>, signature: &'static str, extra_classes: Vec<Rc<ClassFile>>) {
+fn jit(args: &[i64], instructions: Vec<validated::Instruction>, signature: &'static str, extra_classes: Vec<Rc<ClassFile>>, rt_info: &mut dyn RuntimeInfo) {
     println!("jvm instructions:");
     for inst in instructions.iter() {
         println!("  {}", inst);
@@ -853,8 +1153,7 @@ fn jit(args: &[i64], instructions: Vec<validated::Instruction>, signature: &'sta
     let method = validated::assemble(instructions);
     println!("jvm bytecode: {:02x?}", &method.bytes);
 
-    let mut layouts = ir::LayoutsInfo::new();
-    layouts.declare({
+    rt_info.declare_layout({
         let mut layout = ir::Layout::new();
         layout.add_field(ir::LayoutFieldRef {
             offset: 0,
@@ -868,24 +1167,30 @@ fn jit(args: &[i64], instructions: Vec<validated::Instruction>, signature: &'sta
         });
         layout
     }, "java/lang/Integer".to_string());
-    for cls in extra_classes.iter() {
-        layouts.declare({
+    for (i, cls) in extra_classes.iter().enumerate() {
+        rt_info.declare_layout({
             let mut layout = ir::Layout::new();
+            layout.add_field(ir::LayoutFieldRef {
+                offset: 0,
+                ty: ir::ValueType::Int,
+                name: format!("STUB_layout_{}", i)
+            });
             layout
         }, cls.this_class.to_string());
     }
 
 
-    let result = bytecode2ir(&layouts, &method, crate::virtual_machine::parse_signature_string(signature).expect("parses")).expect("translates");
+    let result = bytecode2ir(rt_info, &method, crate::virtual_machine::parse_signature_string(signature).expect("parses")).expect("translates");
     println!("");
     println!("ir form: {:?}", result);
     println!("");
-    let code = result.compile().expect("compile succeeds");
+    let function = result.compile(rt_info).expect("compile succeeds");
 
     use yaxpeax_arch::LengthedInstruction;
     let decoder = yaxpeax_x86::amd64::InstDecoder::default();
     let mut addr = 0;
-    while let Ok(inst) = decoder.decode_slice(&code[addr..]) {
+    let fn_bytes = function.data();
+    while let Ok(inst) = decoder.decode_slice(&fn_bytes[addr..]) {
         let len = inst.len().to_const() as usize;
         print!("{:#08x}: ", addr);
         let sz = std::cmp::max(8, len);
@@ -895,20 +1200,16 @@ fn jit(args: &[i64], instructions: Vec<validated::Instruction>, signature: &'sta
                 print!("  ");
             } else {
                 let byte = i - (sz - len);
-                print!("{:02x}", code[addr..][byte]);
+                print!("{:02x}", fn_bytes[addr..][byte]);
             }
         }
         println!(": {}", inst);
         addr += len;
     }
 
-    {
-        let page_addr = code.as_ptr() as usize & !0xfff;
-        let prot_len = (code.len() + 0xfff) & 0xfff;
-        let res = unsafe { libc::mprotect(page_addr as *mut std::ffi::c_void, prot_len, libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC) };
-        eprintln!("mprotect res: {}", res);
-    }
-    let res = jitcall(args, unsafe { std::mem::transmute(code.as_ptr()) });
+    unsafe { ZVM = Some(std::mem::transmute::<&mut dyn RuntimeInfo, &'static mut dyn RuntimeInfo>(rt_info)); }
+    let res = jitcall(args, unsafe { std::mem::transmute(function.data().as_ptr()) });
+    unsafe { ZVM = None; }
     println!("result: {}", res);
 }
 
