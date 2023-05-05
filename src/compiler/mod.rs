@@ -47,6 +47,22 @@ pub mod ir {
         Ref,
     }
 
+    impl ValueType {
+        fn size(&self) -> usize {
+            use ValueType::*;
+
+            match self {
+                Byte => 1,
+                Short => 2,
+                Int => 4,
+                Long => 8,
+                Float => 4,
+                Double => 8,
+                Ref => std::mem::size_of::<usize>(),
+            }
+        }
+    }
+
     impl fmt::Display for ValueType {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             match self {
@@ -148,6 +164,9 @@ pub mod ir {
         }
     }
 
+    /// a (sorted by offset) list of fields, their types, and their names. this is in contrast to
+    /// `StructLayout`, which is lower-level and discusses only the size of the backing allocation
+    /// as well as the id of this high-level layout intended to be stored in that allocation.
     #[derive(Debug)]
     pub struct Layout {
         members: Vec<LayoutFieldRef>,
@@ -163,7 +182,25 @@ pub mod ir {
         pub fn add_field(&mut self, field_layout: LayoutFieldRef) {
             self.members.push(field_layout);
         }
+
+        pub fn size(&self) -> usize {
+            self.members.iter().map(|x| x.offset as usize + x.ty.size()).max().unwrap_or(0)
+        }
+
+        pub fn align(&self) -> usize {
+            // good enough for now
+            8
+        }
+
+        pub fn as_tagged_zvm(&self, layout_id: u64) -> StructLayout {
+            StructLayout {
+                size: self.size(),
+                align: self.align(),
+                layout_id,
+            }
+        }
     }
+
     #[derive(Clone, Debug)]
     pub struct LayoutFieldRef {
         // TODO: this limits even arrays to 2gb in max size. cranelift field offsets are Offset32.
@@ -346,6 +383,12 @@ pub trait RuntimeInfo: Sync {
     fn alloc_function(&self, size: usize) -> Result<FunctionEmitter, &'static str>;
     fn func_addr(&self, name: &cranelift_codegen::ir::ExternalName) -> Result<usize, &'static str>;
     fn declare_layout(&mut self, layout: ir::Layout, name: String) -> Result<(), &'static str>;
+
+    /// allocate an entire ZVM object suitable for representation of the provided layout.
+    fn obj_alloc(&mut self, layout: StructLayout) -> Option<*mut u8>;
+    // deallocate a ZVM object representing the provided layout. this implementation is left as an
+    // exercise to the reader (for now)
+//    fn obj_dealloc(&mut self, layout: &ir::Layout) -> Option<*const u8>;
 }
 
 impl ZvmMethod {
@@ -936,22 +979,26 @@ pub fn bytecode2ir(rt_info: &mut dyn RuntimeInfo, method: &MethodBody, sig: (Vec
                     method_ref_rc,
                 ];
 
+                let mut managed_args = Vec::new();
+
                 let mut zvm_arg_tys = vec![
                     ir::ValueType::Long,
                 ];
 
                 for arg in arg_tys.iter().rev() {
-                    args.push(translator.pop_typed(arg.ty));
+                    managed_args.push(translator.pop_typed(arg.ty));
                 }
 
                 // TODO: probably translate java/lang/Integer and friends to their primitive types?
                 // maybe??
                 let target = translator.pop_typed(ir::ValueType::Ref);
                 zvm_arg_tys.push(ir::ValueType::Ref);
-                args.push(target);
+                managed_args.push(target);
                 for arg in arg_tys.iter() {
                     zvm_arg_tys.push(arg.ty);
                 }
+                managed_args.reverse();
+                args.append(&mut managed_args);
                 let (result, result_ty) = if let Some(ret_ty) = ret_ty {
                     (Some(translator.new_local(ret_ty.ty)), Some(ret_ty.ty))
                 } else {
@@ -983,6 +1030,35 @@ use std::cell::RefCell;
 
 static mut ZVM: Option<&'static mut dyn RuntimeInfo> = None;
 
+/// a low-level description of an allocation suitable for storing a layout of id `layout_id`. this
+/// is largely equivalent to a Rust `core::alloc::Layout`.
+pub struct StructLayout {
+    size: usize,
+    align: usize,
+    layout_id: u64,
+}
+
+impl StructLayout {
+    const fn header_size() -> usize {
+        // the zvm object header is.... currently.........
+        //
+        //    ------------------
+        // 0  | layout id      |
+        // 8  | misc           |
+        // 16+| the actual obj |
+        //    S ....           S
+        //    ------------------
+        core::mem::size_of::<usize>() +
+            core::mem::size_of::<usize>()
+    }
+
+    const fn header_align() -> usize {
+        // the object header is two usize, which i'm going to unilaterally declare as align=8 for
+        // reasons of lazy
+        8
+    }
+}
+
 pub struct ZvmRuntime {
     layouts: ir::LayoutsInfo
 }
@@ -1000,8 +1076,13 @@ impl ZvmRuntime {
     fn runtime_alloc_func(layout_id: u64) -> usize {
         eprintln!("alloc requested for layout {}", layout_id);
         let vm = unsafe { ZVM.as_mut().unwrap() };
-        eprintln!("layout: {:?}", vm.layouts().get_layout(crate::compiler::ir::LayoutId(layout_id as usize)));
-        123456
+        let layout = vm.layouts().get_layout(crate::compiler::ir::LayoutId(layout_id as usize));
+        eprintln!("layout: {:?}", layout);
+        let struct_layout = layout.as_tagged_zvm(layout_id);
+        let ptr = vm.obj_alloc(struct_layout);
+        ptr.unwrap_or_else(|| {
+            panic!("alloc failed for layout {}", layout_id);
+        }) as usize
     }
 
     // TODO: types
@@ -1012,6 +1093,21 @@ impl ZvmRuntime {
 }
 
 impl RuntimeInfo for ZvmRuntime {
+    fn obj_alloc(&mut self, layout: StructLayout) -> Option<*mut u8> {
+        let size = layout.size + StructLayout::header_size();
+        let align = core::cmp::max(layout.align, StructLayout::header_align());
+
+        let res = unsafe {
+            std::alloc::alloc(core::alloc::Layout::from_size_align(size, align).unwrap())
+        };
+
+        if res.is_null() {
+            None
+        } else {
+            Some(unsafe { res.offset(StructLayout::header_size() as isize) })
+        }
+    }
+
     fn layouts(&self) -> &ir::LayoutsInfo {
         &self.layouts
     }
@@ -1211,7 +1307,7 @@ fn jit(args: &[i64], instructions: Vec<validated::Instruction>, signature: &'sta
     unsafe { ZVM = Some(std::mem::transmute::<&mut dyn RuntimeInfo, &'static mut dyn RuntimeInfo>(rt_info)); }
     let res = jitcall(args, unsafe { std::mem::transmute(function.data().as_ptr()) });
     unsafe { ZVM = None; }
-    println!("result: {}", res);
+    println!("result: {:x}", res);
 }
 
 fn jitcall(args: &[i64], code: fn(i64, i64, i64, i64, i64, i64) -> i64) -> i64 {
