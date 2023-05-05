@@ -11,7 +11,6 @@ use crate::class_file::unvalidated::MethodHandleBehavior;
 use crate::class_file::unvalidated::MethodInfo;
 
 use byteorder::{BigEndian, ReadBytesExt};
-use std::collections::HashMap;
 use std::io::Read;
 
 const CLASS_MAGIC: u32 = 0xcafebabe;

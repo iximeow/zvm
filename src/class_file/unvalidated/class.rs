@@ -1,6 +1,3 @@
-use crate::virtual_machine::VirtualMachine;
-use crate::virtual_machine::VMError;
-use crate::virtual_machine::VMState;
 use crate::class_file::unvalidated::AttributeInfo;
 use crate::class_file::unvalidated::Constant;
 use crate::class_file::unvalidated::ConstantIdx;
@@ -14,7 +11,6 @@ use crate::class_file::unvalidated::FieldAccessFlags;
 use std::fmt;
 use std::rc::Rc;
 use std::hash::{Hash, Hasher};
-use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct AccessFlags {

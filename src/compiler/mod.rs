@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::virtual_machine::Arg;
-use crate::class_file::validated::{ClassFile, FieldRef};
+use crate::class_file::validated::ClassFile;
 
 pub mod ir {
+    use super::StructLayout;
     use std::fmt;
-    use std::rc::Rc;
 
     #[derive(Debug)]
     pub enum Value {
@@ -633,6 +633,7 @@ struct TranslatorState<'layouts> {
     layouts: &'layouts ir::LayoutsInfo,
 }
 
+#[allow(unused)]
 impl<'layouts> TranslatorState<'layouts> {
     fn inst(&mut self, inst: ir::Instruction) {
         self.current_block.append(inst);
@@ -772,7 +773,7 @@ fn desc_to_ir_valuety(desc: &str) -> ir::ValueType {
     }
 }
 
-pub fn bytecode2ir(rt_info: &mut RuntimeInfo, method: &MethodBody, sig: (Vec<Arg>, Option<Arg>)) -> Result<ZvmMethod, ir::TranslationError> {
+pub fn bytecode2ir(rt_info: &mut dyn RuntimeInfo, method: &MethodBody, sig: (Vec<Arg>, Option<Arg>)) -> Result<ZvmMethod, ir::TranslationError> {
     let mut translator = TranslatorState::new(rt_info.layouts());
 
     for arg in sig.0.iter() {
@@ -980,7 +981,7 @@ pub fn bytecode2ir(rt_info: &mut RuntimeInfo, method: &MethodBody, sig: (Vec<Arg
 
 use std::cell::RefCell;
 
-static mut ZVM: Option<&'static mut RuntimeInfo> = None;
+static mut ZVM: Option<&'static mut dyn RuntimeInfo> = None;
 
 pub struct ZvmRuntime {
     layouts: ir::LayoutsInfo
@@ -1096,7 +1097,7 @@ fn test_field_access() {
 
     let instructions: Vec<validated::Instruction> = vec![
         Instruction::ALoad0,
-        Instruction::GetField(Rc::new(FieldRef { class_name: "java/lang/Integer".to_owned(), name: "value".to_owned(), desc: "I".to_owned() })),
+        Instruction::GetField(Rc::new(crate::class_file::validated::FieldRef { class_name: "java/lang/Integer".to_owned(), name: "value".to_owned(), desc: "I".to_owned() })),
         Instruction::ILoad1,
         Instruction::IAdd,
         Instruction::IReturn,

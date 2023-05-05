@@ -641,68 +641,100 @@ fn assemble_into(inst: crate::class_file::validated::Instruction, bytes: &mut Cu
         DCmpL => { bytes.write_all(&[0x97]) },
         DCmpG => { bytes.write_all(&[0x98]) },
         IfEq(offset) => {
-            bytes.write_all(&[0x99]);
-            bytes.write_all(&offset.to_le_bytes())
+            bytes.write_all(&[0x99])
+                .and_then(|_| {
+                    bytes.write_all(&offset.to_le_bytes())
+                })
         },
         IfNe(offset) => {
-            bytes.write_all(&[0x9a]);
-            bytes.write_all(&offset.to_le_bytes())
+            bytes.write_all(&[0x9a])
+                .and_then(|_| {
+                    bytes.write_all(&offset.to_le_bytes())
+                })
         },
         IfLt(offset) => {
-            bytes.write_all(&[0x9b]);
-            bytes.write_all(&offset.to_le_bytes())
+            bytes.write_all(&[0x9b])
+                .and_then(|_| {
+                    bytes.write_all(&offset.to_le_bytes())
+                })
         },
         IfGe(offset) => {
-            bytes.write_all(&[0x9c]);
-            bytes.write_all(&offset.to_le_bytes())
+            bytes.write_all(&[0x9c])
+                .and_then(|_| {
+                    bytes.write_all(&offset.to_le_bytes())
+                })
         },
         IfGt(offset) => {
-            bytes.write_all(&[0x9d]);
-            bytes.write_all(&offset.to_le_bytes())
+            bytes.write_all(&[0x9d])
+                .and_then(|_| {
+                    bytes.write_all(&offset.to_le_bytes())
+                })
         },
         IfLe(offset) => {
-            bytes.write_all(&[0x9e]);
-            bytes.write_all(&offset.to_le_bytes())
+            bytes.write_all(&[0x9e])
+                .and_then(|_| {
+                    bytes.write_all(&offset.to_le_bytes())
+                })
         },
         IfIcmpEq(offset) => {
-            bytes.write_all(&[0x9f]);
-            bytes.write_all(&offset.to_le_bytes())
+            bytes.write_all(&[0x9f])
+                .and_then(|_| {
+                    bytes.write_all(&offset.to_le_bytes())
+                })
         },
         IfIcmpNe(offset) => {
-            bytes.write_all(&[0xa0]);
-            bytes.write_all(&offset.to_le_bytes())
+            bytes.write_all(&[0xa0])
+                .and_then(|_| {
+                    bytes.write_all(&offset.to_le_bytes())
+                })
         },
         IfIcmpLt(offset) => {
-            bytes.write_all(&[0xa1]);
-            bytes.write_all(&offset.to_le_bytes())
+            bytes.write_all(&[0xa1])
+                .and_then(|_| {
+                    bytes.write_all(&offset.to_le_bytes())
+                })
         },
         IfIcmpGe(offset) => {
-            bytes.write_all(&[0xa2]);
-            bytes.write_all(&offset.to_le_bytes())
+            bytes.write_all(&[0xa2])
+                .and_then(|_| {
+                    bytes.write_all(&offset.to_le_bytes())
+                })
         },
         IfIcmpGt(offset) => {
-            bytes.write_all(&[0xa3]);
-            bytes.write_all(&offset.to_le_bytes())
+            bytes.write_all(&[0xa3])
+                .and_then(|_| {
+                    bytes.write_all(&offset.to_le_bytes())
+                })
         },
         IfIcmpLe(offset) => {
-            bytes.write_all(&[0xa4]);
-            bytes.write_all(&offset.to_le_bytes())
+            bytes.write_all(&[0xa4])
+                .and_then(|_| {
+                    bytes.write_all(&offset.to_le_bytes())
+                })
         },
         IfAcmpEq(offset) => {
-            bytes.write_all(&[0xa5]);
-            bytes.write_all(&offset.to_le_bytes())
+            bytes.write_all(&[0xa5])
+                .and_then(|_| {
+                    bytes.write_all(&offset.to_le_bytes())
+                })
         },
         IfAcmpNe(offset) => {
-            bytes.write_all(&[0xa6]);
-            bytes.write_all(&offset.to_le_bytes())
+            bytes.write_all(&[0xa6])
+                .and_then(|_| {
+                    bytes.write_all(&offset.to_le_bytes())
+                })
         },
         Goto(offset) => {
-            bytes.write_all(&[0xa7]);
-            bytes.write_all(&offset.to_le_bytes())
+            bytes.write_all(&[0xa7])
+                .and_then(|_| {
+                    bytes.write_all(&offset.to_le_bytes())
+                })
         },
         Jsr(offset) => {
-            bytes.write_all(&[0xa8]);
-            bytes.write_all(&offset.to_le_bytes())
+            bytes.write_all(&[0xa8])
+                .and_then(|_| {
+                    bytes.write_all(&offset.to_le_bytes())
+                })
         },
         /*
         Ret(read_idx(data, wide)?) => { bytes.write_all(&[0xa9]) },
@@ -745,8 +777,10 @@ fn assemble_into(inst: crate::class_file::validated::Instruction, bytes: &mut Cu
         GetField(fieldref) => {
             method_body.field_refs.insert(method_body.field_refs.len() as u32 + 1, fieldref);
             let field_id = method_body.field_refs.len();
-            bytes.write_all(&[0xb4]);
-            bytes.write_all(&field_id.to_le_bytes())
+            bytes.write_all(&[0xb4])
+                .and_then(|_| {
+                    bytes.write_all(&field_id.to_le_bytes())
+                })
         },
         /*
         GetStatic(ConstantIdx::read_from(data)?) => { bytes.write_all(&[0xb2]) },
@@ -756,8 +790,10 @@ fn assemble_into(inst: crate::class_file::validated::Instruction, bytes: &mut Cu
         */
         InvokeSpecial(method_ref) => {
             method_body.method_refs.insert(bytes.position() as u32, method_ref);
-            bytes.write_all(&[0xb7]);
-            bytes.write_all(&u16::MAX.to_le_bytes())
+            bytes.write_all(&[0xb7])
+                .and_then(|_| {
+                    bytes.write_all(&u16::MAX.to_le_bytes())
+                })
         },
         /*
         InvokeStatic(ConstantIdx::read_from(data)?) => { bytes.write_all(&[0xb8]) },
@@ -769,8 +805,10 @@ fn assemble_into(inst: crate::class_file::validated::Instruction, bytes: &mut Cu
         */
         New(cls_name) => {
             method_body.class_refs.insert(bytes.position() as u32, cls_name);
-            bytes.write_all(&[0xbb]);
-            bytes.write_all(&u16::MAX.to_le_bytes())
+            bytes.write_all(&[0xbb])
+                .and_then(|_| {
+                    bytes.write_all(&u16::MAX.to_le_bytes())
+                })
         },
         /*
         NewArray(u8::read_from(data)?) => { bytes.write_all(&[0xbc]) },
@@ -793,22 +831,30 @@ fn assemble_into(inst: crate::class_file::validated::Instruction, bytes: &mut Cu
                 }
         */
         IfNull(offset) => {
-            bytes.write_all(&[0xc6]);
-            bytes.write_all(&offset.to_le_bytes())
+            bytes.write_all(&[0xc6])
+                .and_then(|_| {
+                    bytes.write_all(&offset.to_le_bytes())
+                })
         },
         IfNonNull(offset) => {
-            bytes.write_all(&[0xc7]);
-            bytes.write_all(&offset.to_le_bytes())
+            bytes.write_all(&[0xc7])
+                .and_then(|_| {
+                    bytes.write_all(&offset.to_le_bytes())
+                })
         },
         GotoW(offset) => {
-            bytes.write_all(&[0xc8]);
-            debug_assert!(offset.to_le_bytes().len() == 4);
-            bytes.write_all(&offset.to_le_bytes())
+            bytes.write_all(&[0xc8])
+                .and_then(|_| {
+                    debug_assert!(offset.to_le_bytes().len() == 4);
+                    bytes.write_all(&offset.to_le_bytes())
+                })
         },
         JsrW(offset) => {
-            bytes.write_all(&[0xc9]);
-            debug_assert!(offset.to_le_bytes().len() == 4);
-            bytes.write_all(&offset.to_le_bytes())
+            bytes.write_all(&[0xc9])
+                .and_then(|_| {
+                    debug_assert!(offset.to_le_bytes().len() == 4);
+                    bytes.write_all(&offset.to_le_bytes())
+                })
         },
         other => {
             panic!("unsupported inst: {}", other);

@@ -22,7 +22,7 @@ fn new_string<ValueImpl: JvmValue>(vm: &mut VirtualMachine<ValueImpl>, elems: Ve
     ValueImpl::object_with_data(vm.resolve_class("java/lang/String").unwrap(), fields)
 }
 
-pub fn augment_classfile<ValueImpl: JvmValue>(mut class_file: ClassFile) -> (ClassFile, HashMap<(String, String), NativeJvmFn<ValueImpl>>) {
+pub fn augment_classfile<ValueImpl: JvmValue>(class_file: ClassFile) -> (ClassFile, HashMap<(String, String), NativeJvmFn<ValueImpl>>) {
     let mut patches: HashMap<(String, String), NativeJvmFn<ValueImpl>> = HashMap::new();
     match class_file.this_class.as_str() {
         // log4j please go away
@@ -1142,7 +1142,7 @@ fn array_newarray<ValueImpl: JvmValue>(state: &mut VMState<ValueImpl>, vm: &mut 
             let field = obj.get_field("class");
             let obj = field.as_object().expect("is object");
             let classname = obj.get_field("value");
-            classname;
+            std::mem::drop(classname);
             panic!("todo: turn class name array into a real string");
         };
 
