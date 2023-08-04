@@ -18,7 +18,7 @@ Step.start("test")
 Build.run({"cargo", "test", "--workspace"})
 
 Step.start("measurement")
-Build.run({"cargo", "build", "-p", "zvm", "--release"})
+Build.run({"cargo", "build", "-p", "zvm-cli", "--release"})
 Build.metric(
   "zvm binary size (bytes)",
   Build.environment.size("target/release/zvm")
