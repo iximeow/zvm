@@ -363,6 +363,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
         vm: &mut VirtualMachine<ValueImpl>,
     ) -> Result<Option<ValueImpl>, VMError> {
         let frame = self.current_frame();
+        /*
         eprintln!("{}.{}: inst {}", &frame.enclosing_class.this_class, &frame.method_name, instruction);
         {
             let stack = &frame.operand_stack;
@@ -372,6 +373,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 }
             }
         }
+        */
         match instruction {
             Instruction::InvokeVirtual(method_ref) => {
                 self.call_method(vm, &**method_ref, CallKind::Virtual);
@@ -413,6 +415,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
             }
             Instruction::GetStatic(field_ref) => {
                 let target_class = vm.resolve_class(&field_ref.class_name).unwrap();
+                eprintln!("field ref: {:?}", field_ref);
                 let value = vm
                     .get_static_field(&target_class, &field_ref.name, &field_ref.desc)
                     .unwrap();
@@ -2756,7 +2759,19 @@ impl PartialEq for NativeJvmObject {
 
 impl JvmObject<NativeJvmValue> for NativeJvmObject {
     fn new_inst(class_file: Arc<ClassFile>) -> Self {
-        panic!("new inst")
+        use crate::compiler::ZVM;
+        unsafe {
+            eprintln!("class file: {:?}", class_file);
+            let layout_id = ZVM.as_ref().unwrap().layouts().get_layout_id(panic!("&class_file.this_name")).expect("TODO: class exists");
+            let layout = ZVM.as_ref().unwrap().layouts().get_layout(layout_id);
+            let struct_layout = layout.as_tagged_zvm(layout_id.0 as u64);
+            let obj = ZVM.as_ref().unwrap().obj_alloc(struct_layout).expect("TODO: alloc succeeds");
+
+            let classfile_ptr = Arc::into_raw(class_file);
+//            obj.offset(-8).write(classfile_ptr);
+
+            std::mem::transmute(obj)
+        }
     }
     fn cls(&self) -> Arc<ClassFile> {
         panic!("array class");
@@ -2962,7 +2977,7 @@ impl Eq for SimpleJvmObject {}
 
 impl JvmObject<SimpleJvmValue> for SimpleJvmObject {
     fn new_inst(class_file: Arc<ClassFile>) -> Self {
-        panic!("new inst")
+        SimpleJvmObject::new_inst(class_file)
     }
     fn cls(&self) -> Arc<ClassFile> {
         panic!("array class");

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::hash::{Hasher, Hash};
-use std::rc::Rc;
+use std::sync::Arc;
 use std::fmt;
 use std::io::{Cursor, Write};
 
@@ -46,19 +46,19 @@ fn validate_inst(handle: &MethodBody, position: u32, raw_inst: &unvalidated::Ins
         unvalidated::Instruction::SIPush(v) => Instruction::SIPush(*v),
         unvalidated::Instruction::Ldc(_idx) => {
             if let Some(const_ref) = handle.const_refs.get(&position) {
-                Instruction::Ldc(Rc::clone(const_ref))
+                Instruction::Ldc(Arc::clone(const_ref))
             } else {
-                Instruction::Ldc(Rc::new(Constant::Class(handle.class_refs[&position].to_string())))
+                Instruction::Ldc(Arc::new(Constant::Class(handle.class_refs[&position].to_string())))
             }
         },
         unvalidated::Instruction::LdcW(_idx) => {
             if let Some(const_ref) = handle.const_refs.get(&position) {
-                Instruction::LdcW(Rc::clone(&const_ref))
+                Instruction::LdcW(Arc::clone(&const_ref))
             } else {
-                Instruction::LdcW(Rc::new(Constant::Class(handle.class_refs[&position].to_string())))
+                Instruction::LdcW(Arc::new(Constant::Class(handle.class_refs[&position].to_string())))
             }
         }
-        unvalidated::Instruction::Ldc2W(_) => Instruction::Ldc2W(Rc::clone(&handle.const_refs[&position])),
+        unvalidated::Instruction::Ldc2W(_) => Instruction::Ldc2W(Arc::clone(&handle.const_refs[&position])),
         unvalidated::Instruction::ILoad(v) => Instruction::ILoad(*v),
         unvalidated::Instruction::LLoad(v) => Instruction::LLoad(*v),
         unvalidated::Instruction::FLoad(v) => Instruction::FLoad(*v),
@@ -216,16 +216,18 @@ fn validate_inst(handle: &MethodBody, position: u32, raw_inst: &unvalidated::Ins
         unvalidated::Instruction::DReturn => Instruction::DReturn,
         unvalidated::Instruction::AReturn => Instruction::AReturn,
         unvalidated::Instruction::Return => Instruction::Return,
-        unvalidated::Instruction::GetStatic(_) => Instruction::GetStatic(Rc::clone(&handle.field_refs[&position])),
-        unvalidated::Instruction::PutStatic(_) => Instruction::PutStatic(Rc::clone(&handle.field_refs[&position])),
-        unvalidated::Instruction::GetField(_) => Instruction::GetField(Rc::clone(&handle.field_refs[&position])),
-        unvalidated::Instruction::PutField(_) => Instruction::PutField(Rc::clone(&handle.field_refs[&position])),
-        unvalidated::Instruction::InvokeVirtual(_) => Instruction::InvokeVirtual(Rc::clone(&handle.method_refs[&position])),
-        unvalidated::Instruction::InvokeSpecial(_) => Instruction::InvokeSpecial(Rc::clone(&handle.method_refs[&position])),
-        unvalidated::Instruction::InvokeStatic(_) => Instruction::InvokeStatic(Rc::clone(&handle.method_refs[&position])),
-        unvalidated::Instruction::InvokeInterface(_, v2) => Instruction::InvokeInterface(Rc::clone(&handle.method_refs[&position]), *v2),
+        unvalidated::Instruction::GetStatic(_) => Instruction::GetStatic(Arc::clone(&handle.field_refs[&position])),
+        unvalidated::Instruction::PutStatic(_) => Instruction::PutStatic(Arc::clone(&handle.field_refs[&position])),
+        unvalidated::Instruction::GetField(_) => Instruction::GetField(Arc::clone(&handle.field_refs[&position])),
+        unvalidated::Instruction::PutField(_) => {
+            Instruction::PutField(Arc::clone(&handle.field_refs[&position]))
+        },
+        unvalidated::Instruction::InvokeVirtual(_) => Instruction::InvokeVirtual(Arc::clone(&handle.method_refs[&position])),
+        unvalidated::Instruction::InvokeSpecial(_) => Instruction::InvokeSpecial(Arc::clone(&handle.method_refs[&position])),
+        unvalidated::Instruction::InvokeStatic(_) => Instruction::InvokeStatic(Arc::clone(&handle.method_refs[&position])),
+        unvalidated::Instruction::InvokeInterface(_, v2) => Instruction::InvokeInterface(Arc::clone(&handle.method_refs[&position]), *v2),
         unvalidated::Instruction::InvokeDynamic(v) => Instruction::InvokeDynamic(*v),
-        unvalidated::Instruction::New(_) => Instruction::New(Rc::clone(&handle.class_refs[&position])),
+        unvalidated::Instruction::New(_) => Instruction::New(Arc::clone(&handle.class_refs[&position])),
         unvalidated::Instruction::ANewArray(v) => Instruction::ANewArray(*v),
         unvalidated::Instruction::NewArray(v) => {
             match v {
@@ -240,11 +242,11 @@ fn validate_inst(handle: &MethodBody, position: u32, raw_inst: &unvalidated::Ins
         }
         unvalidated::Instruction::ArrayLength => Instruction::ArrayLength,
         unvalidated::Instruction::AThrow => Instruction::AThrow,
-        unvalidated::Instruction::CheckCast(_) => Instruction::CheckCast(Rc::clone(&handle.class_refs[&position])),
-        unvalidated::Instruction::InstanceOf(_) => Instruction::InstanceOf(Rc::clone(&handle.class_refs[&position])),
+        unvalidated::Instruction::CheckCast(_) => Instruction::CheckCast(Arc::clone(&handle.class_refs[&position])),
+        unvalidated::Instruction::InstanceOf(_) => Instruction::InstanceOf(Arc::clone(&handle.class_refs[&position])),
         unvalidated::Instruction::MonitorEnter => Instruction::MonitorEnter,
         unvalidated::Instruction::MonitorExit => Instruction::MonitorExit,
-        unvalidated::Instruction::MultiANewArray(_, v) => Instruction::MultiANewArray(Rc::clone(&handle.class_refs[&position]), *v),
+        unvalidated::Instruction::MultiANewArray(_, v) => Instruction::MultiANewArray(Arc::clone(&handle.class_refs[&position]), *v),
         unvalidated::Instruction::IfNull(v) => Instruction::IfNull(*v),
         unvalidated::Instruction::IfNonNull(v) => Instruction::IfNonNull(*v),
         unvalidated::Instruction::GotoW(v) => Instruction::GotoW(*v),
@@ -257,10 +259,11 @@ fn validate_inst(handle: &MethodBody, position: u32, raw_inst: &unvalidated::Ins
 pub struct ClassFile {
     pub(crate) this_class: String,
     pub(crate) super_class: Option<String>,
-    constants: Vec<Rc<Constant>>,
+    constants: Vec<Arc<Constant>>,
     pub(crate) interfaces: Vec<String>,
-    pub(crate) fields: Vec<Rc<FieldHandle>>,
-    methods: Vec<Rc<MethodHandle>>,
+    pub(crate) fields: Vec<Arc<FieldHandle>>,
+    // UGH ITS AN ARC SO I CAN'T WEDGE A BODY IN THERE
+    methods: Vec<Arc<MethodHandle>>,
     // currently support no attributes on classes
     attributes: Vec<()>,
 }
@@ -322,21 +325,21 @@ impl ClassFile {
             })
     }
 
-    pub fn get_method(&self, name: &str, desc: &str) -> Option<Rc<MethodHandle>> {
+    pub fn get_method(&self, name: &str, desc: &str) -> Option<Arc<MethodHandle>> {
         for method in self.methods.iter() {
             if method.name == name && method.desc == desc {
-                return Some(Rc::clone(method));
+                return Some(Arc::clone(method));
             }
         }
 
         None
     }
 
-    pub fn get_methods(&self, name: &str) -> Vec<Rc<MethodHandle>> {
+    pub fn get_methods(&self, name: &str) -> Vec<Arc<MethodHandle>> {
         let mut methods = Vec::new();
         for method in self.methods.iter() {
             if method.name == name {
-                methods.push(Rc::clone(method));
+                methods.push(Arc::clone(method));
             }
         }
         methods
@@ -401,11 +404,11 @@ impl ClassFile {
                 unvalidated::Constant::Long(_) |
                 unvalidated::Constant::Float(_) |
                 unvalidated::Constant::Double(_) => {
-                    constants.push(Rc::new(Constant::validate(raw_class, raw_const)?));
+                    constants.push(Arc::new(Constant::validate(raw_class, raw_const)?));
                 }
                 _ => {
                     // preserve indices for ldc and friends
-                    constants.push(Rc::new(Constant::Integer(0)));
+                    constants.push(Arc::new(Constant::Integer(0)));
                 }
             }
         }
@@ -433,11 +436,11 @@ impl ClassFile {
         }
         let mut fields = Vec::new();
         for raw_field in raw_class.fields.iter() {
-            fields.push(Rc::new(FieldHandle::validate(raw_class, raw_field)?));
+            fields.push(Arc::new(FieldHandle::validate(raw_class, raw_field)?));
         }
         let mut methods = Vec::new();
         for raw_method in raw_class.methods.iter() {
-            methods.push(Rc::new(MethodHandle::validate(raw_class, raw_method)?));
+            methods.push(Arc::new(MethodHandle::validate(raw_class, raw_method)?));
         }
         let attributes = Vec::new();
 
@@ -453,20 +456,20 @@ impl ClassFile {
     }
 }
 
-pub(crate) struct ClassFileRef(Rc<ClassFile>);
+pub(crate) struct ClassFileRef(Arc<ClassFile>);
 
 impl ClassFileRef {
-    pub fn of(reference: &Rc<ClassFile>) -> Self {
-        ClassFileRef(Rc::clone(reference))
+    pub fn of(reference: &Arc<ClassFile>) -> Self {
+        ClassFileRef(Arc::clone(reference))
     }
 }
 
 impl Hash for ClassFileRef {
     fn hash<H: Hasher>(&self, state: &mut H) {
         unsafe {
-            let ptr = Rc::into_raw(Rc::clone(&self.0));
+            let ptr = Arc::into_raw(Arc::clone(&self.0));
             ptr.hash(state);
-            Rc::from_raw(ptr);
+            Arc::from_raw(ptr);
         }
     }
 }
@@ -475,11 +478,11 @@ impl Eq for ClassFileRef {}
 
 impl PartialEq for ClassFileRef {
     fn eq(&self, other: &ClassFileRef) -> bool {
-        Rc::ptr_eq(&self.0, &other.0)
+        Arc::ptr_eq(&self.0, &other.0)
     }
 }
 
-fn assemble_into(inst: crate::class_file::validated::Instruction, bytes: &mut Cursor<Vec<u8>>, method_body: &mut MethodBody) {
+fn assemble_into(inst: crate::class_file::validated::Instruction, bytes: &mut Cursor<Vec<u8>>, method_body: &mut MethodBody, cls: &mut Option<&mut UnvalidatedClassFile>) {
     use crate::class_file::validated::Instruction::*;
 
     let write_res = match inst {
@@ -776,16 +779,29 @@ fn assemble_into(inst: crate::class_file::validated::Instruction, bytes: &mut Cu
         // TODO: assembly needs to include assembling to a sink that holds fieldrefs etc
         GetField(fieldref) => {
             method_body.field_refs.insert(method_body.field_refs.len() as u32 + 1, fieldref);
-            let field_id = method_body.field_refs.len();
+            let field_id = method_body.field_refs.len() as u16;
             bytes.write_all(&[0xb4])
                 .and_then(|_| {
-                    bytes.write_all(&field_id.to_le_bytes())
+                    bytes.write_all(&field_id.to_be_bytes())
                 })
         },
         /*
         GetStatic(ConstantIdx::read_from(data)?) => { bytes.write_all(&[0xb2]) },
         PutStatic(ConstantIdx::read_from(data)?) => { bytes.write_all(&[0xb3]) },
-        PutField(ConstantIdx::read_from(data)?) => { bytes.write_all(&[0xb5]) },
+        */
+        PutField(fieldref) => {
+            method_body.field_refs.insert(bytes.position() as u32 + 3, Arc::clone(&fieldref));
+            let idx = if let Some(cls) = cls {
+                cls.get_fieldref(fieldref.class_name.as_str(), fieldref.name.as_str(), fieldref.desc.as_str())
+            } else {
+                0xffff
+            };
+            bytes.write_all(&[0xb5])
+                .and_then(|_| {
+                    bytes.write_all(&idx.to_be_bytes())
+                })
+        },
+        /*
         InvokeVirtual(ConstantIdx::read_from(data)?) => { bytes.write_all(&[0xb6]) },
         */
         InvokeSpecial(method_ref) => {
@@ -863,7 +879,7 @@ fn assemble_into(inst: crate::class_file::validated::Instruction, bytes: &mut Cu
     write_res.expect("write succeeds");
 }
 
-pub fn assemble(insts: Vec<crate::class_file::validated::Instruction>) -> MethodBody {
+pub fn assemble(insts: Vec<crate::class_file::validated::Instruction>, mut cls: Option<&mut UnvalidatedClassFile>) -> MethodBody {
     let mut result = MethodBody {
         max_stack: 65535,
         max_locals: 65535,
@@ -877,7 +893,7 @@ pub fn assemble(insts: Vec<crate::class_file::validated::Instruction>) -> Method
 
     let mut cursor = Cursor::new(Vec::new());
     for inst in insts {
-        assemble_into(inst, &mut cursor, &mut result);
+        assemble_into(inst, &mut cursor, &mut result, &mut cls);
     }
     result.bytes = cursor.into_inner().into_boxed_slice();
     result

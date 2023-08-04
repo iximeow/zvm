@@ -5,7 +5,7 @@ use zvm::{JvmValue, SimpleJvmValue, VirtualMachine};
 use std::collections::HashMap;
 use std::fs::File;
 use std::path::Path;
-use std::rc::Rc;
+use std::sync::Arc;
 
 fn main() {
     let env = std::env::args().collect::<Vec<_>>();
@@ -36,7 +36,7 @@ fn main() {
         );
         return;
     }
-    let entrypoint = Rc::clone(&entrypoint_methods[0]);
+    let entrypoint = Arc::clone(&entrypoint_methods[0]);
     if let Some(value) = vm.execute(entrypoint, &class_ref, values).unwrap() {
         println!("> {:?}", value);
     } else {
