@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
-use std::rc::Rc;
+use std::sync::Arc;
 use std::str::FromStr;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
@@ -26,16 +26,16 @@ static NEW_COUNT: AtomicUsize = AtomicUsize::new(0);
 struct CallFrame<ValueImpl: JvmValue> {
     offset: u32,
     arguments: Vec<ValueImpl>,
-    body: Rc<MethodBody>,
-    pub enclosing_class: Rc<ClassFile>,
+    body: Arc<MethodBody>,
+    pub enclosing_class: Arc<ClassFile>,
     pub method_name: String,
     operand_stack: Vec<ValueImpl>,
 }
 
 impl<ValueImpl: JvmValue> CallFrame<ValueImpl> {
     pub fn new(
-        body: Rc<MethodBody>,
-        enclosing_class: Rc<ClassFile>,
+        body: Arc<MethodBody>,
+        enclosing_class: Arc<ClassFile>,
         method_name: String,
         mut arguments: Vec<ValueImpl>,
     ) -> Self {
@@ -84,8 +84,8 @@ pub struct VMState<ValueImpl: JvmValue> {
 #[allow(dead_code)]
 impl<ValueImpl: JvmValue> VMState<ValueImpl> {
     pub fn new(
-        code: Rc<MethodBody>,
-        method_class: Rc<ClassFile>,
+        code: Arc<MethodBody>,
+        method_class: Arc<ClassFile>,
         method_name: String,
         initial_args: Vec<ValueImpl>,
     ) -> Self {
@@ -122,8 +122,8 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
 
     pub fn enter(
         &mut self,
-        body: Rc<MethodBody>,
-        enclosing_class: Rc<ClassFile>,
+        body: Arc<MethodBody>,
+        enclosing_class: Arc<ClassFile>,
         method_name: &str,
         arguments: Vec<ValueImpl>,
     ) {
@@ -324,10 +324,10 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 vm.resolve_class(&method.class_name).unwrap()
             }
         };
-        let init_class = Rc::clone(&current_class);
+        let init_class = Arc::clone(&current_class);
         loop {
-            let target_class = Rc::clone(&current_class);
-            if let Some(native_method) = vm.get_native_method(Rc::clone(&target_class), format!("{}{}", &method.name, &method.desc)) {
+            let target_class = Arc::clone(&current_class);
+            if let Some(native_method) = vm.get_native_method(Arc::clone(&target_class), format!("{}{}", &method.name, &method.desc)) {
                 native_method(self, vm).expect("native method call works");
                 break;
             } else if let Some(handle) = target_class.get_method(&method.name, &method.desc) {
@@ -443,7 +443,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
 //                    println!("getting the field, inst: {}", inst_class.this_class);
                     /*
                     vm
-                        .get_instance_field(Rc::clone(&inst_class), Rc::clone(&fields), &field_ref.name, &field_ref.desc)
+                        .get_instance_field(Arc::clone(&inst_class), Arc::clone(&fields), &field_ref.name, &field_ref.desc)
                         .unwrap()
                     */
                 } else {
@@ -468,7 +468,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                     obj.set_field(&field_ref.name, value);
                     /*
                     vm
-                        .put_instance_field(Rc::clone(&inst_class), Rc::clone(&fields), &field_ref.name, &field_ref.desc, value);
+                        .put_instance_field(Arc::clone(&inst_class), Arc::clone(&fields), &field_ref.name, &field_ref.desc, value);
                     */
                 } else {
                     panic!("should be an object, was {:?}, getting {:?}", top, field_ref);
@@ -2475,7 +2475,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                     }
                 };
                 loop {
-                    let cls = Rc::clone(&item_class);
+                    let cls = Arc::clone(&item_class);
                     if cls.this_class.as_str() == name.as_str() {
                         stack.push(ValueImpl::integer(1));
                         return Ok(None);
@@ -2521,7 +2521,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 };
 
                 loop {
-                    let cls = Rc::clone(&check_class);
+                    let cls = Arc::clone(&check_class);
                     eprintln!("checking {}, interfaces {:?}, super={:?}", cls.this_class, cls.interfaces, cls.super_class);
                     if cls.this_class.as_str() == name {
                         return Ok(None);
@@ -2570,9 +2570,9 @@ pub enum SimpleJvmValue {
     Long(i64),
     Float(f32),
     Double(f64),
-    // Array(Rc<RefCell<Box<[Value]>>>),
+    // Array(Arc<RefCell<Box<[Value]>>>),
     Array(SimpleJvmArray),
-    String(Rc<Vec<u8>>),
+    String(Arc<Vec<u8>>),
     Object(SimpleJvmObject),
     Null(String), // Null, of type `String`
     Uninitialized,
@@ -2614,7 +2614,7 @@ impl Clone for SimpleJvmValue {
             Self::Float(v) => Self::Float(*v),
             Self::Double(v) => Self::Double(*v),
             Self::Array(v) => Self::Array(v.new_ref()),
-            Self::String(v) => Self::String(Rc::clone(v)),
+            Self::String(v) => Self::String(Arc::clone(v)),
             Self::Object(obj) => Self::Object(obj.new_ref()),
             Self::Null(v) => Self::Null(v.clone()),
             Self::Uninitialized => Self::Uninitialized,
@@ -2634,9 +2634,9 @@ impl Hash for SimpleJvmValue {
             },
             Self::String(v) => {
                 unsafe {
-                    let ptr = Rc::into_raw(Rc::clone(v));
+                    let ptr = Arc::into_raw(Arc::clone(v));
                     ptr.hash(state);
-                    Rc::from_raw(ptr);
+                    Arc::from_raw(ptr);
                 }
             },
             Self::Object(obj) => {
@@ -2668,16 +2668,233 @@ impl PartialEq for SimpleJvmValue {
     }
 }
 
+// TODO: do copy/clone need to be ... more?
+#[derive(Copy, Clone)]
+// TODO: eq between bytes and references seems wrong. required that caller validates types first?
+#[derive(Eq, PartialEq)]
+pub struct NativeJvmValue {
+    // is it a byte, int, short, float, double, or reference? you decide!
+    pub(crate) data: [u8; 8],
+}
+
+impl fmt::Debug for NativeJvmValue {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // TODO: smarter formatter?
+        write!(f, "{:x?}", &self.data)
+    }
+}
+
+impl Hash for NativeJvmValue {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.data.hash(state);
+    }
+}
+
+#[repr(transparent)]
+pub struct NativeJvmObject {
+    // a pointer to some variably-sized alloc. there is a header before this that consists of a zvm
+    // layout id (u64) and zvm class file pointer (u64). there will probably be a refcount as the
+    // first field of each object ... eventually. 
+    data: *const (),
+}
+
+impl NativeJvmObject {
+    extern "C" fn zvm_layout_id(&self) -> crate::compiler::ir::LayoutId {
+        unsafe {
+            std::ptr::read_volatile(
+                (self.data as *const u8).offset(-2 * std::mem::size_of::<usize>() as isize)
+                    as *const crate::compiler::ir::LayoutId
+            )
+        }
+    }
+    // THIS IS WRONG, THERE IS NOT ACTUALLY AN ARC OF ANYTHING HERE. IT'S THE LAYOUT ID.
+    extern "C" fn zvm_vtable(&self) -> Arc<ZvmObjectVTable> {
+        let table_ref: &Arc<ZvmObjectVTable> = unsafe {
+            std::ptr::read_volatile(
+                (self.data as *const u8).offset(-2 * std::mem::size_of::<usize>() as isize)
+                    as *const *const Arc<ZvmObjectVTable>
+            )
+                .as_ref()
+                .unwrap()
+        };
+        // TODO: careful lifetime implications: `self` has to outlive any method it's passed into?
+        Arc::clone(table_ref)
+    }
+}
+
+struct ZvmObjectVTable {
+    layout_id: crate::compiler::ir::LayoutId,
+    instance_eq: extern "C" fn(*const (), *const ()) -> bool,
+    instance_hash: extern "C" fn(*const ()) -> usize,
+}
+
+impl fmt::Debug for NativeJvmObject {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "native object @ {:#p}", self.data)
+    }
+}
+
+impl Hash for NativeJvmObject {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        (self.zvm_vtable().instance_hash)(self.data).hash(state)
+    }
+}
+
+impl Eq for NativeJvmObject {
+}
+impl PartialEq for NativeJvmObject {
+    fn eq(&self, other: &Self) -> bool {
+        let self_vtable = self.zvm_vtable();
+        let other_vtable = other.zvm_vtable();
+        if Arc::ptr_eq(&self_vtable, &other_vtable) {
+            (self_vtable.instance_eq)(self.data, other.data)
+        } else {
+            false
+        }
+    }
+}
+
+impl JvmObject<NativeJvmValue> for NativeJvmObject {
+    fn new_inst(class_file: Arc<ClassFile>) -> Self {
+        panic!("new inst")
+    }
+    fn cls(&self) -> Arc<ClassFile> {
+        panic!("array class");
+    }
+    fn get_field(&self, field: &str) -> NativeJvmValue {
+        let layout_id = self.zvm_layout_id();
+        let field = unsafe { crate::compiler::ZVM.as_ref().unwrap().layouts().get_field_in_layout(
+            layout_id,
+            field,
+        ) };
+        let field_ptr = unsafe {
+            (self.data as *const u8).offset(field.offset as isize) as *const NativeJvmValue
+        };
+        // TODO: if NativeJvmValue were ever precisely-sized (say, 1-byte for a byte), this would
+        // over-read. for now it's "okay"
+        unsafe { std::ptr::read_volatile(field_ptr) }
+    }
+    fn set_field(&self, field: &str, v: NativeJvmValue) {
+        eprintln!("uh oh");
+        let layout_id = self.zvm_layout_id();
+        let field_name = field;
+        let field = unsafe { crate::compiler::ZVM.as_ref().unwrap().layouts().get_field_in_layout(
+            layout_id,
+            field,
+        ) };
+        eprintln!("got field in layout: {} is at {}", field_name, field.offset);
+        let field_ptr = unsafe {
+            (self.data as *mut u8).offset(field.offset as isize) as *mut NativeJvmValue
+        };
+        // TODO: if NativeJvmValue were ever precisely-sized (say, 1-byte for a byte), this would
+        // over-write. for now it's "okay"
+        unsafe { std::ptr::write_volatile(field_ptr, v) }
+    }
+    fn internal_obj_id(&self) -> u64 {
+        self.data as u64
+    }
+    fn new_ref(&self) -> Self {
+        Self { data: self.data }
+    }
+}
+
+#[repr(transparent)]
+pub struct NativeJvmArray {
+    // a pointer to some variably-sized alloc. there is a header before this that consists of a zvm
+    // layout id (u64) and zvm class file pointer (u64). the first field is a usize length of this
+    // array, followed by that many items.
+    data: *const NativeJvmArrayData,
+}
+
+impl fmt::Debug for NativeJvmArray {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "NativeJvmArray {{ data: {:p} }}", self.data)
+    }
+}
+
+impl PartialEq for NativeJvmArray {
+    fn eq(&self, other: &Self) -> bool {
+        // TODO: deep compares? or is reference equality correct here...
+        self.data == other.data
+    }
+}
+
+impl Eq for NativeJvmArray {}
+
+impl Hash for NativeJvmArray {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        unsafe { self.data.as_ref() }.unwrap().hash(state)
+    }
+}
+
+pub struct NativeJvmArrayData {
+    len: usize,
+    // NOTE: THIS IS NOT ACTUALLY A ONE-ITEM ARRAY. instantiations of NativeJvmArrayData are backed
+    // by an alloc large enough for `len` and `len`-many elements in this array.
+    data: [NativeJvmValue; 1]
+}
+
+impl Hash for NativeJvmArrayData {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+//        self.header().hash(state);
+        self.len.hash(state);
+        // TODO: hash items in data
+    }
+}
+
+impl JvmArray<NativeJvmValue> for NativeJvmArray {
+    fn len(&self) -> usize {
+        unsafe { self.data.as_ref() }.unwrap().len
+    }
+    fn cls(&self) -> Arc<ClassFile> {
+        panic!("no cls")
+    }
+    fn get_elem(&self, idx: usize) -> Option<&NativeJvmValue> {
+        Some(unsafe {
+             ((self.data as *const usize)
+                .offset(1)
+                as *const NativeJvmValue)
+                .offset(idx as isize)
+                .as_ref()
+                .unwrap()
+        })
+    }
+    fn get_elem_mut(&self, idx: usize) -> Option<&mut NativeJvmValue> {
+        Some(unsafe {
+             ((self.data as *const usize)
+                .offset(1)
+                as *const NativeJvmValue
+                as *mut NativeJvmValue)
+                .offset(idx as isize)
+                .as_mut()
+                .unwrap()
+        })
+    }
+    unsafe fn as_slice<'data, T>(&'data self) -> Option<&'data [T]> {
+        panic!("ref of refcell.. uh oh...");
+    }
+    fn internal_obj_id(&self) -> u64 {
+        self.data as usize as u64
+    }
+    fn new_ref(&self) -> Self {
+        panic!("aa")
+    }
+    fn new_array(class_file: Arc<ClassFile>, data: Box<[NativeJvmValue]>) -> Self {
+        panic!("bb")
+    }
+}
+
+
 #[derive(Debug)]
 pub struct SimpleJvmArray {
-    cls: Rc<ClassFile>,
-    data: Rc<RefCell<Box<[SimpleJvmValue]>>>
+    cls: Arc<ClassFile>,
+    data: Arc<RefCell<Box<[SimpleJvmValue]>>>
 }
 
 impl Hash for SimpleJvmArray {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        (Rc::as_ptr(&self.cls) as u64).hash(state);
-        (Rc::as_ptr(&self.data) as u64).hash(state);
+        (Arc::as_ptr(&self.cls) as u64).hash(state);
+        (Arc::as_ptr(&self.data) as u64).hash(state);
     }
 }
 
@@ -2693,8 +2910,8 @@ impl JvmArray<SimpleJvmValue> for SimpleJvmArray {
     fn len(&self) -> usize {
         self.data.borrow().len()
     }
-    fn cls(&self) -> Rc<ClassFile> {
-        Rc::clone(&self.cls)
+    fn cls(&self) -> Arc<ClassFile> {
+        Arc::clone(&self.cls)
     }
     fn get_elem(&self, idx: usize) -> Option<&SimpleJvmValue> {
         panic!("ref of refcell.. uh oh...");
@@ -2710,11 +2927,11 @@ impl JvmArray<SimpleJvmValue> for SimpleJvmArray {
     }
     fn new_ref(&self) -> Self {
         Self {
-            cls: Rc::clone(&self.cls),
-            data: Rc::clone(&self.data),
+            cls: Arc::clone(&self.cls),
+            data: Arc::clone(&self.data),
         }
     }
-    fn new_array(class_file: Rc<ClassFile>, data: Box<[SimpleJvmValue]>) -> Self {
+    fn new_array(class_file: Arc<ClassFile>, data: Box<[SimpleJvmValue]>) -> Self {
         Self {
             cls: class_file,
             data: panic!("todo: do something with argument")
@@ -2724,14 +2941,14 @@ impl JvmArray<SimpleJvmValue> for SimpleJvmArray {
 
 #[derive(Debug)]
 pub struct SimpleJvmObject {
-    fields: Rc<RefCell<HashMap<String, SimpleJvmValue>>>,
-    cls: Rc<ClassFile>,
+    fields: Arc<RefCell<HashMap<String, SimpleJvmValue>>>,
+    cls: Arc<ClassFile>,
 }
 
 impl Hash for SimpleJvmObject {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        (Rc::as_ptr(&self.fields) as u64).hash(state);
-        (Rc::as_ptr(&self.cls) as u64).hash(state);
+        (Arc::as_ptr(&self.fields) as u64).hash(state);
+        (Arc::as_ptr(&self.cls) as u64).hash(state);
     }
 }
 
@@ -2744,10 +2961,10 @@ impl PartialEq for SimpleJvmObject {
 impl Eq for SimpleJvmObject {}
 
 impl JvmObject<SimpleJvmValue> for SimpleJvmObject {
-    fn new_inst(class_file: Rc<ClassFile>) -> Self {
+    fn new_inst(class_file: Arc<ClassFile>) -> Self {
         panic!("new inst")
     }
-    fn cls(&self) -> Rc<ClassFile> {
+    fn cls(&self) -> Arc<ClassFile> {
         panic!("array class");
     }
     fn get_field(&self, field: &str) -> SimpleJvmValue {
@@ -2761,27 +2978,27 @@ impl JvmObject<SimpleJvmValue> for SimpleJvmObject {
     }
     fn new_ref(&self) -> Self {
         Self {
-            fields: Rc::clone(&self.fields),
-            cls: Rc::clone(&self.cls),
+            fields: Arc::clone(&self.fields),
+            cls: Arc::clone(&self.cls),
         }
     }
 }
 
 impl SimpleJvmObject {
-    pub fn new_with_data(class: Rc<ClassFile>, data: HashMap<String, SimpleJvmValue>) -> Self {
+    pub fn new_with_data(class: Arc<ClassFile>, data: HashMap<String, SimpleJvmValue>) -> Self {
         SimpleJvmObject {
-            fields: Rc::new(RefCell::new(data)),
+            fields: Arc::new(RefCell::new(data)),
             cls: class,
         }
     }
-    pub fn create(class: Rc<ClassFile>) -> Self {
+    pub fn create(class: Arc<ClassFile>) -> Self {
         SimpleJvmObject {
-            fields: Rc::new(RefCell::new(HashMap::new())),
+            fields: Arc::new(RefCell::new(HashMap::new())),
             cls: class,
         }
     }
 
-    pub fn new_inst(class_file: Rc<ClassFile>) -> SimpleJvmObject {
+    pub fn new_inst(class_file: Arc<ClassFile>) -> SimpleJvmObject {
         let mut fields = HashMap::new();
         // TODO: respect type and access flags of fields
         for field in class_file.fields.iter() {
@@ -2792,7 +3009,99 @@ impl SimpleJvmObject {
                 ),
             );
         }
-        SimpleJvmObject { fields: Rc::new(RefCell::new(fields)), cls: class_file }
+        SimpleJvmObject { fields: Arc::new(RefCell::new(fields)), cls: class_file }
+    }
+}
+
+impl JvmValue for NativeJvmValue  {
+    type ArrayTy = NativeJvmArray;
+    type ObjectTy = NativeJvmObject;
+
+    fn as_object(&self) -> Option<&Self::ObjectTy> {
+        Some(unsafe { std::mem::transmute::<&[u8; 8], &Self::ObjectTy>(&self.data) })
+    }
+    fn as_array(&self) -> Option<&Self::ArrayTy> {
+        Some(unsafe { std::mem::transmute::<&[u8; 8], &Self::ArrayTy>(&self.data) })
+    }
+    fn as_integer(&self) -> Option<&i32> {
+        Some(unsafe { std::mem::transmute::<&[u8; 4], &i32>(&[
+            self.data[0],
+            self.data[1],
+            self.data[2],
+            self.data[3],
+        ]) })
+    }
+    fn as_long(&self) -> Option<&i64> {
+        Some(unsafe { std::mem::transmute::<&[u8; 8], &i64>(&[
+            self.data[0],
+            self.data[1],
+            self.data[2],
+            self.data[3],
+            self.data[4],
+            self.data[5],
+            self.data[6],
+            self.data[7],
+        ]) })
+    }
+    fn as_float(&self) -> Option<&f32> {
+        None
+    }
+    fn as_double(&self) -> Option<&f64> {
+        Some(unsafe { std::mem::transmute::<&[u8; 8], &f64>(&[
+            self.data[0],
+            self.data[1],
+            self.data[2],
+            self.data[3],
+            self.data[4],
+            self.data[5],
+            self.data[6],
+            self.data[7],
+        ]) })
+
+    }
+    // `str` is the name of the class this null is an instance of. does that even make sense for
+    // jvm semantics? i dunno
+    fn as_null(&self) -> Option<&str> {
+        None
+    }
+    fn is_uninitialized(&self) -> bool {
+        false
+    }
+
+    fn object(v: Self::ObjectTy) -> Self {
+        unsafe { std::mem::transmute::<Self::ObjectTy, Self>(v) }
+    }
+
+    fn array(v: Self::ArrayTy) -> Self {
+        unsafe { std::mem::transmute::<Self::ArrayTy, Self>(v) }
+    }
+
+    fn integer(v: i32) -> Self {
+        let data = (v as i64).to_le_bytes();
+        NativeJvmValue { data }
+    }
+
+    fn long(v: i64) -> Self {
+        let data = v.to_le_bytes();
+        NativeJvmValue { data }
+    }
+
+    fn float(v: f32) -> Self {
+        unimplemented!()
+    }
+
+    fn double(v: f64) -> Self {
+        unimplemented!()
+    }
+
+    fn null(s: String) -> Self {
+        unimplemented!()
+    }
+
+    fn uninitialized() -> Self {
+        NativeJvmValue {
+            data: [0; 8],
+        }
     }
 }
 
@@ -2944,7 +3253,7 @@ pub trait JvmValue: fmt::Debug + Sized + PartialEq + Eq + Hash + Clone {
     }
 
 
-    fn object_with_data(class_file: Rc<ClassFile>, fields: HashMap<String, Self>) -> Self {
+    fn object_with_data(class_file: Arc<ClassFile>, fields: HashMap<String, Self>) -> Self {
         let mut obj = Self::ObjectTy::new_inst(class_file);
         for (k, v) in fields.into_iter() {
             obj.set_field(&k, v)
@@ -2952,7 +3261,7 @@ pub trait JvmValue: fmt::Debug + Sized + PartialEq + Eq + Hash + Clone {
         Self::object(obj)
     }
 
-    fn array_with_data(class_file: Rc<ClassFile>, elems: Box<[Self]>) -> Self {
+    fn array_with_data(class_file: Arc<ClassFile>, elems: Box<[Self]>) -> Self {
         Self::array(Self::ArrayTy::new_array(class_file, elems))
     }
 
@@ -2984,7 +3293,7 @@ pub trait JvmValue: fmt::Debug + Sized + PartialEq + Eq + Hash + Clone {
 
         if s.len() >= 2 && s.starts_with("\"") && s.ends_with("\"") {
             panic!("string");
-//            return Some(Self::String(Rc::new(s[1..][..s.len() - 2].bytes().collect())));
+//            return Some(Self::String(Arc::new(s[1..][..s.len() - 2].bytes().collect())));
         }
 
         return None;
@@ -2992,8 +3301,8 @@ pub trait JvmValue: fmt::Debug + Sized + PartialEq + Eq + Hash + Clone {
 }
 
 pub trait JvmObject<ValueTy: JvmValue>: fmt::Debug + Sized + PartialEq + Eq + Hash {
-    fn new_inst(class_file: Rc<ClassFile>) -> Self;
-    fn cls(&self) -> Rc<ClassFile>;
+    fn new_inst(class_file: Arc<ClassFile>) -> Self;
+    fn cls(&self) -> Arc<ClassFile>;
     fn get_field(&self, field: &str) -> ValueTy;
     fn set_field(&self, field: &str, v: ValueTy);
     fn internal_obj_id(&self) -> u64;
@@ -3001,8 +3310,8 @@ pub trait JvmObject<ValueTy: JvmValue>: fmt::Debug + Sized + PartialEq + Eq + Ha
 }
 
 pub trait JvmArray<ValueTy: JvmValue>: fmt::Debug + Sized + PartialEq + Eq + Hash {
-    fn new_array(class_file: Rc<ClassFile>, data: Box<[ValueTy]>) -> Self;
-    fn cls(&self) -> Rc<ClassFile>;
+    fn new_array(class_file: Arc<ClassFile>, data: Box<[ValueTy]>) -> Self;
+    fn cls(&self) -> Arc<ClassFile>;
     fn get_elem(&self, idx: usize) -> Option<&ValueTy>;
     fn get_elem_mut(&self, idx: usize) -> Option<&mut ValueTy>;
     fn len(&self) -> usize;
@@ -3043,7 +3352,7 @@ enum NativeObject {
 enum NativeImplKey {
     // name is not included: this is only to describe `<clinit>()V` functions.
     Initializer { cls: String },
-    Method { cls: Rc<ClassFile>, declaration: String },
+    Method { cls: Arc<ClassFile>, declaration: String },
 }
 
 impl Eq for NativeImplKey {}
@@ -3073,7 +3382,7 @@ impl Hash for NativeImplKey {
             }
             NativeImplKey::Method { cls, declaration } => {
                 2.hash(state);
-                Rc::as_ptr(cls).hash(state);
+                Arc::as_ptr(cls).hash(state);
                 declaration.hash(state);
             }
         }
@@ -3085,20 +3394,20 @@ impl NativeImplKey {
         NativeImplKey::Initializer { cls: s.to_owned() }
     }
 
-    fn method(cls: &Rc<ClassFile>, decl: String) -> Self {
+    fn method(cls: &Arc<ClassFile>, decl: String) -> Self {
         NativeImplKey::Method {
-            cls: Rc::clone(cls),
+            cls: Arc::clone(cls),
             declaration: decl
         }
     }
 }
 
 pub struct VirtualMachine<ValueImpl: JvmValue> {
-    classes: HashMap<String, Rc<ClassFile>>,
+    classes: HashMap<String, Arc<ClassFile>>,
     native_impls: HashMap<NativeImplKey, fn(&mut VMState<ValueImpl>, &mut VirtualMachine<ValueImpl>) -> Result<(), VMError>>,
     class_instances: HashMap<String, ValueImpl>, // they're all objects, but we use the generic ValueImpl here
     static_instances: HashMap<ClassFileRef, HashMap<String, ValueImpl>>,
-    native_instances: HashMap<ValueRef<ValueImpl>, RefCell<NativeObject>>, // TODO: should probably be an ObjectImpl?
+//    native_instances: HashMap<ValueRef<ValueImpl>, RefCell<NativeObject>>, // TODO: should probably be an ObjectImpl?
     classpath: Vec<PathBuf>,
     // TODO: actually reuse the VirtualMachine for <clinit> calls - mutually recursive classes
     // would loop and crash right now, among other issues..
@@ -3122,7 +3431,7 @@ impl<ValueImpl: JvmValue> VirtualMachine<ValueImpl> {
             native_impls: HashMap::new(),
             class_instances: HashMap::new(),
             static_instances: HashMap::new(),
-            native_instances: HashMap::new(),
+//            native_instances: HashMap::new(),
             classpath: initial_classpath,
             first_run: true,
         }
@@ -3130,7 +3439,7 @@ impl<ValueImpl: JvmValue> VirtualMachine<ValueImpl> {
 
     fn has_instance_field(
         &mut self,
-        instance_class: &Rc<ClassFile>,
+        instance_class: &Arc<ClassFile>,
         name: &str,
     ) -> bool {
 //        eprintln!("checking class {} for {}", instance_class.this_class, name);
@@ -3147,7 +3456,7 @@ impl<ValueImpl: JvmValue> VirtualMachine<ValueImpl> {
 
     fn is_exception(
         &mut self,
-        cls: &Rc<ClassFile>,
+        cls: &Arc<ClassFile>,
         name: &str,
     ) -> bool {
         if cls.this_class == name {
@@ -3162,8 +3471,8 @@ impl<ValueImpl: JvmValue> VirtualMachine<ValueImpl> {
 
     fn get_instance_field(
         &mut self,
-        instance_class: Rc<ClassFile>,
-        fields: Rc<RefCell<HashMap<String, ValueImpl>>>,
+        instance_class: Arc<ClassFile>,
+        fields: Arc<RefCell<HashMap<String, ValueImpl>>>,
         name: &str,
         ty: &str,
     ) -> Option<ValueImpl> {
@@ -3178,8 +3487,8 @@ impl<ValueImpl: JvmValue> VirtualMachine<ValueImpl> {
 
     fn put_instance_field(
         &mut self,
-        instance_class: Rc<ClassFile>,
-        fields: Rc<RefCell<HashMap<String, ValueImpl>>>,
+        instance_class: Arc<ClassFile>,
+        fields: Arc<RefCell<HashMap<String, ValueImpl>>>,
         name: &str,
         ty: &str,
         value: ValueImpl,
@@ -3193,7 +3502,7 @@ impl<ValueImpl: JvmValue> VirtualMachine<ValueImpl> {
 
     fn get_static_field(
         &mut self,
-        class_ref: &Rc<ClassFile>,
+        class_ref: &Arc<ClassFile>,
         name: &str,
         ty: &str,
     ) -> Option<ValueImpl> {
@@ -3212,7 +3521,7 @@ impl<ValueImpl: JvmValue> VirtualMachine<ValueImpl> {
 
     fn put_static_field(
         &mut self,
-        class_ref: &Rc<ClassFile>,
+        class_ref: &Arc<ClassFile>,
         name: &str,
         ty: &str,
         value: ValueImpl,
@@ -3228,10 +3537,10 @@ impl<ValueImpl: JvmValue> VirtualMachine<ValueImpl> {
         }
     }
 
-    pub fn get_native_method(&self, cls: Rc<ClassFile>, descriptor: String) -> Option<fn(&mut VMState<ValueImpl>, &mut VirtualMachine<ValueImpl>) -> Result<(), VMError>> {
+    pub fn get_native_method(&self, cls: Arc<ClassFile>, descriptor: String) -> Option<fn(&mut VMState<ValueImpl>, &mut VirtualMachine<ValueImpl>) -> Result<(), VMError>> {
         if descriptor == "<clinit>()V" {
             // ok this arm probably isn't reachable huh, initializers are called before there's a
-            // registered `Rc<ClassFile>` to be looking up `this_class` on ...
+            // registered `Arc<ClassFile>` to be looking up `this_class` on ...
             eprintln!("get_native_method for clinit? seems unlikely");
             self.native_impls.get(&NativeImplKey::initializer(&cls.this_class.to_string())).cloned()
         } else {
@@ -3239,10 +3548,10 @@ impl<ValueImpl: JvmValue> VirtualMachine<ValueImpl> {
         }
     }
 
-    pub fn resolve_class(&mut self, class_name: &str) -> Result<Rc<ClassFile>, VMError> {
+    pub fn resolve_class(&mut self, class_name: &str) -> Result<Arc<ClassFile>, VMError> {
 //        eprintln!("resolve class: {}", referent);
         if let Some(cls) = self.classes.get(class_name) {
-            return Ok(Rc::clone(cls));
+            return Ok(Arc::clone(cls));
         }
 
         let (new_class, patches) = if let Some((new_class, patches)) = jvm::synthetic::build_synthetic_class(class_name) {
@@ -3279,23 +3588,23 @@ impl<ValueImpl: JvmValue> VirtualMachine<ValueImpl> {
         class_name: String,
         class_file: ClassFile,
         native_methods: HashMap<(String, String), crate::virtual_machine::jvm::synthetic::NativeJvmFn<ValueImpl>>,
-    ) -> Result<Rc<ClassFile>, VMError> {
+    ) -> Result<Arc<ClassFile>, VMError> {
         eprintln!("registering class {}", class_name);
-        let rc = Rc::new(class_file);
-        self.classes.insert(class_name.clone(), Rc::clone(&rc));
+        let rc = Arc::new(class_file);
+        self.classes.insert(class_name.clone(), Arc::clone(&rc));
 
         for ((method, sig), impl_fn) in native_methods.into_iter() {
             if method == "<clinit>" && sig == "()V" {
                 self.native_impls.insert(NativeImplKey::initializer(&class_name), impl_fn);
             } else {
-                self.native_impls.insert(NativeImplKey::method(&Rc::clone(&rc), format!("{}{}", method, sig)), impl_fn);
+                self.native_impls.insert(NativeImplKey::method(&Arc::clone(&rc), format!("{}{}", method, sig)), impl_fn);
             }
         }
 
         if let Some(native_method) = self.native_impls.get(&NativeImplKey::initializer(&class_name)) {
             let mut state = VMState::new(
-                Rc::new(MethodBody::native()),
-                Rc::clone(&rc),
+                Arc::new(MethodBody::native()),
+                Arc::clone(&rc),
                 "<clinit>".to_string(),
                 vec![],
             );
@@ -3303,8 +3612,8 @@ impl<ValueImpl: JvmValue> VirtualMachine<ValueImpl> {
         } else if let Some(method) = rc.get_method("<clinit>", "()V") {
             if method.access().is_native() {
                 let mut state = VMState::new(
-                    Rc::new(MethodBody::native()),
-                    Rc::clone(&rc),
+                    Arc::new(MethodBody::native()),
+                    Arc::clone(&rc),
                     "<clinit>".to_string(),
                     vec![],
                 );
@@ -3312,8 +3621,8 @@ impl<ValueImpl: JvmValue> VirtualMachine<ValueImpl> {
                 native_method(&mut state, self)?;
             } else {
                 let mut state = VMState::new(
-                    Rc::clone(method.body.as_ref().expect("clinit has a body")),
-                    Rc::clone(&rc),
+                    Arc::clone(method.body.as_ref().expect("clinit has a body")),
+                    Arc::clone(&rc),
                     "<clinit>".to_string(),
                     vec![],
                 );
@@ -3331,8 +3640,8 @@ impl<ValueImpl: JvmValue> VirtualMachine<ValueImpl> {
 
     pub fn execute(
         &mut self,
-        method: Rc<MethodHandle>,
-        class_ref: &Rc<ClassFile>,
+        method: Arc<MethodHandle>,
+        class_ref: &Arc<ClassFile>,
         args: Vec<ValueImpl>,
     ) -> Result<Option<ValueImpl>, VMError> {
         if !method.access().is_static() {
@@ -3353,11 +3662,11 @@ impl<ValueImpl: JvmValue> VirtualMachine<ValueImpl> {
 
         // TODO: verify arguments? verify that `method` does not take arguments??
 
-        let mut state = VMState::new(Rc::clone(code), Rc::clone(class_ref), method.name.to_string(), args);
+        let mut state = VMState::new(Arc::clone(code), Arc::clone(class_ref), method.name.to_string(), args);
         self.interpret(&mut state)
     }
 
-    fn interpret(&mut self, state: &mut VMState<ValueImpl>) -> Result<Option<ValueImpl>, VMError> {
+    pub fn interpret(&mut self, state: &mut VMState<ValueImpl>) -> Result<Option<ValueImpl>, VMError> {
         let first_run = self.first_run;
 
         // magic incantation to awaken the machine
@@ -3450,6 +3759,7 @@ impl<ValueImpl: JvmValue> VirtualMachine<ValueImpl> {
 
 use crate::compiler::ir;
 
+#[derive(Debug)]
 pub struct Arg { pub ty: ir::ValueType }
 
 #[allow(unused_assignments)]
@@ -3555,8 +3865,8 @@ pub fn parse_signature_string(signature: &str) -> Option<(Vec<Arg>, Option<Arg>)
 fn interpreted_method_call<ValueImpl: JvmValue>(
     state: &mut VMState<ValueImpl>,
     _vm: &mut VirtualMachine<ValueImpl>,
-    method: Rc<MethodHandle>,
-    method_class: Rc<ClassFile>,
+    method: Arc<MethodHandle>,
+    method_class: Arc<ClassFile>,
     method_type: &str,
     kind: CallKind,
 ) -> Result<(), VMError> {
@@ -3578,7 +3888,7 @@ fn interpreted_method_call<ValueImpl: JvmValue>(
     }
 
     state.enter(
-        Rc::clone(method.body.as_ref().expect("method has a body")),
+        Arc::clone(method.body.as_ref().expect("method has a body")),
         method_class,
         &method.name,
         real_args.drain(..).collect(),

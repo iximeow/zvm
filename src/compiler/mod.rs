@@ -1,8 +1,12 @@
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::virtual_machine::Arg;
+use crate::virtual_machine::NativeJvmValue;
 use crate::class_file::validated::ClassFile;
+
+use crate::{SimpleJvmValue, VirtualMachine, VMState};
 
 pub mod ir {
     use super::StructLayout;
@@ -128,6 +132,7 @@ pub mod ir {
         IReturn { retval: ValueRef },
         TypeAdjust { value: ValueRef, current_ty: ValueType, result: ValueRef, new_ty: ValueType },
         GetField { result: ValueRef, object: ValueRef, field_desc: LayoutFieldRef },
+        SetField { target: ValueRef, value: ValueRef, field_desc: LayoutFieldRef },
         Alloc { result: ValueRef, layout_id: LayoutId },
         Dealloc { value: ValueRef },
         CallImport { result: Option<ValueRef>, name: String, sig: (Vec<ValueType>, Option<ValueType>), args: Vec<ValueRef> },
@@ -211,8 +216,20 @@ pub mod ir {
         // supports inline structs at some point?
         // pub size: i32,
         pub ty: ValueType,
-        pub name: String,
+        pub name: Option<String>,
     }
+
+    pub(crate) const OBJ_HEADER_ZVM_LAYOUT_ID: LayoutFieldRef = LayoutFieldRef {
+        offset: -16,
+        ty: ValueType::Long,
+        name: None,
+    };
+
+    pub(crate) const OBJ_HEADER_CLASSFILE_REF: LayoutFieldRef = LayoutFieldRef {
+        offset: -8,
+        ty: ValueType::Long,
+        name: None,
+    };
 
     #[derive(Debug)]
     pub struct LayoutsInfo {
@@ -251,11 +268,12 @@ pub mod ir {
         }
 
         pub fn get_field_in_layout(&self, layout_id: LayoutId, name: &str) -> &LayoutFieldRef {
+            eprintln!("finding {} in {:?}", name, self.get_layout(layout_id).members);
             self
                 .get_layout(layout_id)
                 .members
                 .iter()
-                .find(|member| member.name == name)
+                .find(|member| member.name.as_ref().map(|x| x.as_str()) == Some(name))
                 .expect("TODO: compile error; expect field exists..")
         }
     }
@@ -389,6 +407,9 @@ pub trait RuntimeInfo: Sync {
     // deallocate a ZVM object representing the provided layout. this implementation is left as an
     // exercise to the reader (for now)
 //    fn obj_dealloc(&mut self, layout: &ir::Layout) -> Option<*const u8>;
+    fn get_jvm(&mut self) -> Option<&mut VirtualMachine<NativeJvmValue>>;
+    fn set_jvm(&mut self, jvm: VirtualMachine<NativeJvmValue>);
+    fn get_parts(&mut self) -> (&ir::LayoutsInfo, Option<&mut VirtualMachine<NativeJvmValue>>);
 }
 
 impl ZvmMethod {
@@ -613,6 +634,23 @@ impl ZvmMethod {
                         let result = vars.get(&result).expect("result var is defined");
                         builder.def_var(*result, out);
                     }
+                    ir::Instruction::SetField { target, value, field_desc } => {
+                        let target = vars.get(&target).expect("target var is defined");
+                        let target_val = builder.use_var(*target);
+                        let value = vars.get(&value).expect("value var is defined");
+                        let value_val = builder.use_var(*value);
+
+                        builder.ins().store(
+                            // zvm requires that layouts uphold alignment requirements and that
+                            // `SetField` is used only for valid references of appropriate type -
+                            // it's the responsibility of client code to ensure that types are not
+                            // confused.
+                            MemFlags::trusted(),
+                            target_val,
+                            value_val,
+                            field_desc.offset
+                        );
+                    }
                     ir::Instruction::TypeAdjust { value, current_ty, result, new_ty } => {
                         if current_ty == new_ty {
                             eprintln!("bogus typeadjust? converting {} to {}", current_ty, new_ty);
@@ -620,12 +658,26 @@ impl ZvmMethod {
                         }
                         match (current_ty, new_ty) {
                             (ir::ValueType::Int, ir::ValueType::Ref) => {
+                                eprintln!("haha not yet sorry");
                             }
-                            _ => {
-                                panic!("");
+                            (ir::ValueType::Long, ir::ValueType::Int) => {
+                                let input = vars.get(&value).expect("source var is defined");
+                                let input_val = builder.use_var(*input);
+                                let result = vars.get(&result).expect("source var is defined");
+                                let out = builder.ins().ireduce(cranelift_codegen::ir::types::I32, input_val);
+                                builder.def_var(*result, out);
+                            }
+                            (ir::ValueType::Int, ir::ValueType::Long) => {
+                                let input = vars.get(&value).expect("source var is defined");
+                                let input_val = builder.use_var(*input);
+                                let result = vars.get(&result).expect("source var is defined");
+                                let out = builder.ins().sextend(cranelift_codegen::ir::types::I64, input_val);
+                                builder.def_var(*result, out);
+                            }
+                            (src, dst) => {
+                                panic!("don't know how to adjust a {} to {}", src, dst);
                             }
                         }
-                        eprintln!("haha not yet sorry");
                     }
                     ir::Instruction::Return => {
                         builder.ins().return_(&[]);
@@ -817,7 +869,8 @@ fn desc_to_ir_valuety(desc: &str) -> ir::ValueType {
 }
 
 pub fn bytecode2ir(rt_info: &mut dyn RuntimeInfo, method: &MethodBody, sig: (Vec<Arg>, Option<Arg>)) -> Result<ZvmMethod, ir::TranslationError> {
-    let mut translator = TranslatorState::new(rt_info.layouts());
+    let (layouts, mut jvm) = rt_info.get_parts();
+    let mut translator = TranslatorState::new(layouts);
 
     for arg in sig.0.iter() {
         translator.new_argument(arg.ty);
@@ -960,6 +1013,10 @@ pub fn bytecode2ir(rt_info: &mut dyn RuntimeInfo, method: &MethodBody, sig: (Vec
                 let result = translator.new_local(ir::ValueType::Ref);
                 let layout_id = translator.layouts.get_layout_id(&cls_name)?;
                 translator.inst(ir::Instruction::Alloc { result, layout_id });
+                let classfile_ref = jvm.as_mut().unwrap().resolve_class(&cls_name).expect("TODO: class exists");
+                let classfile_ref_var = translator.new_local(ir::ValueType::Long);
+                translator.inst(ir::Instruction::ConstLong { result: classfile_ref_var, value: Arc::into_raw(classfile_ref) as isize as i64 });
+                translator.inst(ir::Instruction::SetField { target: result, value: classfile_ref_var, field_desc: crate::compiler::ir::OBJ_HEADER_CLASSFILE_REF });
                 translator.push(result);
             }
             Instruction::Dup => {
@@ -967,13 +1024,19 @@ pub fn bytecode2ir(rt_info: &mut dyn RuntimeInfo, method: &MethodBody, sig: (Vec
                 translator.push(top);
                 translator.push(top);
             }
+            Instruction::L2I => {
+                let value = translator.pop_typed(ir::ValueType::Long);
+                let result = translator.new_local(ir::ValueType::Int);
+                translator.inst(ir::Instruction::TypeAdjust { value, current_ty: ir::ValueType::Long, result, new_ty: ir::ValueType::Int });
+                translator.push(result);
+            }
             Instruction::InvokeSpecial(method_ref) => {
                 eprintln!("method ref desc: {}", method_ref.desc);
                 let (arg_tys, ret_ty) = crate::virtual_machine::parse_signature_string(&method_ref.desc).expect("signature parses");
 
                 // TODO: this leaks an Rc<MethodRef> into the function body? how to clean up
                 let method_ref_rc = translator.new_local(ir::ValueType::Long);
-                translator.inst(ir::Instruction::ConstLong { result: method_ref_rc, value: Rc::into_raw(method_ref) as usize as isize as i64 });
+                translator.inst(ir::Instruction::ConstLong { result: method_ref_rc, value: Arc::into_raw(method_ref) as usize as isize as i64 });
 
                 let mut args = vec![
                     method_ref_rc,
@@ -985,8 +1048,20 @@ pub fn bytecode2ir(rt_info: &mut dyn RuntimeInfo, method: &MethodBody, sig: (Vec
                     ir::ValueType::Long,
                 ];
 
+                eprintln!("arg_tys: {:?}", arg_tys);
+                eprintln!("operand stack: {:?}", &translator.operand_stack);
                 for arg in arg_tys.iter().rev() {
-                    managed_args.push(translator.pop_typed(arg.ty));
+                    let arg_value = translator.pop_typed(arg.ty);
+                    if arg.ty == ir::ValueType::Long {
+                        managed_args.push(arg_value);
+                    } else {
+                        let adjusted_arg = translator.new_local(ir::ValueType::Long);
+                        translator.inst(ir::Instruction::TypeAdjust {
+                            value: arg_value, current_ty: arg.ty,
+                            result: adjusted_arg, new_ty: ir::ValueType::Long
+                        });
+                        managed_args.push(adjusted_arg);
+                    }
                 }
 
                 // TODO: probably translate java/lang/Integer and friends to their primitive types?
@@ -1004,6 +1079,15 @@ pub fn bytecode2ir(rt_info: &mut dyn RuntimeInfo, method: &MethodBody, sig: (Vec
                 } else {
                     (None, None)
                 };
+
+                /*
+                while args.len() < zvm_arg_tys.len() {
+                    let fake_arg = translator.new_local(ir::ValueType::Long);
+                    translator.inst(ir::Instruction::ConstLong { result: fake_arg, value: 0i64 });
+                    args.push(fake_arg);
+                }
+                */
+
                 // let extdata = translator.extdata("__vm_call_stub");
 
                 translator.inst(ir::Instruction::CallImport {
@@ -1028,7 +1112,7 @@ pub fn bytecode2ir(rt_info: &mut dyn RuntimeInfo, method: &MethodBody, sig: (Vec
 
 use std::cell::RefCell;
 
-static mut ZVM: Option<&'static mut dyn RuntimeInfo> = None;
+pub(crate) static mut ZVM: Option<&'static mut dyn RuntimeInfo> = None;
 
 /// a low-level description of an allocation suitable for storing a layout of id `layout_id`. this
 /// is largely equivalent to a Rust `core::alloc::Layout`.
@@ -1060,7 +1144,8 @@ impl StructLayout {
 }
 
 pub struct ZvmRuntime {
-    layouts: ir::LayoutsInfo
+    layouts: ir::LayoutsInfo,
+    jvm_rt: Option<VirtualMachine<NativeJvmValue>>,
 }
 
 use std::borrow::Borrow;
@@ -1068,7 +1153,8 @@ use crate::class_file::validated::MethodRef;
 impl ZvmRuntime {
     pub fn init() -> Self {
         Self {
-            layouts: ir::LayoutsInfo::new()
+            layouts: ir::LayoutsInfo::new(),
+            jvm_rt: None,
         }
     }
 
@@ -1079,20 +1165,48 @@ impl ZvmRuntime {
         let layout = vm.layouts().get_layout(crate::compiler::ir::LayoutId(layout_id as usize));
         eprintln!("layout: {:?}", layout);
         let struct_layout = layout.as_tagged_zvm(layout_id);
-        let ptr = vm.obj_alloc(struct_layout);
-        ptr.unwrap_or_else(|| {
+        let ptr = vm.obj_alloc(struct_layout).unwrap_or_else(|| {
             panic!("alloc failed for layout {}", layout_id);
-        }) as usize
+        });
+        unsafe { (ptr.offset(-16) as *mut u64).write_volatile(layout_id) };
+        ptr as usize
     }
 
     // TODO: types
-    fn __vm_call_stub(method_ref: *const MethodRef, receiver: u64, arg: u64, arg2: u64) {
+    fn __vm_call_stub(method_ref: *const MethodRef, receiver: u64, arg: u64, arg2: u64) -> usize {
         let method_ref = unsafe { std::mem::transmute::<*const MethodRef, &MethodRef>(method_ref) };
         eprintln!("runtime witnessed call to {:?} on object {:#x} and args [{:#x}, {:#x}]", method_ref, receiver, arg, arg2);
+        let vm = unsafe { ZVM.as_mut().unwrap() };
+        let mut binding = vm.get_jvm();
+        let jvm = binding.as_mut().unwrap();
+        let class = jvm.resolve_class(&method_ref.class_name).expect("class can be resolved");
+        let method_handle = class.get_method(&method_ref.name, &method_ref.desc).expect("method exists");
+        eprintln!("got method: {:?}", method_handle);
+        let method_body = Arc::clone(method_handle.body.as_ref().expect("method has body"));
+        let mut interpreter_state = VMState::new(method_body, class, method_ref.name.to_string(), vec![
+            // expect receiver to be an object, but not much we can do to validate that for native
+            // types
+            NativeJvmValue { data: receiver.to_le_bytes() },
+            // expect arg to be an object, but not much we can do to validate that for native types
+            NativeJvmValue { data: arg.to_le_bytes() },
+            // expect arg to be a long, but not much we can do to validate that for native types
+            NativeJvmValue { data: arg2.to_le_bytes() },
+        ]);
+        let res = jvm.interpret(&mut interpreter_state).unwrap();
+        eprintln!("result: {:?}", res);
+        res.map(|x| usize::from_le_bytes(x.data)).unwrap_or(0)
     }
 }
 
 impl RuntimeInfo for ZvmRuntime {
+    fn get_jvm(&mut self) -> Option<&mut VirtualMachine<NativeJvmValue>> {
+        self.jvm_rt.as_mut()
+    }
+
+    fn set_jvm(&mut self, jvm: VirtualMachine<NativeJvmValue>) {
+        self.jvm_rt = Some(jvm)
+    }
+
     fn obj_alloc(&mut self, layout: StructLayout) -> Option<*mut u8> {
         let size = layout.size + StructLayout::header_size();
         let align = core::cmp::max(layout.align, StructLayout::header_align());
@@ -1104,12 +1218,19 @@ impl RuntimeInfo for ZvmRuntime {
         if res.is_null() {
             None
         } else {
+            for b in 0..layout.size {
+                unsafe { res.offset(b as isize).write(0u8); }
+            }
             Some(unsafe { res.offset(StructLayout::header_size() as isize) })
         }
     }
 
     fn layouts(&self) -> &ir::LayoutsInfo {
         &self.layouts
+    }
+
+    fn get_parts(&mut self) -> (&ir::LayoutsInfo, Option<&mut VirtualMachine<NativeJvmValue>>) {
+        (&self.layouts, self.jvm_rt.as_mut())
     }
 
     fn alloc_function(&self, size: usize) -> Result<FunctionEmitter, &'static str> {
@@ -1193,7 +1314,7 @@ fn test_field_access() {
 
     let instructions: Vec<validated::Instruction> = vec![
         Instruction::ALoad0,
-        Instruction::GetField(Rc::new(crate::class_file::validated::FieldRef { class_name: "java/lang/Integer".to_owned(), name: "value".to_owned(), desc: "I".to_owned() })),
+        Instruction::GetField(Arc::new(crate::class_file::validated::FieldRef { class_name: "java/lang/Integer".to_owned(), name: "value".to_owned(), desc: "I".to_owned() })),
         Instruction::ILoad1,
         Instruction::IAdd,
         Instruction::IReturn,
@@ -1211,43 +1332,76 @@ fn test_object_return() {
 
     let mut zvm_rt = ZvmRuntime::init();
 
-    let mut classes: Vec<Rc<ClassFile>> = Vec::new();
+    let mut jvm_rt = VirtualMachine::new(Vec::new());
+
+    let mut classes: Vec<Arc<ClassFile>> = Vec::new();
+
+    let init_func: Vec<validated::Instruction> = vec![
+        Instruction::ALoad0,
+        Instruction::ILoad1,
+        Instruction::PutField(Arc::new(crate::class_file::validated::FieldRef {
+            class_name: "TestClass".to_string(),
+            name: "inner".to_string(),
+            desc: "I".to_string(),
+        })),
+        Instruction::ALoad0,
+        Instruction::ILoad1,
+        Instruction::ILoad1,
+        Instruction::IAdd,
+        Instruction::PutField(Arc::new(crate::class_file::validated::FieldRef {
+            class_name: "TestClass".to_string(),
+            name: "inner_2".to_string(),
+            desc: "I".to_string(),
+        })),
+        Instruction::Pop,
+        Instruction::Return,
+    ];
 
     // pretend this method is, in fact, `test_method`.
-    let custom_class: Rc<ClassFile> = Rc::new(
+    let custom_class: ClassFile =
         crate::class_file::synthetic::SyntheticClassBuilder::<crate::SimpleJvmValue>::new("TestClass")
             .extends("java/lang/Object")
             .with_field("inner", "I")
-            .with_method("<init>", "(LTestClass;J)V", None)
+            .with_field("inner_2", "I")
+//            .with_method("<init>", "(LTestClass;J)V", None)
+            .with_method_bytecode("<init>", "(I)V", init_func)
             .with_method("test_method", "()I", None)
-            .validate().0);
+            .validate().0;
 
-    classes.push(Rc::clone(&custom_class));
+    let class_ref = jvm_rt.register("TestClass".to_string(), custom_class, HashMap::new()).unwrap();
+    zvm_rt.set_jvm(jvm_rt);
+
+    classes.push(Arc::clone(&class_ref));
 
     let instructions: Vec<validated::Instruction> = vec![
-        Instruction::New(Rc::new(custom_class.this_class.clone())),
+        Instruction::New(Arc::new(class_ref.this_class.clone())),
         Instruction::Dup,
-        Instruction::ALoad0,
         Instruction::LLoad1,
-        Instruction::InvokeSpecial(Rc::new(custom_class.method_ref("<init>", "(LTestClass;J)V").expect("method exists"))),
+        Instruction::L2I,
+        Instruction::InvokeSpecial(Arc::new(class_ref.method_ref("<init>", "(I)V").expect("method exists"))),
         Instruction::AReturn,
     ];
 
     let definitely_an_integer = [0xdeadbeef_cafebabe_u64 as i64, 20i64];
     let integer_ref: *const [i64; 2] = &definitely_an_integer as *const [i64; 2];
     let args = &[integer_ref as i64, 4];
-    jit(args.as_slice(), instructions, "(Ljava/lang/String;J)LCustomClass;", classes, &mut zvm_rt);
+    let res = jit(args.as_slice(), instructions, "(Ljava/lang/String;J)LCustomClass;", classes, &mut zvm_rt);
+    let res = res as *const usize;
+    eprintln!("offset -2: {:#08x}", unsafe { res.offset(-2).read() });
+    eprintln!("offset -1: {:#08x}", unsafe { res.offset(-1).read() });
+    eprintln!("offset  0: {:#08x}", unsafe { res.offset( 0).read() });
+    eprintln!("offset  1: {:#08x}", unsafe { res.offset( 1).read() });
 }
 
 use crate::class_file::validated;
 
-fn jit(args: &[i64], instructions: Vec<validated::Instruction>, signature: &'static str, extra_classes: Vec<Rc<ClassFile>>, rt_info: &mut dyn RuntimeInfo) {
+fn jit(args: &[i64], instructions: Vec<validated::Instruction>, signature: &'static str, extra_classes: Vec<Arc<ClassFile>>, rt_info: &mut dyn RuntimeInfo) -> i64 {
     println!("jvm instructions:");
     for inst in instructions.iter() {
         println!("  {}", inst);
     }
     println!("");
-    let method = validated::assemble(instructions);
+    let method = validated::assemble(instructions, None);
     println!("jvm bytecode: {:02x?}", &method.bytes);
 
     rt_info.declare_layout({
@@ -1255,23 +1409,27 @@ fn jit(args: &[i64], instructions: Vec<validated::Instruction>, signature: &'sta
         layout.add_field(ir::LayoutFieldRef {
             offset: 0,
             ty: ir::ValueType::Ref,
-            name: "class".to_string()
+            name: Some("class".to_string())
         });
         layout.add_field(ir::LayoutFieldRef {
             offset: 8,
             ty: ir::ValueType::Int,
-            name: "value".to_string()
+            name: Some("value".to_string())
         });
         layout
     }, "java/lang/Integer".to_string());
     for (i, cls) in extra_classes.iter().enumerate() {
         rt_info.declare_layout({
             let mut layout = ir::Layout::new();
-            layout.add_field(ir::LayoutFieldRef {
-                offset: 0,
-                ty: ir::ValueType::Int,
-                name: format!("STUB_layout_{}", i)
-            });
+            let mut offset = 0;
+            for f in cls.fields.iter() {
+                layout.add_field(ir::LayoutFieldRef {
+                    offset,
+                    ty: ir::ValueType::Long,
+                    name: Some(f.name.clone())
+                });
+                offset += 8;
+            }
             layout
         }, cls.this_class.to_string());
     }
@@ -1307,7 +1465,7 @@ fn jit(args: &[i64], instructions: Vec<validated::Instruction>, signature: &'sta
     unsafe { ZVM = Some(std::mem::transmute::<&mut dyn RuntimeInfo, &'static mut dyn RuntimeInfo>(rt_info)); }
     let res = jitcall(args, unsafe { std::mem::transmute(function.data().as_ptr()) });
     unsafe { ZVM = None; }
-    println!("result: {:x}", res);
+    res
 }
 
 fn jitcall(args: &[i64], code: fn(i64, i64, i64, i64, i64, i64) -> i64) -> i64 {

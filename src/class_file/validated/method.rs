@@ -10,7 +10,7 @@ use crate::class_file::validated::Instruction;
 use crate::class_file::validated::ValidationError;
 
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::Arc;
 use std::io::Cursor;
 
 #[derive(Debug, Clone)]
@@ -27,10 +27,10 @@ pub struct MethodBody {
     pub(crate) bytes: Box<[u8]>,
     // TODO: validate exception table records
     pub(crate) exception_info: Vec<ExceptionTableRecord>,
-    pub(crate) class_refs: HashMap<u32, Rc<String>>,
-    pub(crate) field_refs: HashMap<u32, Rc<FieldRef>>,
-    pub(crate) method_refs: HashMap<u32, Rc<MethodRef>>,
-    pub(crate) const_refs: HashMap<u32, Rc<Constant>>,
+    pub(crate) class_refs: HashMap<u32, Arc<String>>,
+    pub(crate) field_refs: HashMap<u32, Arc<FieldRef>>,
+    pub(crate) method_refs: HashMap<u32, Arc<MethodRef>>,
+    pub(crate) const_refs: HashMap<u32, Arc<Constant>>,
     // TODO: method attributes
 }
 
@@ -62,7 +62,7 @@ pub struct MethodHandle {
     access_flags: unvalidated::MethodAccessFlags,
     pub(crate) name: String,
     pub(crate) desc: String,
-    pub(crate) body: Option<Rc<MethodBody>>,
+    pub(crate) body: Option<Arc<MethodBody>>,
     // flags, attributes, ..
 }
 
@@ -94,10 +94,10 @@ fn make_refs<'validation>(
     max_locals: u16,
     position: u32,
     raw_class: &UnvalidatedClassFile,
-    class_refs: &'validation mut HashMap<u32, Rc<String>>,
-    field_refs: &'validation mut HashMap<u32, Rc<FieldRef>>,
-    method_refs: &'validation mut HashMap<u32, Rc<MethodRef>>,
-    const_refs: &'validation mut HashMap<u32, Rc<Constant>>
+    class_refs: &'validation mut HashMap<u32, Arc<String>>,
+    field_refs: &'validation mut HashMap<u32, Arc<FieldRef>>,
+    method_refs: &'validation mut HashMap<u32, Arc<MethodRef>>,
+    const_refs: &'validation mut HashMap<u32, Arc<Constant>>
 ) -> Result<(), ValidationError> {
     use unvalidated::Instruction;
     match inst {
@@ -120,7 +120,7 @@ fn make_refs<'validation>(
         Instruction::InstanceOf(class_idx) => {
             match raw_class.checked_const(*class_idx)? {
                 unvalidated::Constant::Class(idx) => {
-                    class_refs.insert(position as u32, Rc::new(raw_class.get_str(*idx).unwrap().to_string()));
+                    class_refs.insert(position as u32, Arc::new(raw_class.get_str(*idx).unwrap().to_string()));
                 }
                 _ => { panic!("bad idx"); }
             }
@@ -130,16 +130,16 @@ fn make_refs<'validation>(
             match raw_class.checked_const(*const_idx)? {
                 unvalidated::Constant::String(idx) => {
                     let s = raw_class.checked_const(*idx)?.as_utf8()?;
-                    const_refs.insert(position as u32, Rc::new(Constant::String(s.to_string())));
+                    const_refs.insert(position as u32, Arc::new(Constant::String(s.to_string())));
                 }
                 unvalidated::Constant::Integer(i) => {
-                    const_refs.insert(position as u32, Rc::new(Constant::Integer(*i)));
+                    const_refs.insert(position as u32, Arc::new(Constant::Integer(*i)));
                 }
                 unvalidated::Constant::Float(f) => {
-                    const_refs.insert(position as u32, Rc::new(Constant::Float(*f)));
+                    const_refs.insert(position as u32, Arc::new(Constant::Float(*f)));
                 }
                 unvalidated::Constant::Class(idx) => {
-                    class_refs.insert(position as u32, Rc::new(raw_class.get_str(*idx).unwrap().to_string()));
+                    class_refs.insert(position as u32, Arc::new(raw_class.get_str(*idx).unwrap().to_string()));
                 }
                 c => {
                     return Err(ValidationError::BadConst(c.type_name().to_string(), "String, Integer, Float, or Class".to_string()));
@@ -149,10 +149,10 @@ fn make_refs<'validation>(
         Instruction::Ldc2W(const_idx) => {
             match raw_class.checked_const(*const_idx)? {
                 unvalidated::Constant::Long(l) => {
-                    const_refs.insert(position as u32, Rc::new(Constant::Long(*l)));
+                    const_refs.insert(position as u32, Arc::new(Constant::Long(*l)));
                 }
                 unvalidated::Constant::Double(d) => {
-                    const_refs.insert(position as u32, Rc::new(Constant::Double(*d)));
+                    const_refs.insert(position as u32, Arc::new(Constant::Double(*d)));
                 }
                 c => {
                     return Err(ValidationError::BadConst(c.type_name().to_string(), "Long or Double".to_string()));
@@ -193,7 +193,9 @@ fn make_refs<'validation>(
                     desc,
                 };
                 // TODO: check position < u32::max
-                field_refs.insert(position as u32, Rc::new(field_ref));
+                field_refs.insert(position as u32, Arc::new(field_ref));
+            } else {
+                panic!("invalid field ref {:?}", field_idx);
             }
         }
         Instruction::InvokeVirtual(method_idx) |
@@ -229,7 +231,7 @@ fn make_refs<'validation>(
                     desc,
                 };
                 // TODO: check position < u32::max
-                method_refs.insert(position as u32, Rc::new(method_ref));
+                method_refs.insert(position as u32, Arc::new(method_ref));
             }
         }
         Instruction::InvokeInterface(method_idx, _count) => {
@@ -263,7 +265,7 @@ fn make_refs<'validation>(
                     desc,
                 };
                 // TODO: check position < u32::max
-                method_refs.insert(position as u32, Rc::new(method_ref));
+                method_refs.insert(position as u32, Arc::new(method_ref));
             }
         }
         Instruction::InvokeDynamic(call_site_idx) => {
@@ -396,7 +398,7 @@ impl MethodHandle {
                     make_refs(&inst, max_locals, position, raw_class, &mut class_refs, &mut field_refs, &mut method_refs, &mut const_refs)?;
                 }
 
-                Some(Rc::new(MethodBody {
+                Some(Arc::new(MethodBody {
                     max_stack,
                     max_locals,
                     bytes: method_body.to_vec().into_boxed_slice(),

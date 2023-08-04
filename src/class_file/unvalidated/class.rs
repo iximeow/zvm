@@ -11,6 +11,7 @@ use crate::class_file::unvalidated::FieldAccessFlags;
 use std::fmt;
 use std::rc::Rc;
 use std::hash::{Hash, Hasher};
+use std::convert::TryInto;
 
 #[derive(Debug)]
 pub struct AccessFlags {
@@ -138,6 +139,26 @@ impl ClassFile {
     pub fn mark_patched(&mut self) {
         self.patched = true;
     }
+    pub fn get_fieldref(&mut self, cls: &str, name: &str, ty: &str) -> u16 {
+        self.constant_pool.push(Constant::Utf8(cls.as_bytes().to_vec()));
+        let cls_name_idx = ConstantIdx::new(self.constant_pool.len() as u16).unwrap();
+        self.constant_pool.push(Constant::Utf8(name.as_bytes().to_vec()));
+        let name_idx = ConstantIdx::new(self.constant_pool.len() as u16).unwrap();
+        self.constant_pool.push(Constant::Utf8(ty.as_bytes().to_vec()));
+        let ty_idx = ConstantIdx::new(self.constant_pool.len() as u16).unwrap();
+
+        self.constant_pool.push(Constant::Class(cls_name_idx));
+        let cls_idx = ConstantIdx::new(self.constant_pool.len() as u16).unwrap();
+
+        self.constant_pool.push(Constant::NameAndType(name_idx, ty_idx));
+        let name_and_ty_idx = ConstantIdx::new(self.constant_pool.len() as u16).unwrap();
+
+        self.constant_pool.push(Constant::Fieldref(
+            cls_idx,
+            name_and_ty_idx,
+        ));
+        self.constant_pool.len() as u16
+    }
     pub fn with_field(mut self, name: &str, ty: &str) -> Self {
         self.constant_pool.push(Constant::Utf8(name.as_bytes().to_vec()));
         self.constant_pool.push(Constant::Utf8(ty.as_bytes().to_vec()));
@@ -151,11 +172,16 @@ impl ClassFile {
 
         self
     }
-    pub fn with_method(
+
+    pub fn with_method_bytecode(
         mut self,
         name: &str,
         ty: &str,
+        bytecode: Option<Vec<u8>>,
     ) -> Self {
+        // TODO: at least panic if we're redefining the same name/signature...
+        let mut attributes = Vec::new();
+
         self.constant_pool.push(Constant::Utf8(name.as_bytes().to_vec()));
         self.constant_pool.push(Constant::Utf8(ty.as_bytes().to_vec()));
 
@@ -163,11 +189,30 @@ impl ClassFile {
             access_flags: MethodAccessFlags { flags: 0x0001 },
             name_index: ConstantIdx::new(self.constant_pool.len() as u16 - 1).unwrap(),
             descriptor_index: ConstantIdx::new(self.constant_pool.len() as u16).unwrap(),
-            attributes: Vec::new(),
+            attributes,
         });
 
         self
     }
+
+    pub fn add_string(&mut self, s: &str) -> ConstantIdx {
+        self.add_const(Constant::Utf8(s.as_bytes().to_vec()))
+    }
+
+    pub fn add_const(&mut self, c: Constant) -> ConstantIdx {
+        self.constant_pool.push(c);
+        ConstantIdx::new(self.constant_pool.len().try_into().unwrap()).unwrap()
+
+    }
+
+    pub fn with_method(
+        mut self,
+        name: &str,
+        ty: &str,
+    ) -> Self {
+        self.with_method_bytecode(name, ty, None)
+    }
+
     pub fn get_str(&self, idx: ConstantIdx) -> Option<&str> {
         if let Some(Constant::Utf8(bytes)) = self.get_const(idx) {
             std::str::from_utf8(bytes).ok()

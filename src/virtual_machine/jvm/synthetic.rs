@@ -3,9 +3,11 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
 
+use crate::class_file::validated::assemble;
+use crate::class_file::unvalidated::{attribute::Attribute, AttributeInfo, MethodAccessFlags, MethodInfo};
 use crate::{VirtualMachine, VMError, VMState};
 use crate::virtual_machine::{ClassFile, ClassFileRef, UnvalidatedClassFile, ValueRef};
-use crate::virtual_machine::{JvmArray, JvmObject, JvmValue, NativeObject};
+use crate::virtual_machine::{MethodBody, JvmArray, JvmObject, JvmValue, NativeObject};
 
 use crate::virtual_machine::NULL_COUNT;
 
@@ -149,6 +151,7 @@ pub type NativeJvmFn<ValueImpl> =
 
 pub struct SyntheticClassBuilder<ValueImpl: JvmValue> {
     cls: UnvalidatedClassFile,
+    bytecode_methods: HashMap<(String, String), MethodBody>,
     native_methods: HashMap<(String, String), NativeJvmFn<ValueImpl>>,
 }
 
@@ -156,13 +159,15 @@ impl<ValueImpl: JvmValue> SyntheticClassBuilder<ValueImpl> {
     pub fn new(name: &str) -> Self {
         Self {
             cls: UnvalidatedClassFile::synthetic(name),
-            native_methods: HashMap::new()
+            bytecode_methods: HashMap::new(),
+            native_methods: HashMap::new(),
         }
     }
 
     pub fn extends(mut self, name: &str) -> Self {
         Self {
             cls: self.cls.extends(name),
+            bytecode_methods: self.bytecode_methods,
             native_methods: self.native_methods,
         }
     }
@@ -170,20 +175,59 @@ impl<ValueImpl: JvmValue> SyntheticClassBuilder<ValueImpl> {
     pub fn with_method(mut self, name: &str, sig: &str, native: Option<NativeJvmFn<ValueImpl>>) -> Self {
         let new_cls = self.cls.with_method(name, sig);
         let mut native_methods = self.native_methods;
+        let mut bytecode_methods = self.bytecode_methods;
         if let Some(native) = native {
             native_methods.insert((name.to_string(), sig.to_string()), native);
         }
         Self {
             cls: new_cls,
+            bytecode_methods,
             native_methods,
         }
+    }
+
+    pub fn with_method_bytecode(mut self, name: &str, sig: &str, instructions: Vec<crate::class_file::validated::Instruction>) -> Self {
+        let name_index = self.cls.add_string(name);
+        let sig_index = self.cls.add_string(sig);
+        let code_index = self.cls.add_string("Code");
+
+        let code_bytes = assemble(instructions, Some(&mut self.cls));
+        eprintln!("synthetic code bytes: {:x?}", &code_bytes.bytes);
+        let mut data = Vec::new();
+        // max_stack
+        data.extend_from_slice(&[0xff, 0xff]);
+        // max_locals
+        data.extend_from_slice(&[0xff, 0xff]);
+        // code_length
+        data.extend_from_slice(&(code_bytes.bytes.len() as u32).to_be_bytes());
+        data.extend_from_slice(&code_bytes.bytes);
+        // exceptions_length
+        data.extend_from_slice(&0u16.to_le_bytes());
+        // attr_length
+        data.extend_from_slice(&0u16.to_le_bytes());
+
+        let raw_handle = MethodInfo {
+            access_flags: MethodAccessFlags { flags: 0x0001 },
+            name_index: name_index,
+            descriptor_index: sig_index,
+            attributes: vec![
+                AttributeInfo {
+                    name_index: code_index,
+                    data,
+                }
+            ]
+        };
+        self.cls.methods.push(raw_handle);
+        self
     }
 
     pub fn with_field(mut self, name: &str, sig: &str) -> Self {
         let new_cls = self.cls.with_field(name, sig);
         let native_methods = self.native_methods;
+        let bytecode_methods = self.bytecode_methods;
         Self {
             cls: new_cls,
+            bytecode_methods,
             native_methods,
         }
     }
@@ -195,7 +239,8 @@ impl<ValueImpl: JvmValue> SyntheticClassBuilder<ValueImpl> {
             NativeJvmFn<ValueImpl>,
         >
     ) {
-        let cls = ClassFile::validate(&self.cls).unwrap();
+        eprintln!("{:?}", &self.cls);
+        let mut cls = ClassFile::validate(&self.cls).unwrap();
         (cls, self.native_methods)
     }
 }
@@ -268,6 +313,7 @@ pub fn build_synthetic_class<
                 .with_field("value", "[B")
                 .validate()
         }
+        /*
         "java/lang/StringBuilder" => {
             SyntheticClassBuilder::new("java/lang/StringBuilder")
                 .extends("java/lang/Object")
@@ -277,6 +323,7 @@ pub fn build_synthetic_class<
                 .with_method("toString", "()Ljava/lang/String;", Some(stringbuilder_tostring))
                 .validate()
         }
+        */
         "java/lang/System" => {
             SyntheticClassBuilder::new("java/lang/System")
                 .extends("java/lang/Object")
@@ -425,6 +472,7 @@ fn system_out_println_long<ValueImpl: JvmValue>(state: &mut VMState<ValueImpl>, 
 }
 
 // "<init>()V"
+/*
 fn stringbuilder_init<ValueImpl: JvmValue>(state: &mut VMState<ValueImpl>, vm: &mut VirtualMachine<ValueImpl>) -> Result<(), VMError> {
     let receiver = state
         .current_frame_mut()
@@ -437,8 +485,10 @@ fn stringbuilder_init<ValueImpl: JvmValue>(state: &mut VMState<ValueImpl>, vm: &
     vm.native_instances.insert(ValueRef::of(&receiver), data);
     Ok(())
 }
+*/
 
 // "append(Ljava/lang/String;);Ljava/lang/StringBuilder"
+/*
 fn stringbuilder_append_string<ValueImpl: JvmValue>(state: &mut VMState<ValueImpl>, vm: &mut VirtualMachine<ValueImpl>) -> Result<(), VMError> {
     let appendee = state
         .current_frame_mut()
@@ -479,8 +529,10 @@ fn stringbuilder_append_string<ValueImpl: JvmValue>(state: &mut VMState<ValueImp
     state.current_frame_mut().operand_stack.push(receiver);
     Ok(())
 }
+*/
 
 // "toString()Ljava/lang/String"
+/*
 fn stringbuilder_tostring<ValueImpl: JvmValue>(state: &mut VMState<ValueImpl>, vm: &mut VirtualMachine<ValueImpl>) -> Result<(), VMError> {
     // really just consume the argument
     let receiver = state
@@ -509,6 +561,7 @@ fn stringbuilder_tostring<ValueImpl: JvmValue>(state: &mut VMState<ValueImpl>, v
     state.current_frame_mut().operand_stack.push(obj);
     Ok(())
 }
+*/
 
 /*
                 native_methods.insert("<init>(Ljava/lang/String;)V".to_string(), string_init_string);
