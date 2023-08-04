@@ -1,0 +1,40 @@
+Build.dependencies({"git", "make", "rustc", "cargo"})
+
+Build.metric(
+  "rust version",
+  string.gsub(Build.check_output({"rustc", "--version"}).stdout, '^%s*(.*)%s*$', '%1')
+)
+
+Step.start("zvm")
+Step.push("bin")
+Build.run({"cargo", "build", "-p", "zvm"})
+Step.advance("lib")
+Build.run({"cargo", "build", "-p", "zvm-stdlib"})
+Step.advance("tools")
+Build.run({"cargo", "build", "-p", "zvm-tools"})
+Build.run({"cargo", "build", "-p", "zvm-cli"})
+
+Step.start("test")
+Build.run({"cargo", "test", "--workspace"})
+
+Step.start("measurement")
+Build.run({"cargo", "build", "-p", "zvm", "--release"})
+Build.metric(
+  "zvm binary size (bytes)",
+  Build.environment.size("target/release/zvm")
+)
+Build.artifact("target/release/zvm")
+
+start = Build.now_ms()
+Build.run({"./target/release/zvm", "./references/java/arithmetic.class", "add_int_int", "1", "2"})
+Build.metric(
+  "add_int_int 1 2 eval time",
+  Build.now_ms() - start
+)
+
+start = Build.now_ms()
+Build.run({"./target/release/zvm", "./references/java/fibonacci.class", "compute", "24"})
+Build.metric(
+  "fibonacci.compute 24",
+  Build.now_ms() - start
+)
