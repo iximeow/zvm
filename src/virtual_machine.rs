@@ -3298,6 +3298,18 @@ pub trait JvmValue: fmt::Debug + Sized + PartialEq + Eq + Hash + Clone {
             return Some(Self::null("Object".to_string()));
         }
 
+        if s.ends_with("i64") {
+            if let Ok(v) = i64::from_str(&s[..s.len() - 3]) {
+                return Some(Self::long(v));
+            }
+        }
+
+        if s.ends_with("i32") {
+            if let Ok(v) = i32::from_str(&s[..s.len() - 3]) {
+                return Some(Self::integer(v));
+            }
+        }
+
         if let Ok(v) = i64::from_str(s) {
             return Some(Self::integer(v as i32));
         }
