@@ -1184,7 +1184,7 @@ fn system_get_property<ValueImpl: JvmValue>(state: &mut VMState<ValueImpl>, vm: 
         if property_name == vm.magic_ref_cache.get("String.file.encoding").unwrap() {
             ValueImpl::string(vm, "UTF-8")
         } else {
-            eprintln!("------------ get_property {:?}", property_name);
+            eprintln!("------------ get_property {}", ValueImpl::object(property_name.new_ref()).summary());
             ValueImpl::null(String::new())
         }
     } else {
@@ -1211,7 +1211,7 @@ fn system_get_property_string_string<ValueImpl: JvmValue>(state: &mut VMState<Va
         if property_name == vm.magic_ref_cache.get("String.file.encoding").unwrap() {
             ValueImpl::string(vm, "UTF-8")
         } else {
-            eprintln!("------------ get_property {:?}", property_name);
+            eprintln!("------------ get_property {}", ValueImpl::object(property_name.new_ref()).summary());
             argument.clone()
         }
     } else {

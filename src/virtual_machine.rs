@@ -3077,9 +3077,24 @@ impl SimpleJvmObject {
     }
 }
 
+pub struct NativeJvmSummary<'v> {
+    value: &'v NativeJvmValue,
+}
+
+impl<'v> fmt::Display for NativeJvmSummary<'v> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "NativeJvmValue {{ data: {:p} }}", self.value)
+    }
+}
+
 impl JvmValue for NativeJvmValue {
     type ArrayTy = NativeJvmArray;
     type ObjectTy = NativeJvmObject;
+    type Summary<'v> = NativeJvmSummary<'v>;
+
+    fn summary<'v>(&'v self) -> Self::Summary<'v> {
+        NativeJvmSummary { value: &self }
+    }
 
     fn as_object(&self) -> Option<&Self::ObjectTy> {
         Some(unsafe { std::mem::transmute::<&[u8; 8], &Self::ObjectTy>(&self.data) })
@@ -3169,9 +3184,71 @@ impl JvmValue for NativeJvmValue {
     }
 }
 
+pub struct SimpleJvmSummary<'v> {
+    value: &'v SimpleJvmValue,
+}
+
+impl<'v> fmt::Display for SimpleJvmSummary<'v> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        match self.value {
+            SimpleJvmValue::Integer(i) => {
+                Ok(())
+            }
+            SimpleJvmValue::Long(l) => {
+                Ok(())
+            }
+            SimpleJvmValue::Float(f) => {
+                Ok(())
+            }
+            SimpleJvmValue::Double(f) => {
+                Ok(())
+            }
+            // Array(Arc<RefCell<Box<[Value]>>>),
+            SimpleJvmValue::Array(array) => {
+                Ok(())
+            }
+            SimpleJvmValue::String(bs) => {
+                write!(fmt, "{{ direct string: \"")?;
+                for b in bs.iter() {
+                    write!(fmt, "{}", *b as char)?;
+                }
+                write!(fmt, "\" }}")
+            },
+            SimpleJvmValue::Object(obj) => {
+                let classname = obj.cls().this_class.clone();
+                if classname == "java/lang/String" {
+                    write!(fmt, "{{ object String, value \"")?;
+                    let value = obj.get_field("value");
+                    let data = value.as_array().unwrap();
+                    for i in 0..data.len() {
+                        let b = data.get_elem(i).unwrap();
+                        write!(fmt, "{}", *b.as_integer().unwrap() as u8 as char)?;
+                    }
+                    write!(fmt, "\" }}")
+                } else {
+                    write!(fmt, "{{ object, ty: {} }}", classname)
+                }
+            },
+            SimpleJvmValue::Null(ty) => {
+                write!(fmt, "{{ null, ty: {} }}", ty)
+            }, // Null, of type `String`
+            SimpleJvmValue::Uninitialized => {
+                write!(fmt, "<uninitialized>")
+            }
+        }
+    }
+}
+
 impl JvmValue for SimpleJvmValue {
     type ArrayTy = SimpleJvmArray;
     type ObjectTy = SimpleJvmObject;
+    type Summary<'v> = SimpleJvmSummary<'v>;
+
+    // return something that can display this value in a summarized way. show the string if it's a
+    // string, show the class name and instance pointer if it's an object, etc.
+    fn summary<'v>(&'v self) -> Self::Summary<'v> {
+        SimpleJvmSummary { value: self }
+    }
 
     fn as_object(&self) -> Option<&Self::ObjectTy> {
         if let Self::Object(obj) = self {
@@ -3268,6 +3345,11 @@ impl JvmValue for SimpleJvmValue {
 pub trait JvmValue: fmt::Debug + Sized + PartialEq + Eq + Hash + Clone {
     type ArrayTy: JvmArray<Self>;
     type ObjectTy: JvmObject<Self>;
+    type Summary<'v>: fmt::Display where Self: 'v;
+
+    // return something that can display this value in a summarized way. show the string if it's a
+    // string, show the class name and instance pointer if it's an object, etc.
+    fn summary<'v>(&'v self) -> Self::Summary<'v>;
 
     // as_object + a type check of the object
     fn as_type(&self, ty: &str) -> Option<&Self::ObjectTy> {
