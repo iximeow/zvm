@@ -181,7 +181,7 @@ impl<'a, 'b> fmt::Display for AttributeDisplay<'a, 'b> {
 #[derive(Debug)]
 pub struct AttributeInfo {
     pub(crate) name_index: ConstantIdx,
-    pub(crate)data: Vec<u8>,
+    pub(crate) data: Vec<u8>,
 }
 
 impl AttributeInfo {

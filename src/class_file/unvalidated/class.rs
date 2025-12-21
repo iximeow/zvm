@@ -237,6 +237,12 @@ impl ClassFile {
         format!("{}", self.get_const(idx).expect("valid index").display(self))
     }
 
+    /// TODO: don't use this! might panic if the class file is malformed, no reason `this_class`
+    /// has to be representative of a filename or the real class name or ...
+    pub fn debug_class_name(&self) -> String {
+        self.display_const(self.this_class)
+    }
+
     pub fn get_methods(&self, name: &str) -> Result<Vec<Rc<MethodHandle>>, Error> {
         let mut methods = Vec::new();
         for method in self.methods.iter() {

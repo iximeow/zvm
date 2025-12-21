@@ -113,6 +113,31 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
         self.call_stack.iter_mut().rev().next().unwrap()
     }
 
+    fn abort(&mut self, vm: &mut VirtualMachine<ValueImpl>, message: String) -> ! {
+        println!("zvm critical error. stack follows:");
+        for (idx, frame) in self.call_stack.iter().enumerate() {
+            print!(
+                "  frame {:03}: {}:{}",
+                idx,
+                frame.enclosing_class.this_class,
+                frame.method_name,
+            );
+            print!("(");
+            let mut first_arg = true;
+            for arg in frame.arguments.iter() {
+                if !first_arg {
+                    print!(", ");
+                }
+                print!("{:?}", arg);
+                first_arg = false;
+            }
+            print!(")");
+            println!(" @ {:03x}", frame.offset);
+        }
+        // print a stack trace, and then ...
+        panic!("{}", message)
+    }
+
     fn next_instruction(&mut self) -> Option<Instruction> {
         if self.call_stack.len() == 0 {
             return None;
@@ -338,12 +363,15 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 break;
             } else if let Some(handle) = target_class.get_method(&method.name, &method.desc) {
                 if handle.access().is_native() {
-                    panic!("attempted to call native method with no implementation: {} - note, JNI resolution is not yet supported.", &method.name);
+                    self.abort(vm,
+                        format!("attempted to call native method with no implementation: {} - note, JNI resolution is not yet supported.", &method.name)
+                    );
                 } else if handle.access().is_abstract() {
                     // continue up on the chanin...
                     if target_class.super_class.is_none() {
-                        eprintln!("started at {:?}", init_class);
-                        panic!("cannot find method {:?}", method);
+                        self.abort(vm,
+                            format!("could not resolve method {:?} in class {:?}", method, init_class.this_class)
+                        );
                     }
                     let super_class = target_class.super_class.as_ref().expect("superclass exists");
                     current_class = vm.resolve_class(super_class).expect("can resolve superclass");
