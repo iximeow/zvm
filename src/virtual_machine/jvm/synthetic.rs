@@ -61,6 +61,9 @@ pub fn augment_classfile<ValueImpl: JvmValue>(class_file: ClassFile) -> (ClassFi
             patches.insert(("registerNatives".to_string(), "()V".to_string()), no_op);
             patches.insert(("currentThread".to_string(), "()Ljava/lang/Thread;".to_string()), thread_currentthread);
         }
+        "java/io/UnixFileSystem" => {
+            patches.insert(("initIDs".to_string(), "()V".to_string()), no_op);
+        }
         "jdk/internal/misc/VM" => {
             patches.insert(("initialize".to_string(), "()V".to_string()), no_op);
         }
@@ -303,6 +306,7 @@ pub fn build_synthetic_class<
                 .with_method("<init>", "([C)V", Some(string_init_chararray))
                 .with_method("valueOf", "([C)Ljava/lang/String;", Some(string_valueof_chararray))
                 .with_method("valueOf", "(C)Ljava/lang/String;", Some(string_valueof_char))
+                .with_method("valueOf", "(Z)Ljava/lang/String;", Some(string_valueof_bool))
                 .with_method("startsWith", "(Ljava/lang/String;)Z", Some(string_startswith))
                 .with_method("charAt", "(I)C", Some(string_charat))
                 .with_method("hashCode", "()I", Some(string_hashcode))
@@ -332,6 +336,7 @@ pub fn build_synthetic_class<
                 .with_method("identityHashCode", "(Ljava/lang/Object;)I", Some(system_identity_hash_code))
                 .with_method("getSecurityManager", "()Ljava/lang/SecurityManager;", Some(system_get_security_manager))
                 .with_method("getProperty", "(Ljava/lang/String;)Ljava/lang/String;", Some(system_get_property))
+                .with_method("getProperty", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", Some(system_get_property_string_string))
                 .with_method("arraycopy", "(Ljava/lang/Object;ILjava/lang/Object;II)V", Some(system_arraycopy))
                 .validate()
         }
@@ -924,6 +929,28 @@ fn string_valueof_char<ValueImpl: JvmValue>(state: &mut VMState<ValueImpl>, vm: 
     }
     Ok(())
 }
+// "valueOf(Z)Ljava/lang/String;"
+fn string_valueof_bool<ValueImpl: JvmValue>(state: &mut VMState<ValueImpl>, vm: &mut VirtualMachine<ValueImpl>) -> Result<(), VMError> {
+    let argument = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    if let Some(elem) = argument.as_integer() {
+        let value = if *elem != 0 {
+            new_string(vm, b"true".to_vec())
+        } else {
+            new_string(vm, b"false".to_vec())
+        };
+        state
+            .current_frame_mut()
+            .operand_stack
+            .push(value);
+    } else {
+        panic!("type error, expected string, got {:?}", argument);
+    }
+    Ok(())
+}
 // "hashCode()I"
 fn string_hashcode<ValueImpl: JvmValue>(state: &mut VMState<ValueImpl>, _vm: &mut VirtualMachine<ValueImpl>) -> Result<(), VMError> {
     let receiver = state
@@ -1167,6 +1194,33 @@ fn system_get_property<ValueImpl: JvmValue>(state: &mut VMState<ValueImpl>, vm: 
         }
     } else {
         panic!("invalid argument for getProperty {:?}", argument);
+    };
+
+    state.current_frame_mut().operand_stack.push(property);
+    Ok(())
+}
+
+fn system_get_property_string_string<ValueImpl: JvmValue>(state: &mut VMState<ValueImpl>, vm: &mut VirtualMachine<ValueImpl>) -> Result<(), VMError> {
+    let default_value = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    let argument = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+
+    let property = if let Some(property_name) = argument.as_type("java/lang/String") {
+        if property_name == vm.magic_ref_cache.get("String.file.encoding").unwrap() {
+            ValueImpl::string(vm, "UTF-8")
+        } else {
+            eprintln!("------------ get_property {:?}", property_name);
+            argument.clone()
+        }
+    } else {
+        panic!("invalid argument for getProperty {:?} not String", argument);
     };
 
     state.current_frame_mut().operand_stack.push(property);

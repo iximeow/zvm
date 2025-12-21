@@ -3774,6 +3774,9 @@ impl<ValueImpl: JvmValue> VirtualMachine<ValueImpl> {
             let string_void = ValueImpl::string(self, "void").as_object().unwrap().new_ref();
             self.magic_ref_cache.insert("String.void".to_string(), string_void);
 
+            let string_file_encoding = ValueImpl::string(self, "file.encoding").as_object().unwrap().new_ref();
+            self.magic_ref_cache.insert("String.file.encoding".to_string(), string_file_encoding);
+
             self.first_run = false;
         }
 
