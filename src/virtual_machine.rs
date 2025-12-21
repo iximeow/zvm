@@ -352,7 +352,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 } else if let Some(_) = receiver.as_array() {
                     vm.resolve_class("java/lang/Object").unwrap()
                 } else {
-                    panic!("unexpected receiver {:?}", receiver);
+                    self.abort(vm, format!("unexpected receiver {:?}", receiver));
                 }
             },
             CallKind::Static | CallKind::Special => {

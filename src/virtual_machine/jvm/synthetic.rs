@@ -11,6 +11,31 @@ use crate::virtual_machine::{MethodBody, JvmArray, JvmObject, JvmValue, NativeOb
 
 use crate::virtual_machine::NULL_COUNT;
 
+fn _javacall<ValueImpl: JvmValue>(
+    state: &mut VMState<ValueImpl>,
+    vm: &mut VirtualMachine<ValueImpl>,
+    receiver: ValueImpl,
+    clsname: &str,
+    fnname: &str,
+    desc: &str,
+    callkind: crate::virtual_machine::CallKind,
+    args: &[ValueImpl]
+) -> Result<(), VMError> {
+    let method_ref = crate::virtual_machine::MethodRef {
+        class_name: clsname.to_string(),
+        name: fnname.to_string(),
+        desc: desc.to_string(),
+    };
+
+    state.current_frame_mut().operand_stack.push(receiver);
+    for arg in args.iter() {
+        state.current_frame_mut().operand_stack.push(arg.clone());
+    }
+    state.call_method(vm, &method_ref, callkind);
+
+    Ok(())
+}
+
 fn new_string<ValueImpl: JvmValue>(vm: &mut VirtualMachine<ValueImpl>, elems: Vec<u8>) -> ValueImpl {
     let java_lang_char_class = vm.resolve_class("java/lang/Character").unwrap();
     let mut fields = HashMap::new();
@@ -308,6 +333,7 @@ pub fn build_synthetic_class<
                 .with_method("valueOf", "(C)Ljava/lang/String;", Some(string_valueof_char))
                 .with_method("valueOf", "(Z)Ljava/lang/String;", Some(string_valueof_bool))
                 .with_method("startsWith", "(Ljava/lang/String;)Z", Some(string_startswith))
+                .with_method("equalsIgnoreCase", "(Ljava/lang/String;)Z", Some(string_equals_ignore_case))
                 .with_method("charAt", "(I)C", Some(string_charat))
                 .with_method("hashCode", "()I", Some(string_hashcode))
                 .with_method("concat", "(Ljava/lang/String;)Ljava/lang/String;", Some(string_concat))
@@ -850,28 +876,67 @@ fn string_startswith<ValueImpl: JvmValue>(state: &mut VMState<ValueImpl>, _vm: &
         let receiver = field.as_array().expect("is array");
         let field = new_elems.get_field("value");
         let new_elems = field.as_array().expect("is array");
-        // Safety: not
-        let receiver = unsafe { receiver.as_slice::<u8>() }.expect("cast works");
-        let new_elems = unsafe { new_elems.as_slice::<u8>() }.expect("cast works");
-        let mut i = 0;
-        let mut beginswith = true;
-        while i < new_elems.len() {
-            if i == receiver.len() {
-                beginswith = false;
-                break;
-            }
 
-            if receiver[i] != new_elems[i] {
-                beginswith = false;
-                break;
+        let mut beginswith = true;
+        if receiver.len() < new_elems.len() {
+            beginswith = false;
+        } else {
+            for i in 0..new_elems.len() {
+                if receiver.get_elem(i) != new_elems.get_elem(i) {
+                    beginswith = false;
+                    break;
+                }
             }
-            i += 1;
         }
 
         state
             .current_frame_mut()
             .operand_stack
             .push(ValueImpl::integer(if beginswith { 1 } else { 0 }));
+    } else {
+        panic!("type error, expected string, got {:?}", argument);
+    }
+    Ok(())
+}
+// "(Ljava/lang/String;)Z"
+fn string_equals_ignore_case<ValueImpl: JvmValue>(state: &mut VMState<ValueImpl>, _vm: &mut VirtualMachine<ValueImpl>) -> Result<(), VMError> {
+    let argument = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    let receiver = state
+        .current_frame_mut()
+        .operand_stack
+        .pop()
+        .expect("argument available");
+    if let (Some(receiver), Some(new_elems)) = (receiver.as_type("java/lang/String"), argument.as_type("java/lang/String")) {
+        let field = receiver.get_field("value");
+        let receiver = field.as_array().expect("is array");
+        let field = new_elems.get_field("value");
+        let new_elems = field.as_array().expect("is array");
+
+        let mut equal = true;
+        if receiver.len() != new_elems.len() {
+            equal = false;
+        } else {
+            for i in 0..new_elems.len() {
+                let l = *receiver.get_elem(i).unwrap().as_integer().unwrap();
+                let r = *new_elems.get_elem(i).unwrap().as_integer().unwrap();
+                if l >= 0x80 || r >= 0x80 {
+                    panic!("equalsIgnoreCase only implemented for ASCII right now, sorry!");
+                }
+                if (l as u8 as char).eq_ignore_ascii_case(&(r as u8 as char)) {
+                    equal = false;
+                    break;
+                }
+            }
+        }
+
+        state
+            .current_frame_mut()
+            .operand_stack
+            .push(ValueImpl::integer(if equal { 1 } else { 0 }));
     } else {
         panic!("type error, expected string, got {:?}", argument);
     }
@@ -1115,7 +1180,7 @@ fn string_get_chars<ValueImpl: JvmValue>(state: &mut VMState<ValueImpl>, _vm: &m
     Ok(())
 }
 
-fn system_clinit<ValueImpl: JvmValue>(_state: &mut VMState<ValueImpl>, vm: &mut VirtualMachine<ValueImpl>) -> Result<(), VMError> {
+fn system_clinit<ValueImpl: JvmValue>(state: &mut VMState<ValueImpl>, vm: &mut VirtualMachine<ValueImpl>) -> Result<(), VMError> {
     let java_lang_system_class = vm.resolve_class("java/lang/System").unwrap();
     let cls_ref = ClassFileRef::of(&java_lang_system_class);
     let mut statics = HashMap::new();
@@ -1127,6 +1192,35 @@ fn system_clinit<ValueImpl: JvmValue>(_state: &mut VMState<ValueImpl>, vm: &mut 
     statics.insert("in".to_string(), make_fd_instance(vm, 0));
     statics.insert("out".to_string(), make_fd_instance(vm, 1));
     statics.insert("err".to_string(), make_fd_instance(vm, 2));
+
+    let props_cls = vm.resolve_class("java/util/Properties").expect("can resolve java.util.Properties");
+    let default_props = <ValueImpl as JvmValue>::ObjectTy::new_inst(props_cls);
+    let default_props = <ValueImpl as JvmValue>::object(default_props);
+
+    // hack but not terribly bad: construct a call to the constructor using the current
+    // (java.lang.System.<clinit>) frame
+    _javacall(
+        state, vm, default_props.clone(), "java/util/Properties",
+        "<init>", "()V",
+        crate::virtual_machine::CallKind::Special,
+        &[]
+    ).unwrap();
+
+    let params = [
+        <ValueImpl as JvmValue>::string(vm, "file.encoding"),
+        <ValueImpl as JvmValue>::string(vm, "UTF-8"),
+    ];
+    _javacall(
+        state, vm, default_props.clone(), "java/util/Properties",
+        "setProperty", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;",
+        crate::virtual_machine::CallKind::Virtual,
+        params.as_slice()
+    ).unwrap();
+    // put() returned the previous value, or null if nothing. pop it to clean up the stack.
+    state.current_frame_mut().operand_stack.pop();
+
+    vm.magic_ref_cache.insert("_hidden_default_properties".to_string(), default_props.as_object().unwrap().new_ref());
+
     // shouldn't have run initializers for java/lang/System yet
     assert!(vm.static_instances.insert(cls_ref, statics).is_none());
     Ok(())
@@ -1180,18 +1274,20 @@ fn system_get_property<ValueImpl: JvmValue>(state: &mut VMState<ValueImpl>, vm: 
         .pop()
         .expect("argument available");
 
-    let property = if let Some(property_name) = argument.as_type("java/lang/String") {
-        if property_name == vm.magic_ref_cache.get("String.file.encoding").unwrap() {
-            ValueImpl::string(vm, "UTF-8")
-        } else {
-            eprintln!("------------ get_property {}", ValueImpl::object(property_name.new_ref()).summary());
-            ValueImpl::null(String::new())
-        }
+    if let Some(property_name) = argument.as_type("java/lang/String") {
+        eprintln!("------------ get_property {}", ValueImpl::object(property_name.new_ref()).summary());
     } else {
         panic!("invalid argument for getProperty {:?} not String", argument);
     };
 
-    state.current_frame_mut().operand_stack.push(property);
+    let properties = vm.magic_ref_cache.get("_hidden_default_properties").expect("default properties exists");
+    _javacall(
+        state, vm, <ValueImpl as JvmValue>::object(properties.new_ref()), "java/util/Properties",
+        "getProperty", "(Ljava/lang/String;)Ljava/lang/String;",
+        crate::virtual_machine::CallKind::Virtual,
+        &[argument]
+    ).unwrap();
+
     Ok(())
 }
 
@@ -1207,18 +1303,20 @@ fn system_get_property_string_string<ValueImpl: JvmValue>(state: &mut VMState<Va
         .pop()
         .expect("argument available");
 
-    let property = if let Some(property_name) = argument.as_type("java/lang/String") {
-        if property_name == vm.magic_ref_cache.get("String.file.encoding").unwrap() {
-            ValueImpl::string(vm, "UTF-8")
-        } else {
-            eprintln!("------------ get_property {}", ValueImpl::object(property_name.new_ref()).summary());
-            argument.clone()
-        }
+    if let Some(property_name) = argument.as_type("java/lang/String") {
+        eprintln!("------------ get_property {}", ValueImpl::object(property_name.new_ref()).summary());
     } else {
         panic!("invalid argument for getProperty {:?} not String", argument);
     };
 
-    state.current_frame_mut().operand_stack.push(property);
+    let properties = vm.magic_ref_cache.get("_hidden_default_properties").expect("default properties exists");
+    _javacall(
+        state, vm, <ValueImpl as JvmValue>::object(properties.new_ref()), "java/util/Properties",
+        "getProperty", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+        crate::virtual_machine::CallKind::Virtual,
+        &[argument, default_value]
+    ).unwrap();
+
     Ok(())
 }
 
