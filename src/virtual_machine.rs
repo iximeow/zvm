@@ -26,6 +26,7 @@ static NEW_COUNT: AtomicUsize = AtomicUsize::new(0);
 struct CallFrame<ValueImpl: JvmValue> {
     offset: u32,
     arguments: Vec<ValueImpl>,
+    initial_args: usize,
     body: Arc<MethodBody>,
     pub enclosing_class: Arc<ClassFile>,
     pub method_name: String,
@@ -39,6 +40,7 @@ impl<ValueImpl: JvmValue> CallFrame<ValueImpl> {
         method_name: String,
         mut arguments: Vec<ValueImpl>,
     ) -> Self {
+        let initial_args = arguments.len();
         while arguments.len() < (body.max_locals as usize) {
             arguments.push(ValueImpl::uninitialized());
         }
@@ -46,6 +48,7 @@ impl<ValueImpl: JvmValue> CallFrame<ValueImpl> {
         CallFrame {
             offset: 0,
             arguments,
+            initial_args,
             body,
             enclosing_class,
             method_name,
@@ -124,11 +127,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
             );
             print!("(");
             let mut first_arg = true;
-            for arg in frame.arguments.iter() {
+            for i in 0..frame.initial_args {
+                let arg = &frame.arguments[i];
                 if !first_arg {
                     print!(", ");
                 }
-                print!("{:?}", arg);
+                print!("{}", arg.summary());
                 first_arg = false;
             }
             print!(")");
