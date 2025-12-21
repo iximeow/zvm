@@ -382,8 +382,9 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
             } else {
                 // well if it's not on this class, maybe somewhere up the inheritance chain?
                 if target_class.super_class.is_none() {
-                    eprintln!("started at {:?}", init_class);
-                    panic!("cannot find method {:?}", method);
+                    self.abort(vm,
+                        format!("cannot find method {:?}", method)
+                    );
                 }
                 let super_class = target_class.super_class.as_ref().expect("superclass exists");
                 current_class = vm.resolve_class(super_class).expect("can resolve superclass");
