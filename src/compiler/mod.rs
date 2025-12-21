@@ -1448,7 +1448,7 @@ fn jit(args: &[i64], instructions: Vec<validated::Instruction>, signature: &'sta
     while let Ok(inst) = decoder.decode_slice(&fn_bytes[addr..]) {
         let len = inst.len().to_const() as usize;
         print!("{:#08x}: ", addr);
-        let sz = std::cmp::max(8, len);
+        let sz = std::cmp::max(15, len);
         for i in 0..sz {
             // skip 8-len slots...
             if i < (sz - len) {
