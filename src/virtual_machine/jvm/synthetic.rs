@@ -1180,20 +1180,15 @@ fn system_get_property<ValueImpl: JvmValue>(state: &mut VMState<ValueImpl>, vm: 
         .pop()
         .expect("argument available");
 
-    let property = if argument.as_type("java/lang/String").is_some() {
-        let data: &[u8] = panic!("get string somehow");
-        match &data[..] {
-            b"file.encoding" => {
-                ValueImpl::string(vm, "UTF-8")
-            }
-            _ => {
-                let property_name = unsafe { std::str::from_utf8_unchecked(&data) };
-                eprintln!("------------ get_property {:?}", property_name);
-                ValueImpl::null(String::new())
-            }
+    let property = if let Some(property_name) = argument.as_type("java/lang/String") {
+        if property_name == vm.magic_ref_cache.get("String.file.encoding").unwrap() {
+            ValueImpl::string(vm, "UTF-8")
+        } else {
+            eprintln!("------------ get_property {:?}", property_name);
+            ValueImpl::null(String::new())
         }
     } else {
-        panic!("invalid argument for getProperty {:?}", argument);
+        panic!("invalid argument for getProperty {:?} not String", argument);
     };
 
     state.current_frame_mut().operand_stack.push(property);
