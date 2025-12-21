@@ -1076,7 +1076,11 @@ fn string_get_chars<ValueImpl: JvmValue>(state: &mut VMState<ValueImpl>, _vm: &m
 
         for i in 0..count {
             let i = i as usize;
-            *dst.get_elem_mut(dst_start as usize + i).expect("TODO: valid index?") = src.get_elem(src_start as usize + i).expect("TODO: valid index?").clone();
+
+            dst.set_elem(
+                dst_start as usize + i,
+                src.get_elem(src_start as usize + i).expect("TODO: valid index")
+            );
         }
     } else {
         panic!("type error, expected string, int, int, array, int {:?}, {:?}, {:?}, {:?}, {:?}", receiver, src_start, src_end, dst, dst_start);
@@ -1248,9 +1252,10 @@ fn system_arraycopy<ValueImpl: JvmValue>(state: &mut VMState<ValueImpl>, _vm: &m
         Some(count)
     ) = (src.as_array(), dest.as_array(), src_offset.as_integer(), dest_offset.as_integer(), count.as_integer()) {
         for i in 0..*count as usize {
-            let src_el = src_data.get_elem_mut(*src_offset as usize + i);
-            let dest_el = dest_data.get_elem_mut(*dest_offset as usize + i);
-            *dest_el.expect("valid index") = src_el.expect("valid index").clone();
+            dest_data.set_elem(
+                *dest_offset as usize + i,
+                src_data.get_elem(*src_offset as usize + i).expect("TODO: valid index")
+            );
         }
         Ok(())
     } else {
@@ -1314,40 +1319,26 @@ fn class_get_primitive_class<ValueImpl: JvmValue>(state: &mut VMState<ValueImpl>
         .expect("argument available");
 
     let primitive = if let Some(s) = receiver.as_type("java/lang/String") {
-        let field = s.get_field("value");
-        let s = field.as_array().expect("is array");
-        let s = unsafe { s.as_slice::<u8>() }.expect("cast works?");
-        match s {
-            b"byte" => {
-                class_object_new(vm, "java/lang/Byte")
-            },
-            b"short" => {
-                class_object_new(vm, "java/lang/Short")
-            },
-            b"int" => {
-                class_object_new(vm, "java/lang/Integer")
-            },
-            b"long" => {
-                class_object_new(vm, "java/lang/Long")
-            },
-            b"char" => {
-                class_object_new(vm, "java/lang/Character")
-            },
-            b"float" => {
-                class_object_new(vm, "java/lang/Float")
-            },
-            b"double" => {
-                class_object_new(vm, "java/lang/Double")
-            },
-            b"boolean" => {
-                class_object_new(vm, "java/lang/Boolean")
-            },
-            b"void" => {
-                class_object_new(vm, "java/lang/Void")
-            },
-            other => {
-                panic!("unsupported class {:?}", other);
-            }
+        if s == vm.magic_ref_cache.get("String.byte").unwrap() {
+            class_object_new(vm, "java/lang/Byte")
+        } else if s == vm.magic_ref_cache.get("String.short").unwrap() {
+            class_object_new(vm, "java/lang/Short")
+        } else if s == vm.magic_ref_cache.get("String.int").unwrap() {
+            class_object_new(vm, "java/lang/Integer")
+        } else if s == vm.magic_ref_cache.get("String.long").unwrap() {
+            class_object_new(vm, "java/lang/Long")
+        } else if s == vm.magic_ref_cache.get("String.char").unwrap() {
+            class_object_new(vm, "java/lang/Character")
+        } else if s == vm.magic_ref_cache.get("String.float").unwrap() {
+            class_object_new(vm, "java/lang/Float")
+        } else if s == vm.magic_ref_cache.get("String.double").unwrap() {
+            class_object_new(vm, "java/lang/Double")
+        } else if s == vm.magic_ref_cache.get("String.boolean").unwrap() {
+            class_object_new(vm, "java/lang/Boolean")
+        } else if s == vm.magic_ref_cache.get("String.void").unwrap() {
+            class_object_new(vm, "java/lang/Void")
+        } else {
+            panic!("unsupported class {:?}", s);
         }
     } else {
         panic!("invalid string for getPrimitiveClass");

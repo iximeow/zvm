@@ -679,7 +679,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                     (array.as_array(), index.as_integer())
                 {
                     // TODO: homogeneously typed arrays
-                    *elements.get_elem_mut(*index as usize).expect("TODO: handle oob") = value;
+                    elements.set_elem(*index as usize, value);
                 } else {
                     panic!("storing element into non-array. array={:?}, index={:?}", array, index);
                 }
@@ -738,7 +738,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                     (array.as_array(), index.as_integer())
                 {
                     // TODO: homogeneously typed arrays
-                    *elements.get_elem_mut(*index as usize).expect("TODO: handle oob") = value;
+                    elements.set_elem(*index as usize, value);
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -767,7 +767,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                     (array.as_array(), index.as_integer())
                 {
                     // TODO: homogeneously typed arrays
-                    *elements.get_elem_mut(*index as usize).expect("TODO: handle oob") = value;
+                    elements.set_elem(*index as usize, value);
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -822,7 +822,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                     (array.as_array(), index.as_integer())
                 {
                     // TODO: homogeneously typed arrays
-                    *elements.get_elem_mut(*index as usize).expect("TODO: handle oob") = value;
+                    elements.set_elem(*index as usize, value);
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -876,7 +876,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                     (array.as_array(), index.as_integer())
                 {
                     // TODO: homogeneously typed arrays
-                    *elements.get_elem_mut(*index as usize).expect("TODO: handle oob") = value;
+                    elements.set_elem(*index as usize, value);
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -931,7 +931,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                     (array.as_array(), index.as_integer())
                 {
                     // TODO: homogeneously typed arrays
-                    *elements.get_elem_mut(*index as usize).expect("TODO: handle oob") = value;
+                    elements.set_elem(*index as usize, value);
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -987,7 +987,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                     (array.as_array(), index.as_integer())
                 {
                     // TODO: homogeneously typed arrays
-                    *elements.get_elem_mut(*index as usize).expect("TODO: handle oob") = value;
+                    elements.set_elem(*index as usize, value);
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -1043,7 +1043,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                     (array.as_array(), index.as_integer())
                 {
                     // TODO: homogeneously typed arrays
-                    *elements.get_elem_mut(*index as usize).expect("TODO: handle oob") = value;
+                    elements.set_elem(*index as usize, value);
                 } else {
                     panic!("storing element into non-array");
                 }
@@ -2700,6 +2700,11 @@ impl Hash for NativeJvmValue {
     }
 }
 
+// Safety: it's not.
+// TODO: make it.
+unsafe impl Send for NativeJvmObject {}
+unsafe impl Sync for NativeJvmObject {}
+
 #[repr(transparent)]
 pub struct NativeJvmObject {
     // a pointer to some variably-sized alloc. there is a header before this that consists of a zvm
@@ -2871,18 +2876,24 @@ impl JvmArray<NativeJvmValue> for NativeJvmArray {
     fn cls(&self) -> Arc<ClassFile> {
         panic!("no cls")
     }
-    fn get_elem(&self, idx: usize) -> Option<&NativeJvmValue> {
-        Some(unsafe {
+    fn get_elem(&self, idx: usize) -> Option<NativeJvmValue> {
+        if idx >= self.len() {
+            return None;
+        }
+
+        let value_ref = unsafe {
              ((self.data as *const usize)
                 .offset(1)
                 as *const NativeJvmValue)
                 .offset(idx as isize)
                 .as_ref()
                 .unwrap()
-        })
+        };
+        // TODO: this is ... not sufficient for rael objects
+        Some(value_ref.clone())
     }
-    fn get_elem_mut(&self, idx: usize) -> Option<&mut NativeJvmValue> {
-        Some(unsafe {
+    fn set_elem(&self, idx: usize, v: NativeJvmValue) {
+        let value_ref = unsafe {
              ((self.data as *const usize)
                 .offset(1)
                 as *const NativeJvmValue
@@ -2890,7 +2901,8 @@ impl JvmArray<NativeJvmValue> for NativeJvmArray {
                 .offset(idx as isize)
                 .as_mut()
                 .unwrap()
-        })
+        };
+        *value_ref = v;
     }
     unsafe fn as_slice<'data, T>(&'data self) -> Option<&'data [T]> {
         panic!("ref of refcell.. uh oh...");
@@ -2935,11 +2947,12 @@ impl JvmArray<SimpleJvmValue> for SimpleJvmArray {
     fn cls(&self) -> Arc<ClassFile> {
         Arc::clone(&self.cls)
     }
-    fn get_elem(&self, idx: usize) -> Option<&SimpleJvmValue> {
-        panic!("ref of refcell.. uh oh...");
+    fn get_elem(&self, idx: usize) -> Option<SimpleJvmValue> {
+        self.data.borrow().get(idx).map(|x| x.clone())
     }
-    fn get_elem_mut(&self, idx: usize) -> Option<&mut SimpleJvmValue> {
-        panic!("ref of refcell.. uh oh...");
+    fn set_elem(&self, idx: usize, elem: SimpleJvmValue) {
+        let data = &mut *self.data.borrow_mut();
+        data[idx] = elem;
     }
     unsafe fn as_slice<'data, T>(&'data self) -> Option<&'data [T]> {
         panic!("ref of refcell.. uh oh...");
@@ -2956,7 +2969,7 @@ impl JvmArray<SimpleJvmValue> for SimpleJvmArray {
     fn new_array(class_file: Arc<ClassFile>, data: Box<[SimpleJvmValue]>) -> Self {
         Self {
             cls: class_file,
-            data: panic!("todo: do something with argument")
+            data: Arc::new(RefCell::new(data))
         }
     }
 }
@@ -2987,7 +3000,7 @@ impl JvmObject<SimpleJvmValue> for SimpleJvmObject {
         SimpleJvmObject::new_inst(class_file)
     }
     fn cls(&self) -> Arc<ClassFile> {
-        panic!("array class");
+        Arc::clone(&self.cls)
     }
     fn get_field(&self, field: &str) -> SimpleJvmValue {
         self.fields.borrow().get(field).expect("field exists").to_owned()
@@ -3035,7 +3048,7 @@ impl SimpleJvmObject {
     }
 }
 
-impl JvmValue for NativeJvmValue  {
+impl JvmValue for NativeJvmValue {
     type ArrayTy = NativeJvmArray;
     type ObjectTy = NativeJvmObject;
 
@@ -3346,8 +3359,8 @@ pub trait JvmObject<ValueTy: JvmValue>: fmt::Debug + Sized + PartialEq + Eq + Ha
 pub trait JvmArray<ValueTy: JvmValue>: fmt::Debug + Sized + PartialEq + Eq + Hash {
     fn new_array(class_file: Arc<ClassFile>, data: Box<[ValueTy]>) -> Self;
     fn cls(&self) -> Arc<ClassFile>;
-    fn get_elem(&self, idx: usize) -> Option<&ValueTy>;
-    fn get_elem_mut(&self, idx: usize) -> Option<&mut ValueTy>;
+    fn get_elem(&self, idx: usize) -> Option<ValueTy>;
+    fn set_elem(&self, idx: usize, v: ValueTy);
     fn len(&self) -> usize;
     fn internal_obj_id(&self) -> u64;
     fn new_ref(&self) -> Self;
@@ -3441,6 +3454,11 @@ pub struct VirtualMachine<ValueImpl: JvmValue> {
     native_impls: HashMap<NativeImplKey, fn(&mut VMState<ValueImpl>, &mut VirtualMachine<ValueImpl>) -> Result<(), VMError>>,
     class_instances: HashMap<String, ValueImpl>, // they're all objects, but we use the generic ValueImpl here
     static_instances: HashMap<ClassFileRef, HashMap<String, ValueImpl>>,
+
+    // it happens to be convenient to have a cache of instances for strings like "int", "char",
+    // etc. stashing this on the instance of the VM is as good as anywhere else...
+    magic_ref_cache: HashMap<String, <ValueImpl as JvmValue>::ObjectTy>,
+
 //    native_instances: HashMap<ValueRef<ValueImpl>, RefCell<NativeObject>>, // TODO: should probably be an ObjectImpl?
     classpath: Vec<PathBuf>,
     // TODO: actually reuse the VirtualMachine for <clinit> calls - mutually recursive classes
@@ -3466,6 +3484,7 @@ impl<ValueImpl: JvmValue> VirtualMachine<ValueImpl> {
             native_impls: HashMap::new(),
             class_instances: HashMap::new(),
             static_instances: HashMap::new(),
+            magic_ref_cache: HashMap::new(),
 //            native_instances: HashMap::new(),
             classpath: initial_classpath,
             first_run: true,
@@ -3707,6 +3726,26 @@ impl<ValueImpl: JvmValue> VirtualMachine<ValueImpl> {
         // magic incantation to awaken the machine
         if self.first_run {
             println!("zoom zoom");
+
+            let string_byte = ValueImpl::string(self, "byte").as_object().unwrap().new_ref();
+            self.magic_ref_cache.insert("String.byte".to_string(), string_byte);
+            let string_short = ValueImpl::string(self, "short").as_object().unwrap().new_ref();
+            self.magic_ref_cache.insert("String.short".to_string(), string_short);
+            let string_int = ValueImpl::string(self, "int").as_object().unwrap().new_ref();
+            self.magic_ref_cache.insert("String.int".to_string(), string_int);
+            let string_long = ValueImpl::string(self, "long").as_object().unwrap().new_ref();
+            self.magic_ref_cache.insert("String.long".to_string(), string_long);
+            let string_char = ValueImpl::string(self, "char").as_object().unwrap().new_ref();
+            self.magic_ref_cache.insert("String.char".to_string(), string_char);
+            let string_float = ValueImpl::string(self, "float").as_object().unwrap().new_ref();
+            self.magic_ref_cache.insert("String.float".to_string(), string_float);
+            let string_double = ValueImpl::string(self, "double").as_object().unwrap().new_ref();
+            self.magic_ref_cache.insert("String.double".to_string(), string_double);
+            let string_boolean = ValueImpl::string(self, "boolean").as_object().unwrap().new_ref();
+            self.magic_ref_cache.insert("String.boolean".to_string(), string_boolean);
+            let string_void = ValueImpl::string(self, "void").as_object().unwrap().new_ref();
+            self.magic_ref_cache.insert("String.void".to_string(), string_void);
+
             self.first_run = false;
         }
 
