@@ -56,6 +56,12 @@ impl<ValueImpl: JvmValue> CallFrame<ValueImpl> {
     pub fn branch_rel(&mut self, rel: i16) {
         self.offset = self.offset.wrapping_add(rel as i32 as u32);
     }
+
+    pub fn malformed_class<T>(&self, message: &'static str) -> Result<T, VMError> {
+        Err(VMError::BadClass {
+            message, classname: self.enclosing_class.this_class.to_string()
+        })
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -152,11 +158,11 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 } else if argument.is_uninitialized() {
                     ValueImpl::default_of("I")
                 } else {
-                    return Err(VMError::BadClass("iload but not integer"));
+                    return frame_mut.malformed_class("iload but not integer");
                 }
             },
             None => {
-                return Err(VMError::BadClass("iload but insufficient arguments"));
+                return frame_mut.malformed_class("iload but insufficient arguments");
             }
         };
 
@@ -185,11 +191,11 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 } else if argument.is_uninitialized() {
                     ValueImpl::default_of("J")
                 } else {
-                    return Err(VMError::BadClass("lload but not long"));
+                    return frame_mut.malformed_class("lload but not long");
                 }
             },
             None => {
-                return Err(VMError::BadClass("lload but insufficient arguments"));
+                return frame_mut.malformed_class("lload but insufficient arguments");
             }
         };
 
@@ -218,11 +224,11 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 } else if argument.is_uninitialized() {
                     ValueImpl::default_of("F")
                 } else {
-                    return Err(VMError::BadClass("fload but not float"));
+                    return frame_mut.malformed_class("fload but not float");
                 }
             },
             None => {
-                return Err(VMError::BadClass("fload but insufficient arguments"));
+                return frame_mut.malformed_class("fload but insufficient arguments");
             }
         };
 
@@ -251,11 +257,11 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 } else if argument.is_uninitialized() {
                     ValueImpl::default_of("D")
                 } else {
-                    return Err(VMError::BadClass("dload but not double"));
+                    return frame_mut.malformed_class("dload but not double");
                 }
             },
             None => {
-                return Err(VMError::BadClass("dload but insufficient arguments"));
+                return frame_mut.malformed_class("dload but insufficient arguments");
             }
         };
 
@@ -286,7 +292,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 argument.clone()
             }
         } else {
-            return Err(VMError::BadClass("dload but insufficient arguments"));
+            return frame_mut.malformed_class("dload but insufficient arguments");
         };
 
         frame_mut.operand_stack.push(operand);
@@ -424,11 +430,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
             }
             Instruction::PutStatic(field_ref) => {
                 let target_class = vm.resolve_class(&field_ref.class_name).unwrap();
+                let frame_mut = self.current_frame_mut();
                 let value =
-                    if let Some(value) = self.current_frame_mut().operand_stack.pop() {
+                    if let Some(value) = frame_mut.operand_stack.pop() {
                         value
                     } else {
-                        return Err(VMError::BadClass("putstatic but insufficient arguments"));
+                        return frame_mut.malformed_class("putstatic but insufficient arguments");
                     };
 
                 vm.put_static_field(&target_class, &field_ref.name, &field_ref.desc, value);
@@ -1194,12 +1201,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let right = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("ifacmpne but insufficient arguments"));
+                    return frame_mut.malformed_class("ifacmpne but insufficient arguments");
                 };
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("ifacmpne but insufficient arguments"));
+                    return frame_mut.malformed_class("ifacmpne but insufficient arguments");
                 };
 
                 if left.is_reference() && right.is_reference() {
@@ -1210,7 +1217,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                         Ok(None)
                     }
                 } else {
-                    Err(VMError::BadClass("ifacmpeq but invalid operand types"))
+                    frame_mut.malformed_class("ifacmpeq but invalid operand types")
                 }
             }
             Instruction::IfAcmpNe(offset) => {
@@ -1218,12 +1225,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let right = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("ifacmpne but insufficient arguments"));
+                    return frame_mut.malformed_class("ifacmpne but insufficient arguments");
                 };
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("ifacmpne but insufficient arguments"));
+                    return frame_mut.malformed_class("ifacmpne but insufficient arguments");
                 };
 
                 if left.is_reference() && right.is_reference() {
@@ -1234,7 +1241,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                         Ok(None)
                     }
                 } else {
-                    Err(VMError::BadClass("ifacmpne but invalid operand types"))
+                    frame_mut.malformed_class("ifacmpne but invalid operand types")
                 }
             }
             Instruction::IfGe(offset) => {
@@ -1242,7 +1249,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
 
                 if let Some(v) = value.as_integer() {
@@ -1253,7 +1260,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                         Ok(None)
                     }
                 } else {
-                    Err(VMError::BadClass("iadd but invalid operand types"))
+                    frame_mut.malformed_class("iadd but invalid operand types")
                 }
             }
             Instruction::IfGt(offset) => {
@@ -1261,7 +1268,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
 
                 if let Some(v) = value.as_integer() {
@@ -1272,7 +1279,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                         Ok(None)
                     }
                 } else {
-                    Err(VMError::BadClass("iadd but invalid operand types"))
+                    frame_mut.malformed_class("iadd but invalid operand types")
                 }
             }
             Instruction::IfLe(offset) => {
@@ -1280,7 +1287,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("ifle but insufficient arguments"));
+                    return frame_mut.malformed_class("ifle but insufficient arguments");
                 };
 
                 if let Some(v) = value.as_integer() {
@@ -1291,7 +1298,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                         Ok(None)
                     }
                 } else {
-                    Err(VMError::BadClass("iadd but invalid operand types"))
+                    frame_mut.malformed_class("iadd but invalid operand types")
                 }
             }
             Instruction::IfLt(offset) => {
@@ -1299,7 +1306,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
 
                 if let Some(v) = value.as_integer() {
@@ -1310,7 +1317,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                         Ok(None)
                     }
                 } else {
-                    Err(VMError::BadClass("iadd but invalid operand types"))
+                    frame_mut.malformed_class("iadd but invalid operand types")
                 }
             }
             Instruction::IfEq(offset) => {
@@ -1318,7 +1325,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("ifeq but insufficient arguments"));
+                    return frame_mut.malformed_class("ifeq but insufficient arguments");
                 };
 
                 if let Some(v) = value.as_integer() {
@@ -1329,7 +1336,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                         Ok(None)
                     }
                 } else {
-                    Err(VMError::BadClass("iadd but invalid operand types"))
+                    frame_mut.malformed_class("iadd but invalid operand types")
                 }
             }
             Instruction::IfNe(offset) => {
@@ -1337,7 +1344,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("ifne but insufficient arguments"));
+                    return frame_mut.malformed_class("ifne but insufficient arguments");
                 };
 
                 if let Some(v) = value.as_integer() {
@@ -1348,7 +1355,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                         Ok(None)
                     }
                 } else {
-                    Err(VMError::BadClass("iadd but invalid operand types"))
+                    frame_mut.malformed_class("iadd but invalid operand types")
                 }
             }
             Instruction::IfIcmpEq(offset) => {
@@ -1356,12 +1363,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let right = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
 
                 if let (Some(l), Some(r)) = (left.as_integer(), right.as_integer()) {
@@ -1372,7 +1379,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                         Ok(None)
                     }
                 } else {
-                    Err(VMError::BadClass("iadd but invalid operand types"))
+                    frame_mut.malformed_class("iadd but invalid operand types")
                 }
             }
             Instruction::IfIcmpLe(offset) => {
@@ -1380,12 +1387,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let right = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
 
                 if let (Some(l), Some(r)) = (left.as_integer(), right.as_integer()) {
@@ -1396,7 +1403,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                         Ok(None)
                     }
                 } else {
-                    Err(VMError::BadClass("iadd but invalid operand types"))
+                    frame_mut.malformed_class("iadd but invalid operand types")
                 }
             }
             Instruction::IfIcmpLt(offset) => {
@@ -1404,12 +1411,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let right = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
 
                 if let (Some(l), Some(r)) = (left.as_integer(), right.as_integer()) {
@@ -1420,7 +1427,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                         Ok(None)
                     }
                 } else {
-                    Err(VMError::BadClass("iadd but invalid operand types"))
+                    frame_mut.malformed_class("iadd but invalid operand types")
                 }
             }
             Instruction::IfIcmpGe(offset) => {
@@ -1428,12 +1435,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let right = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
 
                 if let (Some(l), Some(r)) = (left.as_integer(), right.as_integer()) {
@@ -1444,7 +1451,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                         Ok(None)
                     }
                 } else {
-                    Err(VMError::BadClass("iadd but invalid operand types"))
+                    frame_mut.malformed_class("iadd but invalid operand types")
                 }
             }
             Instruction::IfIcmpGt(offset) => {
@@ -1452,12 +1459,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let right = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
 
                 if let (Some(l), Some(r)) = (left.as_integer(), right.as_integer()) {
@@ -1468,7 +1475,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                         Ok(None)
                     }
                 } else {
-                    Err(VMError::BadClass("iadd but invalid operand types"))
+                    frame_mut.malformed_class("iadd but invalid operand types")
                 }
             }
             Instruction::IfIcmpNe(offset) => {
@@ -1476,12 +1483,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
                 let right = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
 
                 if let (Some(l), Some(r)) = (left.as_integer(), right.as_integer()) {
@@ -1492,17 +1499,17 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                         Ok(None)
                     }
                 } else {
-                    Err(VMError::BadClass("iadd but invalid operand types"))
+                    frame_mut.malformed_class("iadd but invalid operand types")
                 }
             }
             Instruction::LCmp => {
-                let right = self
-                    .current_frame_mut()
+                let frame_mut = self.current_frame_mut();
+
+                let right = frame_mut
                     .operand_stack
                     .pop()
                     .expect("stack has a value");
-                let left = self
-                    .current_frame_mut()
+                let left = frame_mut
                     .operand_stack
                     .pop()
                     .expect("stack has a value");
@@ -1512,31 +1519,31 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                         let left = *left as i64;
                         let right = *right as i64;
                         if left > right {
-                            self.current_frame_mut()
+                            frame_mut
                                 .operand_stack
                                 .push(ValueImpl::integer(1));
                         } else if left == right {
-                            self.current_frame_mut()
+                            frame_mut
                                 .operand_stack
                                 .push(ValueImpl::integer(0));
                         } else {
-                            self.current_frame_mut()
+                            frame_mut
                                 .operand_stack
                                 .push(ValueImpl::integer(-1));
                         }
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("lcmp but invalid operand types")),
+                    _ => frame_mut.malformed_class("lcmp but invalid operand types"),
                 }
             }
             Instruction::FCmpG => {
-                let right = self
-                    .current_frame_mut()
+                let frame_mut = self.current_frame_mut();
+
+                let right = frame_mut
                     .operand_stack
                     .pop()
                     .expect("stack has a value");
-                let left = self
-                    .current_frame_mut()
+                let left = frame_mut
                     .operand_stack
                     .pop()
                     .expect("stack has a value");
@@ -1544,31 +1551,31 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 match (left.as_float(), right.as_float()) {
                     (Some(left), Some(right)) => {
                         if left > right {
-                            self.current_frame_mut()
+                            frame_mut
                                 .operand_stack
                                 .push(ValueImpl::integer(1));
                         } else if left == right {
-                            self.current_frame_mut()
+                            frame_mut
                                 .operand_stack
                                 .push(ValueImpl::integer(0));
                         } else {
-                            self.current_frame_mut()
+                            frame_mut
                                 .operand_stack
                                 .push(ValueImpl::integer(-1));
                         }
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("lcmp but invalid operand types")),
+                    _ => frame_mut.malformed_class("lcmp but invalid operand types"),
                 }
             }
             Instruction::FCmpL => {
-                let right = self
-                    .current_frame_mut()
+                let frame_mut = self.current_frame_mut();
+
+                let right = frame_mut
                     .operand_stack
                     .pop()
                     .expect("stack has a value");
-                let left = self
-                    .current_frame_mut()
+                let left = frame_mut
                     .operand_stack
                     .pop()
                     .expect("stack has a value");
@@ -1576,31 +1583,31 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 match (left.as_float(), right.as_float()) {
                     (Some(left), Some(right)) => {
                         if left < right {
-                            self.current_frame_mut()
+                            frame_mut
                                 .operand_stack
                                 .push(ValueImpl::integer(1));
                         } else if left == right {
-                            self.current_frame_mut()
+                            frame_mut
                                 .operand_stack
                                 .push(ValueImpl::integer(0));
                         } else {
-                            self.current_frame_mut()
+                            frame_mut
                                 .operand_stack
                                 .push(ValueImpl::integer(-1));
                         }
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("lcmp but invalid operand types")),
+                    _ => frame_mut.malformed_class("lcmp but invalid operand types"),
                 }
             }
             Instruction::FMul => {
-                let right = self
-                    .current_frame_mut()
+                let frame_mut = self.current_frame_mut();
+
+                let right = frame_mut
                     .operand_stack
                     .pop()
                     .expect("stack has a value");
-                let left = self
-                    .current_frame_mut()
+                let left = frame_mut
                     .operand_stack
                     .pop()
                     .expect("stack has a value");
@@ -1609,22 +1616,22 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                     // TODO: ensure that division works "correctly" around NaN and zeroes (doesn't
                     // panic pls)
                     (Some(left), Some(right)) => {
-                        self.current_frame_mut()
+                        frame_mut
                             .operand_stack
                             .push(ValueImpl::float(left * right));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("lcmp but invalid operand types")),
+                    _ => frame_mut.malformed_class("lcmp but invalid operand types"),
                 }
             }
             Instruction::FDiv => {
-                let right = self
-                    .current_frame_mut()
+                let frame_mut = self.current_frame_mut();
+
+                let right = frame_mut
                     .operand_stack
                     .pop()
                     .expect("stack has a value");
-                let left = self
-                    .current_frame_mut()
+                let left = frame_mut
                     .operand_stack
                     .pop()
                     .expect("stack has a value");
@@ -1633,12 +1640,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                     // TODO: ensure that division works "correctly" around NaN and zeroes (doesn't
                     // panic pls)
                     (Some(left), Some(right)) => {
-                        self.current_frame_mut()
+                        frame_mut
                             .operand_stack
                             .push(ValueImpl::float(left / right));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("lcmp but invalid operand types")),
+                    _ => frame_mut.malformed_class("lcmp but invalid operand types"),
                 }
             }
             Instruction::IfNull(offset) => {
@@ -1646,7 +1653,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("ifnull but insufficient arguments"));
+                    return frame_mut.malformed_class("ifnull but insufficient arguments");
                 };
 
                 if value.is_reference() {
@@ -1657,7 +1664,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                         Ok(None)
                     }
                 } else {
-                    Err(VMError::BadClass("ifnull but invalid operand types"))
+                    frame_mut.malformed_class("ifnull but invalid operand types")
                 }
             }
             Instruction::IfNonNull(offset) => {
@@ -1665,7 +1672,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("ifnotnull but insufficient arguments"));
+                    return frame_mut.malformed_class("ifnotnull but insufficient arguments");
                 };
 
                 if value.is_reference() {
@@ -1676,7 +1683,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                         Ok(None)
                     }
                 } else {
-                    Err(VMError::BadClass("ifnotnull but invalid operand types"))
+                    frame_mut.malformed_class("ifnotnull but invalid operand types")
                 }
             }
             Instruction::IInc(idx, constant) => {
@@ -1686,10 +1693,10 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                     Some(argument) => if let Some(v) = argument.as_integer() {
                         *argument = ValueImpl::integer(v.wrapping_add(*constant as i32));
                     } else {
-                        return Err(VMError::BadClass("iinc but not integer"));
+                        return frame_mut.malformed_class("iinc but not integer");
                     },
                     None => {
-                        return Err(VMError::BadClass("iinc but insufficient arguments"));
+                        return frame_mut.malformed_class("iinc but insufficient arguments");
                     }
                 };
                 Ok(None)
@@ -1749,12 +1756,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let amount = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
 
                 match (value.as_long(), amount.as_integer()) {
@@ -1764,7 +1771,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::long(((*value as u64) >> (*amount & 0x3f)) as i64));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                    _ => frame_mut.malformed_class("iadd but invalid operand types"),
                 }
             }
             Instruction::LNeg => {
@@ -1772,7 +1779,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("lneg but insufficient arguments"));
+                    return frame_mut.malformed_class("lneg but insufficient arguments");
                 };
 
                 match value.as_long() {
@@ -1782,7 +1789,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::long(l.wrapping_neg()));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("lneg but invalid operand types")),
+                    _ => frame_mut.malformed_class("lneg but invalid operand types"),
                 }
             }
             Instruction::LAnd => {
@@ -1790,12 +1797,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iand but insufficient arguments"));
+                    return frame_mut.malformed_class("iand but insufficient arguments");
                 };
                 let right = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iand but insufficient arguments"));
+                    return frame_mut.malformed_class("iand but insufficient arguments");
                 };
 
                 match (left.as_long(), right.as_long()) {
@@ -1805,7 +1812,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::long(l & r));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("iand but invalid operand types")),
+                    _ => frame_mut.malformed_class("iand but invalid operand types"),
                 }
             }
             Instruction::LOr => {
@@ -1813,12 +1820,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("ior but insufficient arguments"));
+                    return frame_mut.malformed_class("ior but insufficient arguments");
                 };
                 let right = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("ior but insufficient arguments"));
+                    return frame_mut.malformed_class("ior but insufficient arguments");
                 };
 
                 match (left.as_long(), right.as_long()) {
@@ -1828,7 +1835,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::long(l | r));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("ior but invalid operand types")),
+                    _ => frame_mut.malformed_class("ior but invalid operand types"),
                 }
             }
             Instruction::LShl => {
@@ -1836,12 +1843,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let amount = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
 
                 match (value.as_long(), amount.as_integer()) {
@@ -1851,7 +1858,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::long(((*value as u64) << (*amount & 0x3f)) as i64));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                    _ => frame_mut.malformed_class("iadd but invalid operand types"),
                 }
             }
             Instruction::DAdd => {
@@ -1859,12 +1866,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
                 let right = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
 
                 match (left.as_double(), right.as_double()) {
@@ -1874,7 +1881,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::double(l + r));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                    _ => frame_mut.malformed_class("iadd but invalid operand types"),
                 }
             }
             Instruction::FAdd => {
@@ -1882,12 +1889,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
                 let right = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
 
                 match (left.as_float(), right.as_float()) {
@@ -1897,7 +1904,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::float(l + r));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                    _ => frame_mut.malformed_class("iadd but invalid operand types"),
                 }
             }
             Instruction::IAdd => {
@@ -1905,12 +1912,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
                 let right = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
 
                 match (left.as_integer(), right.as_integer()) {
@@ -1920,7 +1927,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::integer(l.wrapping_add(*r)));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                    _ => frame_mut.malformed_class("iadd but invalid operand types"),
                 }
             }
             Instruction::IMul => {
@@ -1928,12 +1935,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("imul but insufficient arguments"));
+                    return frame_mut.malformed_class("imul but insufficient arguments");
                 };
                 let right = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("imul but insufficient arguments"));
+                    return frame_mut.malformed_class("imul but insufficient arguments");
                 };
 
                 match (left.as_integer(), right.as_integer()) {
@@ -1943,7 +1950,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::integer(l.wrapping_mul(*r)));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                    _ => frame_mut.malformed_class("iadd but invalid operand types"),
                 }
             }
             Instruction::LAdd => {
@@ -1951,12 +1958,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("ladd but insufficient arguments"));
+                    return frame_mut.malformed_class("ladd but insufficient arguments");
                 };
                 let right = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("ladd but insufficient arguments"));
+                    return frame_mut.malformed_class("ladd but insufficient arguments");
                 };
 
                 match (left.as_long(), right.as_long()) {
@@ -1966,7 +1973,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::long(l.wrapping_add(*r)));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("ladd but invalid operand types")),
+                    _ => frame_mut.malformed_class("ladd but invalid operand types"),
                 }
             }
             Instruction::ISub => {
@@ -1974,12 +1981,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let right = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
 
                 match (left.as_integer(), right.as_integer()) {
@@ -1989,7 +1996,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::integer(l.wrapping_sub(*r)));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                    _ => frame_mut.malformed_class("iadd but invalid operand types"),
                 }
             }
             Instruction::INeg => {
@@ -1997,7 +2004,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("ineg but insufficient arguments"));
+                    return frame_mut.malformed_class("ineg but insufficient arguments");
                 };
 
                 match value.as_integer() {
@@ -2007,7 +2014,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::integer(l.wrapping_neg()));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("ineg but invalid operand types")),
+                    _ => frame_mut.malformed_class("ineg but invalid operand types"),
                 }
             }
             Instruction::IXor => {
@@ -2015,12 +2022,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iand but insufficient arguments"));
+                    return frame_mut.malformed_class("iand but insufficient arguments");
                 };
                 let right = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iand but insufficient arguments"));
+                    return frame_mut.malformed_class("iand but insufficient arguments");
                 };
 
                 match (left.as_integer(), right.as_integer()) {
@@ -2030,7 +2037,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::integer(l ^ r));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("iand but invalid operand types")),
+                    _ => frame_mut.malformed_class("iand but invalid operand types"),
                 }
             }
             Instruction::IAnd => {
@@ -2038,12 +2045,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iand but insufficient arguments"));
+                    return frame_mut.malformed_class("iand but insufficient arguments");
                 };
                 let right = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iand but insufficient arguments"));
+                    return frame_mut.malformed_class("iand but insufficient arguments");
                 };
 
                 match (left.as_integer(), right.as_integer()) {
@@ -2053,7 +2060,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::integer(l & r));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("iand but invalid operand types")),
+                    _ => frame_mut.malformed_class("iand but invalid operand types"),
                 }
             }
             Instruction::IOr => {
@@ -2061,12 +2068,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let left = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("ior but insufficient arguments"));
+                    return frame_mut.malformed_class("ior but insufficient arguments");
                 };
                 let right = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("ior but insufficient arguments"));
+                    return frame_mut.malformed_class("ior but insufficient arguments");
                 };
 
                 match (left.as_integer(), right.as_integer()) {
@@ -2076,7 +2083,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::integer(l | r));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("ior but invalid operand types")),
+                    _ => frame_mut.malformed_class("ior but invalid operand types"),
                 }
             }
             Instruction::IShr => {
@@ -2084,12 +2091,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value2 = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("ishr but insufficient arguments"));
+                    return frame_mut.malformed_class("ishr but insufficient arguments");
                 };
                 let value1 = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("ishr but insufficient arguments"));
+                    return frame_mut.malformed_class("ishr but insufficient arguments");
                 };
 
                 match (value1.as_integer(), value2.as_integer()) {
@@ -2099,7 +2106,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::integer(v1 >> (v2 & 0x1f)));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("ishr but invalid operand types")),
+                    _ => frame_mut.malformed_class("ishr but invalid operand types"),
                 }
             }
             Instruction::IUshr => {
@@ -2107,12 +2114,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value2 = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("ishr but insufficient arguments"));
+                    return frame_mut.malformed_class("ishr but insufficient arguments");
                 };
                 let value1 = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("ishr but insufficient arguments"));
+                    return frame_mut.malformed_class("ishr but insufficient arguments");
                 };
 
                 match (value1.as_integer(), value2.as_integer()) {
@@ -2123,7 +2130,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::integer(res as i32));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("ishr but invalid operand types")),
+                    _ => frame_mut.malformed_class("ishr but invalid operand types"),
                 }
             }
             Instruction::IShl => {
@@ -2131,12 +2138,12 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value2 = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("ishl but insufficient arguments"));
+                    return frame_mut.malformed_class("ishl but insufficient arguments");
                 };
                 let value1 = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("ishl but insufficient arguments"));
+                    return frame_mut.malformed_class("ishl but insufficient arguments");
                 };
 
                 match (value1.as_integer(), value2.as_integer()) {
@@ -2146,7 +2153,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::integer(v1 << (v2 & 0x1f)));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("ishl but invalid operand types")),
+                    _ => frame_mut.malformed_class("ishl but invalid operand types"),
                 }
             }
             Instruction::F2D => {
@@ -2154,7 +2161,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("i2d but insufficient arguments"));
+                    return frame_mut.malformed_class("i2d but insufficient arguments");
                 };
 
                 match value.as_float() {
@@ -2164,7 +2171,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::double(*f as f64));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("i2d but invalid operand types")),
+                    _ => frame_mut.malformed_class("i2d but invalid operand types"),
                 }
             }
             Instruction::F2I => {
@@ -2172,7 +2179,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("i2d but insufficient arguments"));
+                    return frame_mut.malformed_class("i2d but insufficient arguments");
                 };
 
                 match value.as_float() {
@@ -2182,7 +2189,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::integer(*f as i32));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("i2d but invalid operand types")),
+                    _ => frame_mut.malformed_class("i2d but invalid operand types"),
                 }
             }
             Instruction::L2I => {
@@ -2190,7 +2197,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
 
                 match value.as_long() {
@@ -2200,7 +2207,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::integer(*l as i32));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                    _ => frame_mut.malformed_class("iadd but invalid operand types"),
                 }
             }
             Instruction::L2F => {
@@ -2208,7 +2215,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("l2f but insufficient arguments"));
+                    return frame_mut.malformed_class("l2f but insufficient arguments");
                 };
 
                 match value.as_long() {
@@ -2218,7 +2225,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::float(*l as f32));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("l2f but invalid operand types")),
+                    _ => frame_mut.malformed_class("l2f but invalid operand types"),
                 }
             }
             Instruction::I2B => {
@@ -2226,7 +2233,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
 
                 match value.as_integer() {
@@ -2236,7 +2243,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::integer(*l as i8 as i32));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                    _ => frame_mut.malformed_class("iadd but invalid operand types"),
                 }
             }
             Instruction::I2C => {
@@ -2244,7 +2251,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
 
                 match value.as_integer() {
@@ -2254,7 +2261,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::integer(*l as i16 as u16 as i32));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                    _ => frame_mut.malformed_class("iadd but invalid operand types"),
                 }
             }
             Instruction::I2D => {
@@ -2262,7 +2269,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("i2d but insufficient arguments"));
+                    return frame_mut.malformed_class("i2d but insufficient arguments");
                 };
 
                 match value.as_integer() {
@@ -2272,7 +2279,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::double(*l as f64));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("i2d but invalid operand types")),
+                    _ => frame_mut.malformed_class("i2d but invalid operand types"),
                 }
             }
             Instruction::I2F => {
@@ -2280,7 +2287,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("i2f but insufficient arguments"));
+                    return frame_mut.malformed_class("i2f but insufficient arguments");
                 };
 
                 match value.as_integer() {
@@ -2290,7 +2297,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::float(*l as f32));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("i2f but invalid operand types")),
+                    _ => frame_mut.malformed_class("i2f but invalid operand types"),
                 }
             }
             Instruction::I2L => {
@@ -2298,7 +2305,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
 
                 match value.as_integer() {
@@ -2308,7 +2315,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::long(*l as i64));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                    _ => frame_mut.malformed_class("iadd but invalid operand types"),
                 }
             }
             Instruction::D2L => {
@@ -2316,7 +2323,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("iadd but insufficient arguments"));
+                    return frame_mut.malformed_class("iadd but insufficient arguments");
                 };
 
                 match value.as_double() {
@@ -2326,7 +2333,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                             .push(ValueImpl::long(*d as i64));
                         Ok(None)
                     }
-                    _ => Err(VMError::BadClass("iadd but invalid operand types")),
+                    _ => frame_mut.malformed_class("iadd but invalid operand types"),
                 }
             }
             Instruction::DReturn => {
@@ -2334,7 +2341,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("dreturn but insufficient arguments"));
+                    return frame_mut.malformed_class("dreturn but insufficient arguments");
                 };
 
                 match value.as_double() {
@@ -2342,7 +2349,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                         self.leave();
                         Ok(Some(value))
                     }
-                    _ => Err(VMError::BadClass("dreturn but invalid operand types")),
+                    _ => frame_mut.malformed_class("dreturn but invalid operand types"),
                 }
             }
             Instruction::IReturn => {
@@ -2350,7 +2357,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("ireturn but insufficient arguments"));
+                    return frame_mut.malformed_class("ireturn but insufficient arguments");
                 };
 
                 match value.as_integer() {
@@ -2358,7 +2365,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                         self.leave();
                         Ok(Some(value))
                     }
-                    _ => Err(VMError::BadClass("ireturn but invalid operand types")),
+                    _ => frame_mut.malformed_class("ireturn but invalid operand types"),
                 }
             }
             Instruction::LReturn => {
@@ -2366,7 +2373,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("lreturn but insufficient arguments"));
+                    return frame_mut.malformed_class("lreturn but insufficient arguments");
                 };
 
                 match value.as_long() {
@@ -2374,7 +2381,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                         self.leave();
                         Ok(Some(value))
                     }
-                    _ => Err(VMError::BadClass("lreturn but invalid operand types")),
+                    _ => frame_mut.malformed_class("lreturn but invalid operand types"),
                 }
             }
             Instruction::AReturn => {
@@ -2382,14 +2389,14 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("areturn but insufficient arguments"));
+                    return frame_mut.malformed_class("areturn but insufficient arguments");
                 };
 
                 if value.is_reference() {
                     self.leave();
                     Ok(Some(value))
                 } else {
-                    Err(VMError::BadClass("areturn but invalid operand types"))
+                    frame_mut.malformed_class("areturn but invalid operand types")
                 }
             }
             Instruction::AThrow => {
@@ -2397,14 +2404,14 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                 let value = if let Some(value) = frame_mut.operand_stack.pop() {
                     value
                 } else {
-                    return Err(VMError::BadClass("athrow but insufficient arguments"));
+                    return frame_mut.malformed_class("athrow but insufficient arguments");
                 };
 
                 if value.as_object().is_some() {
                     self.throw();
                     Ok(Some(value))
                 } else {
-                    Err(VMError::BadClass("athrow but invalid operand types"))
+                    frame_mut.malformed_class("athrow but invalid operand types")
                 }
             }
             Instruction::Ldc(c) => {
@@ -2508,7 +2515,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                     // TODO: think this should raise an exception...
                     return Ok(None);
                 } else {
-                    return Err(VMError::BadClass("invalid operand for checkcast"))
+                    return frame_mut.malformed_class("invalid operand for checkcast")
                 };
                 eprintln!("checking if {:?} can be cast to {}", check_class.this_class, name);
 
@@ -2535,7 +2542,7 @@ impl<ValueImpl: JvmValue> VMState<ValueImpl> {
                         check_class = vm.resolve_class(super_class).expect("superclass exists");
                     } else {
                         // should be ClassCastException but not right now
-                        return Err(VMError::BadClass("checkclass failed"));
+                        return frame_mut.malformed_class("checkclass failed");
                     }
                 }
             }
@@ -3447,7 +3454,8 @@ pub enum VMError {
     NameResolutionError,
     ClassLoadError,
     AccessError(&'static str),
-    BadClass(&'static str),
+    ResolveError(String),
+    BadClass { message: &'static str, classname: String },
     Unsupported(&'static str),
 }
 
@@ -3603,7 +3611,7 @@ impl<ValueImpl: JvmValue> VirtualMachine<ValueImpl> {
             if let Some((cls, patches)) = res {
                 (cls, patches)
             } else {
-                return Err(VMError::BadClass("could not resolve class"));
+                return Err(VMError::ResolveError(class_name.to_string()));
             }
         };
 
